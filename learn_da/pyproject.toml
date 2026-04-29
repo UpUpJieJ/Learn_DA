@@ -1,0 +1,151 @@
+[project]
+name = "learn-da-backend"
+version = "0.1.0"
+description = "MVP backend for a Polars + DuckDB interactive learning platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.0",
+    "aiomysql>=0.3.2",
+    "databases[mysql]>=0.9.0",
+    "docker>=7.1.0",
+    "fastapi[all]>=0.124.0",
+    "pydantic-settings>=2.12.0",
+    "python-dotenv>=1.2.1",
+    "redis>=7.1.0",
+    "sqlalchemy>=2.0.45",
+    "uvicorn>=0.37.0",
+    "openai>=1.109.1",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib>=1.7.4",
+    "bcrypt==4.0.1",
+    "python-multipart>=0.0.9",
+    "loguru>=0.7.3",
+    "boto3>=1.42.9",
+    "aiofiles>=25.1.0",
+    "python-magic>=0.4.27",
+    "slowapi>=0.1.9",
+    "alembic>=1.13.1",
+    "celery>=5.6.0",
+    "fastapi-mail>=1.6.1",
+    "gevent>=25.9.1",
+    "fastapi-utils>=0.8.0",
+    "typing-inspect>=0.9.0",
+    "polars>=1.39.3",
+    "duckdb>=1.5.1",
+    "black>=25.12.0",
+    "paramiko>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-mock>=3.11.1",
+    "pytest-xdist[psutil]>=3.3.1",
+    "httpx>=0.25.0",
+    "factory-boy>=3.3.0",
+    "faker>=19.0.0",
+    "black>=23.7.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "-p no:warnings",
+    # 覆盖率统计按需开启：pytest --cov=app --cov=services
+    # 不默认强制开启，避免本地快速跑测试时等待过长
+]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "slow: Slow running tests",
+    "auth: Tests requiring authentication",
+    "redis: Tests requiring Redis",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["app", "services"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 88
+skip_gitignore = true
+skip_glob = ["*/migrations/*"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "redis.*",
+    "boto3.*",
+    "magic.*",
+]
+ignore_missing_imports = true
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true

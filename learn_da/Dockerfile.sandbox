@@ -1,0 +1,22 @@
+# 基础镜像
+FROM python:3.11-slim
+
+# 工作目录
+WORKDIR /tmp
+
+# pip 源
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+
+# 环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 创建非 root 用户（去掉 pip 警告）
+RUN useradd -m appuser
+USER appuser
+
+# 安装依赖
+RUN pip install --upgrade pip && \
+    pip install --index-url ${PIP_INDEX_URL} polars duckdb pandas

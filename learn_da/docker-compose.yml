@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  sandbox-image:
+    image: ${SANDBOX_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+    profiles: ["sandbox"]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: learn_da_app
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=Learn DA Backend
+      - APP_ENV=development
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      - API_PREFIX=/api
+      - API_VERSION=v1
+      - DATABASE_URL=sqlite+aiosqlite:///./data/learn_da.db
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_AGENT_CHAT=20/minute
+      - RATE_LIMIT_PLAYGROUND_EXECUTE=10/minute
+      - REDIS_ENABLED=false
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - SANDBOX_DOCKER_ENABLED=false
+      - SANDBOX_DOCKER_IMAGE=${SANDBOX_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+      - ENABLED_APP_MODULES=learning,playground,agent
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: learn_da_redis
+    ports:
+      - "6379:6379"
+    profiles: ["redis"]
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
