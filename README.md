@@ -10,11 +10,11 @@
 
 核心特性：
 
-- **教程学习**：覆盖 Polars 专项、DuckDB 专项、Polars + DuckDB 联用实战与常见问题汇总。
-- **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空与本地草稿体验。
+- **教程学习**：覆盖 Polars 专项、DuckDB 专项、Polars + DuckDB 联用实战与常见问题汇总，课程列表支持专题、难度与关键词过滤。
+- **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空、执行历史与按课程保存的本地草稿。
 - **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现，支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
-- **安全沙箱执行**：用户提交的 Polars / DuckDB 代码在 Docker 容器中隔离运行，限制资源与超时，禁止恶意操作。
-- **无登录本地模式**：无需账号即可使用核心功能；学习进度与界面偏好保存在当前浏览器本地。
+- **安全执行策略**：开发环境默认优先使用本地/模拟执行；生产环境可开启 Docker 沙箱，限制资源与超时，隔离用户代码。
+- **无登录本地模式**：无需账号即可使用核心功能；学习进度、界面偏好与 Playground 草稿保存在当前浏览器本地。
 
 ---
 
@@ -27,7 +27,7 @@
 | 前端交互层 | Vue 3 + Vite + TypeScript + TailwindCSS + Pinia | 用户界面、教程渲染、代码编辑、结果展示、Agent 对话 |
 | 后端服务层 | FastAPI + Python 3.12 + Uvicorn | 接口中转、业务逻辑、数据持久化、Agent 调度、沙箱通信 |
 | AI Agent 层 | 原生 OpenAI API（Function Calling） | 概念解释、代码生成、代码校验、对比分析、实战案例推荐 |
-| 安全沙箱层 | Docker 容器隔离 | 隔离执行用户代码，资源配额与超时控制 |
+| 安全执行层 | 本地执行 / Docker 容器隔离 / 模拟执行 | 运行用户代码，开发环境快速反馈，生产环境可启用资源配额与超时控制 |
 | 数据存储层 | SQLite（默认）/ MySQL + Redis（可选） | 教程内容、运行数据与可选缓存 |
 
 ---
@@ -165,6 +165,8 @@ docker-compose --profile sandbox build
 | `REDIS_ENABLED` | `false` | 是否启用 Redis |
 | `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
 | `SANDBOX_DOCKER_ENABLED` | `false` | 是否启用 Docker 沙箱执行 |
+| `SANDBOX_LOCAL_ENABLED` | `true` | 是否允许开发环境本地执行 |
+| `SANDBOX_USE_MOCK_WHEN_DISABLED` | `true` | Docker 与本地执行都关闭时是否返回模拟结果 |
 | `ENABLED_APP_MODULES` | `learning,playground,agent` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
@@ -177,12 +179,20 @@ docker-compose --profile sandbox build
 
 - 分模块展示 Polars、DuckDB 及联用实战教程。
 - 支持章节导航、代码示例高亮与步骤化学习。
+- 课程接口：
+  - `GET /api/v1/lessons`：获取课程列表，支持 `category`、`difficulty`、`keyword` 查询参数。
+  - `GET /api/v1/lessons/{slug}`：获取课程详情。
+  - `GET /api/v1/lessons/categories`：获取课程分类统计。
+  - `GET /api/v1/examples` / `GET /api/v1/examples/{slug}`：获取示例代码列表与详情。
 
 ### 2. Playground 代码实操
 
 - 基于 Monaco Editor，支持 Python 语法高亮与自动补全。
-- 用户代码提交至后端，可选择本地模拟执行或 Docker 沙箱隔离执行。
+- 用户代码提交至后端，开发环境可使用本地执行或模拟执行，生产环境建议启用 Docker 沙箱隔离执行。
 - 返回执行结果、标准输出、数据表格预览与报错信息。
+- 当前浏览器会按上下文保存 Playground 草稿：
+  - 普通 Playground 使用 `default` 草稿。
+  - 课程 Playground 使用 `lesson:{slug}` 草稿。
 
 ### 3. AI Agent 助手
 
@@ -198,7 +208,7 @@ docker-compose --profile sandbox build
 ### 4. 本地学习状态
 
 - 平台不提供账号、登录、注册或 JWT 认证。
-- 学习进度、最近访问课程、编辑器偏好等状态保存在当前浏览器本地。
+- 学习进度、最近访问课程、编辑器偏好、Playground 草稿等状态保存在当前浏览器本地。
 - 清理浏览器数据、更换浏览器或更换设备后，本地学习状态不会自动同步。
 
 ---

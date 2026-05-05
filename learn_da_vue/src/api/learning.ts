@@ -11,8 +11,6 @@ import type {
 // =====================================================
 
 export interface LessonListParams {
-  page?: number
-  pageSize?: number
   category?: LessonCategory
   difficulty?: LessonDifficulty
   keyword?: string
@@ -27,13 +25,6 @@ export interface LessonListParams {
  */
 export function fetchLessons(params?: LessonListParams) {
   return get<LessonSummary[]>('/lessons', params as Record<string, unknown>)
-}
-
-/**
- * 获取所有课程（不分页，用于侧边栏目录）
- */
-export function fetchAllLessons(category?: LessonCategory) {
-  return get<LessonSummary[]>('/lessons/all', category ? { category } : undefined)
 }
 
 /**
@@ -54,13 +45,6 @@ export interface CategoryStat {
 
 export function fetchCategoryStats() {
   return get<CategoryStat[]>('/lessons/categories')
-}
-
-/**
- * 获取推荐课程（根据最后学习位置推荐下一节）
- */
-export function fetchRecommendedLessons(lastSlug?: string) {
-  return get<LessonSummary[]>('/lessons/recommended', lastSlug ? { lastSlug } : undefined)
 }
 
 // =====================================================

@@ -8,20 +8,6 @@ export interface ApiResponse<T = unknown> {
     data: T;
 }
 
-/** 分页元数据 */
-export interface PaginationMeta {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-}
-
-/** 带分页的响应 */
-export interface PaginatedResponse<T> {
-    items: T[];
-    meta: PaginationMeta;
-}
-
 // =====================================================
 // 学习模块 - 课程相关
 // =====================================================
