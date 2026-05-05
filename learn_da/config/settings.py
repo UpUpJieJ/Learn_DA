@@ -25,7 +25,7 @@ class Settings(BaseSettings):
         "http://localhost:3000,http://localhost:5173,"
         "http://127.0.0.1:3000,http://127.0.0.1:5173"
     )
-    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_CREDENTIALS: bool = False
     CORS_ALLOW_ALL_ORIGINS: bool = False
 
     RATE_LIMIT_ENABLED: bool = True
@@ -74,9 +74,6 @@ class Settings(BaseSettings):
 
     ENABLED_APP_MODULES: str = "learning,playground"
 
-    SECRET_KEY: Optional[str] = None
-    ALGORITHM: Optional[str] = None
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 180
     MINIO_ENDPOINT: Optional[str] = None
     MINIO_ACCESS_KEY: Optional[str] = None
     MINIO_SECRET_KEY: Optional[str] = None

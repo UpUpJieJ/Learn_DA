@@ -11,10 +11,10 @@
 核心特性：
 
 - **教程学习**：覆盖 Polars 专项、DuckDB 专项、Polars + DuckDB 联用实战与常见问题汇总。
-- **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空、保存代码片段。
+- **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空与本地草稿体验。
 - **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现，支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
 - **安全沙箱执行**：用户提交的 Polars / DuckDB 代码在 Docker 容器中隔离运行，限制资源与超时，禁止恶意操作。
-- **游客模式**：无需登录即可使用核心功能；简易注册登录后可保存代码片段与学习记录。
+- **无登录本地模式**：无需账号即可使用核心功能；学习进度与界面偏好保存在当前浏览器本地。
 
 ---
 
@@ -28,7 +28,7 @@
 | 后端服务层 | FastAPI + Python 3.12 + Uvicorn | 接口中转、业务逻辑、数据持久化、Agent 调度、沙箱通信 |
 | AI Agent 层 | 原生 OpenAI API（Function Calling） | 概念解释、代码生成、代码校验、对比分析、实战案例推荐 |
 | 安全沙箱层 | Docker 容器隔离 | 隔离执行用户代码，资源配额与超时控制 |
-| 数据存储层 | SQLite（默认）/ MySQL + Redis（可选） | 教程内容、用户数据、会话缓存 |
+| 数据存储层 | SQLite（默认）/ MySQL + Redis（可选） | 教程内容、运行数据与可选缓存 |
 
 ---
 
@@ -46,7 +46,6 @@
 │   ├── config/               # 配置管理（Pydantic Settings）
 │   ├── app/                  # 业务模块
 │   │   ├── agent/            # AI Agent 核心（工具、提示词、服务、路由）
-│   │   ├── auth/             # 用户认证（JWT）
 │   │   ├── core/             # 数据库、Redis、异常处理
 │   │   ├── learning/         # 教程内容接口
 │   │   ├── playground/       # Playground 业务逻辑
@@ -65,7 +64,7 @@
         ├── main.ts           # 应用入口
         ├── App.vue           # 根组件
         ├── router/           # Vue Router 路由
-        ├── stores/           # Pinia 状态管理
+        ├── stores/           # Pinia 状态管理（本地学习进度、偏好、UI 状态）
         ├── api/              # Axios API 封装（agent / learning / playground）
         ├── views/            # 页面级组件
         │   ├── Home.vue
@@ -102,7 +101,7 @@ cd learn_da
 # 1. 创建虚拟环境并安装依赖
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r pyproject.toml
+uv sync --extra dev
 
 # 2. 配置环境变量（可选，也可使用默认值）
 cp .env.example .env       # 若存在示例文件
@@ -196,10 +195,11 @@ docker-compose --profile sandbox build
   - **实战案例**：数据分析、清洗、批量查询的实战代码推荐。
 - 对话上下文保留短期记忆，支持单轮深度问答。
 
-### 4. 用户与认证（Auth）
+### 4. 本地学习状态
 
-- 游客模式：零门槛使用。
-- 注册用户：JWT Token 认证，支持保存代码片段与学习记录。
+- 平台不提供账号、登录、注册或 JWT 认证。
+- 学习进度、最近访问课程、编辑器偏好等状态保存在当前浏览器本地。
+- 清理浏览器数据、更换浏览器或更换设备后，本地学习状态不会自动同步。
 
 ---
 
@@ -228,7 +228,7 @@ pytest --cov=app --cov=services --cov-report=html
 1. **开发环境**：按「快速开始」分别启动前后端，使用 SQLite 即可。
 2. **测试/预发布**：
    - 使用 Docker Compose 统一部署。
-   - 启用 Redis 提升会话与缓存性能。
+   - 按需启用 Redis 提升缓存性能。
    - 迁移至 MySQL 以支持并发写入。
 3. **生产环境**：
    - 务必启用 `SANDBOX_DOCKER_ENABLED=true`，确保用户代码在 Docker 沙箱中运行。

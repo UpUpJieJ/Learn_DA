@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/stores/user'
+import { useLocalStateStore } from '@/stores/localState'
 import { platformCopy } from '@/lib/learningTracks'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
+const localStateStore = useLocalStateStore()
 
 // =====================================================
 // 导航项配置
@@ -57,7 +57,7 @@ function isActive(item: (typeof navItems)[0]): boolean {
 // =====================================================
 
 const progressText = computed(() => {
-  const count = userStore.completedCount
+  const count = localStateStore.completedCount
   return count > 0 ? `已完成 ${count} 课` : null
 })
 </script>
@@ -150,12 +150,12 @@ const progressText = computed(() => {
           <!-- 主题切换按钮 -->
           <button
             class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            :title="userStore.editorTheme === 'vs-dark' ? '切换到亮色主题' : '切换到暗色主题'"
-            @click="userStore.toggleEditorTheme()"
+            :title="localStateStore.editorTheme === 'vs-dark' ? '切换到亮色主题' : '切换到暗色主题'"
+            @click="localStateStore.toggleEditorTheme()"
           >
             <!-- 暗色模式图标 -->
             <svg
-              v-if="userStore.editorTheme === 'vs-dark'"
+              v-if="localStateStore.editorTheme === 'vs-dark'"
               class="w-4 h-4"
               fill="none"
               stroke="currentColor"
@@ -189,8 +189,8 @@ const progressText = computed(() => {
           <button
             v-if="route.path.startsWith('/learn/')"
             class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            :title="userStore.isSidebarOpen ? '收起侧边栏' : '展开侧边栏'"
-            @click="userStore.toggleSidebar()"
+            :title="localStateStore.isSidebarOpen ? '收起侧边栏' : '展开侧边栏'"
+            @click="localStateStore.toggleSidebar()"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
@@ -205,7 +205,7 @@ const progressText = computed(() => {
          移动端底部导航提示条（仅在 md 以下显示）
     ============================================= -->
     <div
-      v-if="route.path.startsWith('/learn/') && userStore.progress.lastVisitedSlug"
+      v-if="route.path.startsWith('/learn/') && localStateStore.progress.lastVisitedSlug"
       class="sm:hidden border-t border-slate-100 px-4 py-2 bg-slate-50 flex items-center justify-between text-xs text-slate-500"
     >
       <span class="flex items-center gap-1">

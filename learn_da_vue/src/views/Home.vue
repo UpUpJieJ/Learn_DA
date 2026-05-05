@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/user'
+import { useLocalStateStore } from '@/stores/localState'
 import { learningTracks, platformCopy } from '@/lib/learningTracks'
 
 const router = useRouter()
-const userStore = useUserStore()
+const localStateStore = useLocalStateStore()
 
 // ---- 动画控制 ----
 const heroVisible = ref(false)
@@ -106,7 +106,7 @@ function goToPlayground() {
 }
 
 function continueLearning() {
-  const slug = userStore.progress.lastVisitedSlug
+  const slug = localStateStore.progress.lastVisitedSlug
   if (slug) {
     router.push(`/learn/${slug}`)
   } else {
@@ -233,7 +233,7 @@ const colorTag: Record<string, string> = {
           </button>
 
           <button
-            v-if="userStore.progress.lastVisitedSlug"
+            v-if="localStateStore.progress.lastVisitedSlug"
             class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-base border border-white/20 hover:border-white/30 transition-all duration-200 backdrop-blur-sm hover:-translate-y-0.5 active:translate-y-0"
             @click="continueLearning"
           >

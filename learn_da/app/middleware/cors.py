@@ -28,7 +28,6 @@ class CORSSettings:
 
         self.ALLOW_HEADERS: List[str] = [
             "*",  # 使用通配符时允许所有头部
-            "Authorization",
             "Content-Type",
             "X-Requested-With",
             "X-API-Key",
@@ -65,4 +64,3 @@ def setup_cors_middleware(app) -> None:
     log.info(f"CORS中间件已初始化，允许的源:\n {origins_to_allow}")
     log.debug(f"CORS设置 - 允许凭证: {cors_settings.ALLOW_CREDENTIALS}, "
               f"允许所有源: {cors_settings.ALLOW_ALL_ORIGINS}")
-

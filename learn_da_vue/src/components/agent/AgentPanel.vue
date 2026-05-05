@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onUnmounted } from "vue";
-import { useUserStore } from "@/stores/user";
+import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
 import { streamChatMessage, buildChatHistory, explainCode, fixCode } from "@/api/agent";
 import type { ChatMessage, AgentContext } from "@/types/api";
@@ -24,7 +24,7 @@ const props = withDefaults(defineProps<Props>(), {
     context: undefined,
 })
 
-const userStore = useUserStore();
+const localStateStore = useLocalStateStore();
 const playgroundStore = usePlaygroundStore();
 
 // 状态
@@ -39,7 +39,7 @@ const streamingMessageId = ref<string | null>(null);
 let abortController: AbortController | null = null;
 
 // Computed
-const isOpen = computed(() => userStore.isAgentOpen);
+const isOpen = computed(() => localStateStore.isAgentOpen);
 
 const agentContext = computed<AgentContext>(() => ({
     currentCode: playgroundStore.code || undefined,
@@ -400,7 +400,7 @@ onUnmounted(() => {
             v-if="!isOpen"
             class="fixed top-20 right-5 z-40 w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white shadow-lg border border-white/10 flex items-center justify-center transition-all duration-200 hover:shadow-xl"
             title="助手"
-            @click="userStore.openAgent()"
+            @click="localStateStore.openAgent()"
         >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -453,7 +453,7 @@ onUnmounted(() => {
                     <button
                         class="w-7 h-7 rounded flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
                         title="关闭"
-                        @click="userStore.closeAgent()"
+                        @click="localStateStore.closeAgent()"
                     >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12" />

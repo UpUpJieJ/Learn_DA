@@ -163,10 +163,10 @@ export interface AgentChatResponse {
 }
 
 // =====================================================
-// 用户 / 本地状态
+// 本地状态
 // =====================================================
 
-export interface UserPreferences {
+export interface LocalPreferences {
     editorTheme: "vs-dark" | "light";
     editorFontSize: number;
     language: "zh" | "en";

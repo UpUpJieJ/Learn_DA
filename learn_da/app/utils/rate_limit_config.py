@@ -76,18 +76,6 @@ class RateLimitConfig:
     # 所有限流规则（按优先级排序，先匹配的优先）
     RULES: List[EndpointRateLimitRule] = [
         EndpointRateLimitRule(
-            name="register",
-            path_patterns=[r"/register", r".*register.*"],
-            error_message="注册请求过于频繁，请稍后再试",
-            default_retry_after=60
-        ),
-        EndpointRateLimitRule(
-            name="login",
-            path_patterns=[r"/login", r".*login.*"],
-            error_message="登录请求过于频繁，请稍后再试",
-            default_retry_after=60
-        ),
-        EndpointRateLimitRule(
             name="upload",
             path_patterns=[r"/upload", r".*upload.*"],
             error_message="上传请求过于频繁，请稍后再试",

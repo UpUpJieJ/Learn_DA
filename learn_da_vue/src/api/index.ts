@@ -106,7 +106,7 @@ export class CancelledError extends Error {
 function httpErrorMessage(status?: number): string | null {
     const map: Record<number, string> = {
         400: "请求参数错误",
-        401: "未授权，请重新登录",
+        401: "未授权访问",
         403: "无权限访问",
         404: "资源不存在",
         408: "请求超时",

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import type { LessonDetail, LessonDifficulty } from "@/types/api";
-import { useUserStore } from "@/stores/user";
+import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
 
 // =====================================================
@@ -19,7 +19,7 @@ const props = defineProps<{
 // =====================================================
 
 const router = useRouter();
-const userStore = useUserStore();
+const localStateStore = useLocalStateStore();
 const playgroundStore = usePlaygroundStore();
 
 // =====================================================
@@ -72,7 +72,7 @@ async function loadLesson(slug: string) {
 
     try {
         lesson.value = await fetchLessonBySlug(slug);
-        userStore.setLastVisitedLesson(slug);
+        localStateStore.setLastVisitedLesson(slug);
 
         // 等 DOM 渲染后提取目录
         await nextTick();
@@ -146,12 +146,12 @@ function setupScrollSpy() {
 // =====================================================
 
 const isCompleted = computed(() =>
-    lesson.value ? userStore.isLessonCompleted(lesson.value.slug) : false,
+    lesson.value ? localStateStore.isLessonCompleted(lesson.value.slug) : false,
 );
 
 function toggleCompleted() {
     if (!lesson.value) return;
-    userStore.toggleLessonCompleted(lesson.value.slug);
+    localStateStore.toggleLessonCompleted(lesson.value.slug);
 }
 
 // =====================================================

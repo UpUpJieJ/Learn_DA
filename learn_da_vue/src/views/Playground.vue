@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
-import { useUserStore } from "@/stores/user";
+import { useLocalStateStore } from "@/stores/localState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
 import type { DataFrameCell, ExampleSummary, LessonDetail } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
@@ -10,7 +10,7 @@ import AgentPanel from "@/components/agent/AgentPanel.vue";
 const route = useRoute();
 const router = useRouter();
 const playgroundStore = usePlaygroundStore();
-const userStore = useUserStore();
+const localStateStore = useLocalStateStore();
 
 // =====================================================
 // 课程文档（左侧面板）
@@ -441,16 +441,16 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
         <div class="flex items-center gap-1">
           <button
             class="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-colors text-xs font-mono"
-            @click="userStore.decreaseFontSize()"
+            @click="localStateStore.decreaseFontSize()"
           >
             −
           </button>
           <span class="text-xs text-slate-600 w-5 text-center">{{
-            userStore.editorFontSize
+            localStateStore.editorFontSize
           }}</span>
           <button
             class="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-colors text-xs font-mono"
-            @click="userStore.increaseFontSize()"
+            @click="localStateStore.increaseFontSize()"
           >
             +
           </button>
@@ -730,7 +730,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 v-for="n in playgroundStore.code.split('\n').length"
                 :key="n"
                 class="px-3 font-mono text-slate-600 leading-6"
-                :style="{ fontSize: `${userStore.editorFontSize}px` }"
+                :style="{ fontSize: `${localStateStore.editorFontSize}px` }"
               >
                 {{ n }}
               </div>
@@ -738,7 +738,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
             <textarea
               v-model="playgroundStore.code"
               class="flex-1 p-4 bg-[#0d1117] text-slate-300 font-mono resize-none outline-none leading-6 caret-blue-400 placeholder-slate-700 overflow-y-auto"
-              :style="{ fontSize: `${userStore.editorFontSize}px` }"
+              :style="{ fontSize: `${localStateStore.editorFontSize}px` }"
               placeholder="# 输入代码，Ctrl+Enter 运行"
               spellcheck="false"
               autocomplete="off"

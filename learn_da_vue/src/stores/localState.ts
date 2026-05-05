@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { UserPreferences, LearningProgress } from '@/types/api'
+import type { LocalPreferences, LearningProgress } from '@/types/api'
 
 // =====================================================
 // 本地存储 Key 常量
@@ -19,7 +19,7 @@ function loadFromStorage<T>(key: string, fallback: T): T {
     if (!raw) return fallback
     return JSON.parse(raw) as T
   } catch {
-    console.warn(`[UserStore] 读取本地存储失败: ${key}`)
+    console.warn(`[LocalStateStore] 读取本地存储失败: ${key}`)
     return fallback
   }
 }
@@ -28,7 +28,7 @@ function saveToStorage<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch {
-    console.warn(`[UserStore] 写入本地存储失败: ${key}`)
+    console.warn(`[LocalStateStore] 写入本地存储失败: ${key}`)
   }
 }
 
@@ -36,7 +36,7 @@ function saveToStorage<T>(key: string, value: T): void {
 // 默认值
 // =====================================================
 
-const DEFAULT_PREFERENCES: UserPreferences = {
+const DEFAULT_PREFERENCES: LocalPreferences = {
   editorTheme: 'vs-dark',
   editorFontSize: 14,
   language: 'zh',
@@ -49,16 +49,16 @@ const DEFAULT_PROGRESS: LearningProgress = {
 }
 
 // =====================================================
-// User Store
+// Local State Store
 // =====================================================
 
-export const useUserStore = defineStore('user', () => {
-  // ---- 用户偏好设置（持久化） ----
-  const preferences = ref<UserPreferences>(
+export const useLocalStateStore = defineStore('localState', () => {
+  // ---- 本地偏好设置（持久化） ----
+  const preferences = ref<LocalPreferences>(
     loadFromStorage(STORAGE_KEY_PREFERENCES, DEFAULT_PREFERENCES),
   )
 
-  // ---- 学习进度（持久化） ----
+  // ---- 本地学习进度（持久化） ----
   const progress = ref<LearningProgress>(
     loadFromStorage(STORAGE_KEY_PROGRESS, DEFAULT_PROGRESS),
   )
@@ -123,7 +123,7 @@ export const useUserStore = defineStore('user', () => {
   /**
    * 设置编辑器主题
    */
-  function setEditorTheme(theme: UserPreferences['editorTheme']) {
+  function setEditorTheme(theme: LocalPreferences['editorTheme']) {
     preferences.value.editorTheme = theme
   }
 
@@ -151,7 +151,7 @@ export const useUserStore = defineStore('user', () => {
   /**
    * 设置界面语言
    */
-  function setLanguage(lang: UserPreferences['language']) {
+  function setLanguage(lang: LocalPreferences['language']) {
     preferences.value.language = lang
   }
 

@@ -8,12 +8,12 @@ import type {
     LessonCategory,
     LessonDifficulty,
 } from "@/types/api";
-import { useUserStore } from "@/stores/user";
+import { useLocalStateStore } from "@/stores/localState";
 import { currentTrackKeys, learningTrackMeta } from "@/lib/learningTracks";
 
 const router = useRouter();
 const route = useRoute();
-const userStore = useUserStore();
+const localStateStore = useLocalStateStore();
 
 // =====================================================
 // 状态
@@ -164,7 +164,7 @@ const filteredLessons = computed(() => {
 const totalCount = computed(() => filteredLessons.value.length);
 const completedCount = computed(
     () =>
-        filteredLessons.value.filter((l) => userStore.isLessonCompleted(l.slug))
+        filteredLessons.value.filter((l) => localStateStore.isLessonCompleted(l.slug))
             .length,
 );
 
@@ -646,7 +646,7 @@ function generateMockLessons(): LessonSummary[] {
                             :key="lesson.slug"
                             :lesson="lesson"
                             :is-completed="
-                                userStore.isLessonCompleted(lesson.slug)
+                                localStateStore.isLessonCompleted(lesson.slug)
                             "
                             @click="goToLesson(lesson.slug)"
                         />
@@ -665,7 +665,7 @@ function generateMockLessons(): LessonSummary[] {
                     v-for="lesson in filteredLessons"
                     :key="lesson.slug"
                     :lesson="lesson"
-                    :is-completed="userStore.isLessonCompleted(lesson.slug)"
+                    :is-completed="localStateStore.isLessonCompleted(lesson.slug)"
                     @click="goToLesson(lesson.slug)"
                 />
             </div>

@@ -26,6 +26,15 @@ async def test_root_returns_project_metadata(client):
     assert body["code"] == 200
     assert body["data"]["name"] == "Learn DA Backend"
     assert "learning" in body["data"]["enabledModules"]
+    assert "auth" not in body["data"]["enabledModules"]
+
+
+@pytest.mark.unit
+async def test_no_auth_routes_are_registered(client):
+    resp = await client.get("/openapi.json")
+    body = resp.json()
+    assert resp.status_code == 200
+    assert not any(path.startswith("/api/v1/auth") for path in body["paths"])
 
 
 @pytest.mark.unit
