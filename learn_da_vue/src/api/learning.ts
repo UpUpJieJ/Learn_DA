@@ -2,7 +2,6 @@ import { get } from '@/api/index'
 import type {
   LessonSummary,
   LessonDetail,
-  PaginatedResponse,
   LessonCategory,
   LessonDifficulty,
 } from '@/types/api'
@@ -24,10 +23,10 @@ export interface LessonListParams {
 // =====================================================
 
 /**
- * 获取课程列表（支持分页、分类、难度过滤）
+ * 获取课程列表（支持分类、难度、关键词过滤）
  */
 export function fetchLessons(params?: LessonListParams) {
-  return get<PaginatedResponse<LessonSummary>>('/lessons', params as Record<string, unknown>)
+  return get<LessonSummary[]>('/lessons', params as Record<string, unknown>)
 }
 
 /**

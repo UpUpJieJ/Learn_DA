@@ -15,9 +15,18 @@ def get_learning_service() -> LearningService:
 
 @router.get("/lessons", response_model=StdResp[list[LessonSummary]])
 async def list_lessons(
+    category: str | None = None,
+    difficulty: str | None = None,
+    keyword: str | None = None,
     service: LearningService = Depends(get_learning_service),
 ):
-    return StdResp.success(data=service.list_lessons())
+    return StdResp.success(
+        data=service.list_lessons(
+            category=category,
+            difficulty=difficulty,
+            keyword=keyword,
+        )
+    )
 
 
 # NOTE: /lessons/all and /lessons/categories MUST be defined BEFORE /lessons/{slug}
@@ -25,9 +34,18 @@ async def list_lessons(
 
 @router.get("/lessons/all", response_model=StdResp[list[LessonSummary]])
 async def list_all_lessons(
+    category: str | None = None,
+    difficulty: str | None = None,
+    keyword: str | None = None,
     service: LearningService = Depends(get_learning_service),
 ):
-    return StdResp.success(data=service.list_lessons())
+    return StdResp.success(
+        data=service.list_lessons(
+            category=category,
+            difficulty=difficulty,
+            keyword=keyword,
+        )
+    )
 
 
 @router.get("/lessons/categories")

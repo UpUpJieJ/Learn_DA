@@ -21,6 +21,24 @@ const props = defineProps<{ slug?: string }>();
 const currentLesson = ref<LessonDetail | null>(null);
 const isLoadingLesson = ref(false);
 const isDocPanelCollapsed = ref(false);
+const hasLoadedDraft = ref(false);
+
+const draftKey = computed(() => (props.slug ? `lesson:${props.slug}` : "default"));
+
+function loadDraftForContext(seedCode?: string) {
+  const draft = localStateStore.getPlaygroundDraft(draftKey.value);
+  hasLoadedDraft.value = false;
+
+  if (draft) {
+    playgroundStore.setLanguage(draft.language);
+    playgroundStore.setCode(draft.code);
+  } else if (seedCode !== undefined) {
+    playgroundStore.setLanguage("python");
+    playgroundStore.setCode(seedCode);
+  }
+
+  hasLoadedDraft.value = true;
+}
 
 async function loadLesson(slug: string) {
   if (!slug) {
@@ -30,9 +48,12 @@ async function loadLesson(slug: string) {
   isLoadingLesson.value = true;
   try {
     currentLesson.value = await fetchLessonBySlug(slug);
+    localStateStore.setLastVisitedLesson(slug);
+    loadDraftForContext(currentLesson.value.codeExample);
   } catch (err) {
     console.error("加载课程失败:", err);
     currentLesson.value = null;
+    loadDraftForContext();
   } finally {
     isLoadingLesson.value = false;
   }
@@ -41,13 +62,20 @@ async function loadLesson(slug: string) {
 watch(
   () => props.slug,
   (slug) => {
-    if (slug) loadLesson(slug);
+    hasLoadedDraft.value = false;
+    if (slug) {
+      loadLesson(slug);
+    } else {
+      currentLesson.value = null;
+      loadDraftForContext();
+    }
   },
   { immediate: true }
 );
 
 function loadLessonCode(code: string) {
   playgroundStore.setCode(code);
+  localStateStore.savePlaygroundDraft(draftKey.value, code, playgroundStore.language);
 }
 
 function goToPrevLesson() {
@@ -152,6 +180,11 @@ async function loadExampleCode(slug: string) {
     const example = await fetchExample(slug);
     if (example?.code) {
       playgroundStore.setCode(example.code);
+      localStateStore.savePlaygroundDraft(
+        draftKey.value,
+        example.code,
+        playgroundStore.language,
+      );
       showExampleSelector.value = false;
     }
   } catch (err) {
@@ -218,6 +251,14 @@ const agentContext = computed(() => ({
   stderr: playgroundStore.stderr || undefined,
   lastError: playgroundStore.stderr || undefined,
 }));
+
+watch(
+  [() => playgroundStore.code, () => playgroundStore.language],
+  ([code, language]) => {
+    if (!hasLoadedDraft.value) return;
+    localStateStore.savePlaygroundDraft(draftKey.value, code, language);
+  }
+);
 
 // 拖拽文档面板宽度
 function onDocDragStart(e: MouseEvent) {

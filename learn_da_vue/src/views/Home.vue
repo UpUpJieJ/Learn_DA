@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLocalStateStore } from '@/stores/localState'
 import { learningTracks, platformCopy } from '@/lib/learningTracks'
@@ -96,6 +96,8 @@ const stats = [
   { label: '完全免费', value: '✓' },
 ]
 
+const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug)
+
 // ---- 操作 ----
 function goToLearning() {
   router.push('/learn')
@@ -106,7 +108,7 @@ function goToPlayground() {
 }
 
 function continueLearning() {
-  const slug = localStateStore.progress.lastVisitedSlug
+  const slug = lastVisitedSlug.value
   if (slug) {
     router.push(`/learn/${slug}`)
   } else {
@@ -233,8 +235,9 @@ const colorTag: Record<string, string> = {
           </button>
 
           <button
-            v-if="localStateStore.progress.lastVisitedSlug"
+            v-if="lastVisitedSlug"
             class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-base border border-white/20 hover:border-white/30 transition-all duration-200 backdrop-blur-sm hover:-translate-y-0.5 active:translate-y-0"
+            :title="`继续学习 ${lastVisitedSlug}`"
             @click="continueLearning"
           >
             <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">

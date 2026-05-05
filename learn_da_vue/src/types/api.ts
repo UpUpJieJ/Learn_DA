@@ -178,6 +178,14 @@ export interface LearningProgress {
     updatedAt: number;
 }
 
+export interface PlaygroundDraft {
+    code: string;
+    language: "python" | "sql";
+    updatedAt: number;
+}
+
+export type PlaygroundDrafts = Record<string, PlaygroundDraft>;
+
 // =====================================================
 // 学习模块 - 示例代码相关
 // =====================================================

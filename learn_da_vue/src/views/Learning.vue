@@ -2,7 +2,7 @@
 import { ref, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { CancelledError } from "@/api";
-import { fetchAllLessons, fetchCategoryStats } from "@/api/learning";
+import { fetchLessons, fetchCategoryStats } from "@/api/learning";
 import type {
     LessonSummary,
     LessonCategory,
@@ -102,7 +102,7 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
         const requestCategory = category === "all" ? undefined : category;
 
         const [allLessons, stats] = await Promise.all([
-            fetchAllLessons(requestCategory),
+            fetchLessons({ category: requestCategory }),
             fetchCategoryStats(),
         ]);
 
@@ -120,8 +120,7 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
 
         errorMsg.value =
             err instanceof Error ? err.message : "加载课程列表失败，请稍后重试";
-        // 开发期间使用 mock 数据
-        lessons.value = generateMockLessons();
+        lessons.value = [];
     } finally {
         if (requestId === latestLessonRequestId) {
             isLoading.value = false;
@@ -237,134 +236,6 @@ function clearFilters() {
     searchKeyword.value = "";
 }
 
-// =====================================================
-// Mock 数据（后端未就绪时使用）
-// =====================================================
-
-function generateMockLessons(): LessonSummary[] {
-    return [
-        {
-            id: 1,
-            slug: "polars-quickstart",
-            title: "Polars 快速入门",
-            description:
-                "5分钟掌握 Polars 基本用法，创建 DataFrame、查询数据、基础变换。",
-            category: "polars",
-            difficulty: "beginner",
-            estimatedMinutes: 15,
-            order: 1,
-            tags: ["DataFrame", "入门", "基础操作"],
-        },
-        {
-            id: 2,
-            slug: "polars-expressions",
-            title: "Polars 表达式系统",
-            description:
-                "深入理解 Polars 表达式（Expressions）的核心概念与链式调用模式。",
-            category: "polars",
-            difficulty: "intermediate",
-            estimatedMinutes: 30,
-            order: 2,
-            tags: ["Expressions", "链式调用", "列操作"],
-        },
-        {
-            id: 3,
-            slug: "polars-lazy-api",
-            title: "Lazy API 与查询优化",
-            description:
-                "掌握 LazyFrame 惰性求值机制，利用查询计划优化大数据处理性能。",
-            category: "polars",
-            difficulty: "intermediate",
-            estimatedMinutes: 35,
-            order: 3,
-            tags: ["LazyFrame", "惰性求值", "查询优化"],
-        },
-        {
-            id: 4,
-            slug: "polars-groupby-agg",
-            title: "GroupBy 聚合操作",
-            description:
-                "掌握 Polars 的 group_by、agg 操作，实现复杂的分组统计需求。",
-            category: "polars",
-            difficulty: "intermediate",
-            estimatedMinutes: 25,
-            order: 4,
-            tags: ["group_by", "agg", "聚合统计"],
-        },
-        {
-            id: 5,
-            slug: "polars-join",
-            title: "多表关联（Join）",
-            description:
-                "学习 inner join、left join、cross join 等各类连接操作及性能对比。",
-            category: "polars",
-            difficulty: "intermediate",
-            estimatedMinutes: 30,
-            order: 5,
-            tags: ["join", "多表", "关联"],
-        },
-        {
-            id: 6,
-            slug: "duckdb-quickstart",
-            title: "DuckDB 快速入门",
-            description:
-                "零配置嵌入式 SQL 数据库，5分钟完成安装、连接与首次查询。",
-            category: "duckdb",
-            difficulty: "beginner",
-            estimatedMinutes: 15,
-            order: 1,
-            tags: ["SQL", "入门", "零配置"],
-        },
-        {
-            id: 7,
-            slug: "duckdb-read-files",
-            title: "读取 CSV / Parquet 文件",
-            description:
-                "用 SQL 直接查询本地文件，支持通配符批量读取，无需手动建表。",
-            category: "duckdb",
-            difficulty: "beginner",
-            estimatedMinutes: 20,
-            order: 2,
-            tags: ["CSV", "Parquet", "文件读取"],
-        },
-        {
-            id: 8,
-            slug: "duckdb-window-functions",
-            title: "窗口函数实战",
-            description:
-                "掌握 OVER、PARTITION BY、ROW_NUMBER、LAG/LEAD 等窗口函数。",
-            category: "duckdb",
-            difficulty: "advanced",
-            estimatedMinutes: 40,
-            order: 3,
-            tags: ["窗口函数", "OVER", "PARTITION BY"],
-        },
-        {
-            id: 9,
-            slug: "polars-duckdb-interop",
-            title: "Polars × DuckDB 互操作",
-            description:
-                "在 Polars 与 DuckDB 之间零拷贝传递 DataFrame，构建高效分析管道。",
-            category: "combined",
-            difficulty: "intermediate",
-            estimatedMinutes: 35,
-            order: 1,
-            tags: ["互操作", "Arrow", "零拷贝"],
-        },
-        {
-            id: 10,
-            slug: "etl-pipeline",
-            title: "构建完整 ETL 管道",
-            description:
-                "综合案例：用 Polars + DuckDB 构建从原始数据到分析报告的完整流程。",
-            category: "combined",
-            difficulty: "advanced",
-            estimatedMinutes: 60,
-            order: 2,
-            tags: ["ETL", "数据管道", "综合案例"],
-        },
-    ];
-}
 </script>
 
 <template>

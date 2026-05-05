@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { LocalPreferences, LearningProgress } from '@/types/api'
+import type {
+  LocalPreferences,
+  LearningProgress,
+  PlaygroundDraft,
+  PlaygroundDrafts,
+} from '@/types/api'
 
 // =====================================================
 // 本地存储 Key 常量
@@ -8,6 +13,7 @@ import type { LocalPreferences, LearningProgress } from '@/types/api'
 
 const STORAGE_KEY_PREFERENCES = 'learn_da:preferences'
 const STORAGE_KEY_PROGRESS = 'learn_da:progress'
+const STORAGE_KEY_PLAYGROUND_DRAFTS = 'learn_da:playground_drafts'
 
 // =====================================================
 // 本地存储工具函数
@@ -63,6 +69,11 @@ export const useLocalStateStore = defineStore('localState', () => {
     loadFromStorage(STORAGE_KEY_PROGRESS, DEFAULT_PROGRESS),
   )
 
+  // ---- Playground 草稿（持久化） ----
+  const playgroundDrafts = ref<PlaygroundDrafts>(
+    loadFromStorage(STORAGE_KEY_PLAYGROUND_DRAFTS, {}),
+  )
+
   // ---- Agent 面板展开状态（非持久化，页面级状态） ----
   const isAgentOpen = ref(false)
 
@@ -82,6 +93,12 @@ export const useLocalStateStore = defineStore('localState', () => {
   watch(
     progress,
     (val) => saveToStorage(STORAGE_KEY_PROGRESS, val),
+    { deep: true },
+  )
+
+  watch(
+    playgroundDrafts,
+    (val) => saveToStorage(STORAGE_KEY_PLAYGROUND_DRAFTS, val),
     { deep: true },
   )
 
@@ -213,6 +230,39 @@ export const useLocalStateStore = defineStore('localState', () => {
   }
 
   // =====================================================
+  // Actions - Playground 草稿
+  // =====================================================
+
+  /**
+   * 读取指定上下文的 Playground 草稿
+   */
+  function getPlaygroundDraft(key: string): PlaygroundDraft | null {
+    return playgroundDrafts.value[key] ?? null
+  }
+
+  /**
+   * 保存指定上下文的 Playground 草稿
+   */
+  function savePlaygroundDraft(
+    key: string,
+    code: string,
+    language: PlaygroundDraft['language'] = 'python',
+  ) {
+    playgroundDrafts.value[key] = {
+      code,
+      language,
+      updatedAt: Date.now(),
+    }
+  }
+
+  /**
+   * 删除指定上下文的 Playground 草稿
+   */
+  function clearPlaygroundDraft(key: string) {
+    delete playgroundDrafts.value[key]
+  }
+
+  // =====================================================
   // Actions - UI 状态
   // =====================================================
 
@@ -249,6 +299,7 @@ export const useLocalStateStore = defineStore('localState', () => {
     // state
     preferences,
     progress,
+    playgroundDrafts,
     isAgentOpen,
     isSidebarOpen,
 
@@ -276,6 +327,11 @@ export const useLocalStateStore = defineStore('localState', () => {
     toggleLessonCompleted,
     setLastVisitedLesson,
     resetProgress,
+
+    // actions - playground drafts
+    getPlaygroundDraft,
+    savePlaygroundDraft,
+    clearPlaygroundDraft,
 
     // actions - ui
     openAgent,

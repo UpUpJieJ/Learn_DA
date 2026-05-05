@@ -12,10 +12,19 @@ class LearningService:
     def __init__(self, repository: LearningRepository | None = None):
         self.repository = repository or LearningRepository()
 
-    def list_lessons(self) -> list[LessonSummary]:
+    def list_lessons(
+        self,
+        category: str | None = None,
+        difficulty: str | None = None,
+        keyword: str | None = None,
+    ) -> list[LessonSummary]:
         return [
             LessonSummary.model_validate(lesson)
-            for lesson in self.repository.list_lessons()
+            for lesson in self.repository.list_lessons(
+                category=category,
+                difficulty=difficulty,
+                keyword=keyword,
+            )
         ]
 
     def get_lesson(self, slug: str) -> LessonDetail:

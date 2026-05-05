@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import type { LessonDetail, LessonDifficulty } from "@/types/api";
@@ -81,11 +81,6 @@ async function loadLesson(slug: string) {
     } catch (err) {
         errorMsg.value =
             err instanceof Error ? err.message : "课程内容加载失败，请稍后重试";
-        // 开发期间注入 mock 数据
-        lesson.value = generateMockLesson(slug);
-        await nextTick();
-        extractToc();
-        setupScrollSpy();
     } finally {
         isLoading.value = false;
     }
@@ -200,12 +195,6 @@ function goToLesson(slug: string) {
 }
 
 // =====================================================
-// nextTick 兼容（script setup 中需显式导入）
-// =====================================================
-
-import { nextTick } from "vue";
-
-// =====================================================
 // 简易 Markdown 渲染（无外部依赖，后续可替换为 marked/markdown-it）
 // =====================================================
 
@@ -254,185 +243,6 @@ function renderMarkdown(md: string): string {
     return `<p>${html}</p>`;
 }
 
-// =====================================================
-// Mock 数据（后端未就绪时使用）
-// =====================================================
-
-function generateMockLesson(slug: string): LessonDetail {
-    return {
-        id: 1,
-        slug,
-        title: "Polars 快速入门",
-        description:
-            "5 分钟掌握 Polars 基本用法，创建 DataFrame、查询数据、基础变换。",
-        category: "polars",
-        difficulty: "beginner",
-        estimatedMinutes: 15,
-        order: 1,
-        tags: ["DataFrame", "入门", "基础操作"],
-        content: `## 什么是 Polars？
-
-Polars 是一个基于 **Rust** 构建的高性能 DataFrame 库，提供 Python 和 Rust 两种 API。
-与 Pandas 相比，Polars 具有以下核心优势：
-
-- **速度极快**：基于 Apache Arrow 内存格式，原生支持 SIMD 向量化运算
-- **惰性求值**：通过 \`LazyFrame\` 构建查询计划，自动优化执行路径
-- **并行计算**：自动利用多核 CPU，无需手动配置
-- **内存高效**：零拷贝读写，显著降低内存占用
-- **类型安全**：强类型系统，运行前即可发现错误
-
-## 安装
-
-\`\`\`bash
-pip install polars
-\`\`\`
-
-## 创建 DataFrame
-
-Polars 支持从多种数据源创建 DataFrame：
-
-\`\`\`python
-import polars as pl
-
-# 从字典创建
-df = pl.DataFrame({
-    "name": ["Alice", "Bob", "Charlie", "Diana"],
-    "age": [25, 30, 35, 28],
-    "city": ["北京", "上海", "深圳", "广州"],
-    "score": [88.5, 92.0, 78.3, 95.1],
-})
-
-print(df)
-print(f"\\n形状: {df.shape}")
-print(f"列名: {df.columns}")
-print(f"数据类型:\\n{df.dtypes}")
-\`\`\`
-
-## 基础查询
-
-### 选择列
-
-\`\`\`python
-# 选择单列（返回 Series）
-ages = df["age"]
-
-# 选择多列（返回 DataFrame）
-subset = df.select(["name", "score"])
-
-# 使用表达式选择
-result = df.select(
-    pl.col("name"),
-    pl.col("score").alias("成绩"),
-)
-\`\`\`
-
-### 过滤行
-
-\`\`\`python
-# 简单过滤
-high_scorers = df.filter(pl.col("score") > 90)
-
-# 复合条件
-result = df.filter(
-    (pl.col("age") >= 28) & (pl.col("score") > 85)
-)
-\`\`\`
-
-### 排序
-
-\`\`\`python
-# 按单列排序（降序）
-sorted_df = df.sort("score", descending=True)
-
-# 多列排序
-sorted_df = df.sort(["age", "score"], descending=[False, True])
-\`\`\`
-
-## 数据变换
-
-\`\`\`python
-# 添加新列
-df_with_grade = df.with_columns(
-    pl.when(pl.col("score") >= 90)
-    .then(pl.lit("A"))
-    .when(pl.col("score") >= 80)
-    .then(pl.lit("B"))
-    .otherwise(pl.lit("C"))
-    .alias("grade")
-)
-
-print(df_with_grade)
-\`\`\`
-
-## 聚合统计
-
-\`\`\`python
-# 全局统计
-summary = df.select([
-    pl.col("score").mean().alias("平均分"),
-    pl.col("score").max().alias("最高分"),
-    pl.col("score").min().alias("最低分"),
-    pl.col("score").std().alias("标准差"),
-])
-
-# 分组聚合
-city_stats = df.group_by("city").agg([
-    pl.col("score").mean().alias("avg_score"),
-    pl.col("name").count().alias("人数"),
-]).sort("avg_score", descending=True)
-
-print(city_stats)
-\`\`\`
-
-## 小结
-
-本节我们学习了 Polars 的基本用法，包括：
-
-1. 创建 DataFrame
-2. 选择列与过滤行
-3. 数据排序与变换
-4. 聚合统计操作
-
-下一节将深入学习 **Polars 表达式系统**，这是 Polars 最核心也最强大的特性。
-`,
-        codeExample: `import polars as pl
-
-# 创建示例 DataFrame
-df = pl.DataFrame({
-    "name": ["Alice", "Bob", "Charlie", "Diana"],
-    "age": [25, 30, 35, 28],
-    "city": ["北京", "上海", "深圳", "广州"],
-    "score": [88.5, 92.0, 78.3, 95.1],
-})
-
-print("原始数据：")
-print(df)
-
-# 过滤：成绩 > 85 的同学
-high_scorers = df.filter(pl.col("score") > 85)
-print("\\n成绩 > 85：")
-print(high_scorers)
-
-# 添加等级列
-result = df.with_columns(
-    pl.when(pl.col("score") >= 90)
-    .then(pl.lit("A"))
-    .when(pl.col("score") >= 80)
-    .then(pl.lit("B"))
-    .otherwise(pl.lit("C"))
-    .alias("grade")
-).sort("score", descending=True)
-
-print("\\n带等级排序后：")
-print(result)
-`,
-        prevLesson: null,
-        nextLesson: {
-            slug: "polars-expressions",
-            title: "Polars 表达式系统",
-        },
-    };
-}
 </script>
 
 <template>

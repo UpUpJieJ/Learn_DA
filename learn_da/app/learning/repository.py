@@ -72,9 +72,39 @@ class LearningRepository:
         
         return self._examples
     
-    def list_lessons(self) -> list[LessonDetail]:
-        """获取所有课程列表"""
-        return self._load_lessons()
+    def list_lessons(
+        self,
+        category: str | None = None,
+        difficulty: str | None = None,
+        keyword: str | None = None,
+    ) -> list[LessonDetail]:
+        """获取课程列表，可按分类、难度和关键词过滤"""
+        lessons = self._load_lessons()
+
+        if category:
+            lessons = [lesson for lesson in lessons if lesson.category == category]
+
+        if difficulty:
+            lessons = [lesson for lesson in lessons if lesson.difficulty == difficulty]
+
+        if keyword:
+            normalized = keyword.strip().lower()
+            if normalized:
+                lessons = [
+                    lesson
+                    for lesson in lessons
+                    if normalized
+                    in " ".join(
+                        [
+                            lesson.slug,
+                            lesson.title,
+                            lesson.description,
+                            " ".join(lesson.tags),
+                        ]
+                    ).lower()
+                ]
+
+        return lessons
 
     def get_lesson(self, slug: str) -> LessonDetail | None:
         """根据 slug 获取课程详情"""

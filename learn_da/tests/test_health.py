@@ -47,6 +47,46 @@ async def test_lessons_endpoint(client):
 
 
 @pytest.mark.unit
+async def test_lessons_endpoint_filters_by_category(client):
+    resp = await client.get("/api/v1/lessons", params={"category": "duckdb"})
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]
+    assert {lesson["category"] for lesson in body["data"]} == {"duckdb"}
+
+
+@pytest.mark.unit
+async def test_lessons_endpoint_filters_by_difficulty(client):
+    resp = await client.get("/api/v1/lessons", params={"difficulty": "intermediate"})
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]
+    assert {lesson["difficulty"] for lesson in body["data"]} == {"intermediate"}
+
+
+@pytest.mark.unit
+async def test_lessons_endpoint_filters_by_keyword(client):
+    resp = await client.get("/api/v1/lessons", params={"keyword": "lazy"})
+    body = resp.json()
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]
+    assert all(
+        "lazy" in " ".join(
+            [
+                lesson["title"],
+                lesson["description"],
+                " ".join(lesson["tags"]),
+                lesson["slug"],
+            ],
+        ).lower()
+        for lesson in body["data"]
+    )
+
+
+@pytest.mark.unit
 async def test_playground_execute_returns_mock_result(client, monkeypatch):
     monkeypatch.setattr(settings, "SANDBOX_DOCKER_ENABLED", False)
     monkeypatch.setattr(settings, "SANDBOX_LOCAL_ENABLED", False)
