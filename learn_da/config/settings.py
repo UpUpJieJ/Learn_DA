@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     LEARN_DA_EMBEDDING_BASE_URL: Optional[str] = None
     LEARN_DA_EMBEDDING_MODEL: Optional[str] = None
     LEARN_DA_EMBEDDING_DIM: Optional[int] = None
+    VECTOR_STORE_TYPE: str = "in_memory"
+    VECTOR_STORE_PATH: str = "knowledge_store.json"
+    AGENT_ROUTING_STRATEGY: str = "hybrid"
+    SESSION_STORE_TYPE: str = "in_memory"
+    SESSION_STORE_PATH: str = "sessions"
 
     SANDBOX_DOCKER_ENABLED: bool = False
     SANDBOX_DOCKER_IMAGE: str = "polars-duckdb-sandbox:latest"

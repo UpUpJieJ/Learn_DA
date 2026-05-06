@@ -78,6 +78,7 @@ class AgentRouteInfo(BaseResponseModel):
     tool_name: ToolName
     confidence: float
     reason: str
+    strategy: str = "keyword"
     matched_keyword: str | None = None
 
 

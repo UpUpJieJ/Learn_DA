@@ -7,7 +7,7 @@ from config.settings import settings
 from .knowledge import KnowledgeRetriever, build_knowledge_block
 from .prompts import build_chat_messages, build_explain_messages, build_fix_messages
 from .results import parse_structured_result
-from .routing import AgentRouter
+from .intelligent_routing import IntelligentRouter, RoutingStrategy
 from .schemas import (
     AgentChatData,
     AgentChatRequest,
@@ -27,12 +27,13 @@ class AgentService:
         self,
         sandbox_service: SandboxService | None = None,
         knowledge_retriever: KnowledgeRetriever | None = None,
-        router: AgentRouter | None = None,
+        router: IntelligentRouter | None = None,
+        routing_strategy: RoutingStrategy = RoutingStrategy.HYBRID,
     ) -> None:
         self.model = settings.effective_llm_model
         self.sandbox_service = sandbox_service or SandboxService()
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
-        self.router = router or AgentRouter()
+        self.router = router or IntelligentRouter(strategy=routing_strategy)
 
     def extract_user_message(self, payload: AgentChatRequest) -> str:
         if payload.message:
@@ -41,12 +42,13 @@ class AgentService:
             return payload.payload.message
         return ""
 
-    def resolve_tool_name(self, message: str) -> ToolName:
-        return self.router.resolve(message).tool_name
+    async def resolve_tool_name(self, message: str) -> ToolName:
+        route = await self.router.resolve(message)
+        return route.tool_name
 
     async def chat(self, payload: AgentChatRequest) -> AgentChatData:
         user_message = self.extract_user_message(payload)
-        route = self.router.resolve(user_message)
+        route = await self.router.resolve(user_message)
         tool_name = route.tool_name
         knowledge_block = await self._retrieve_knowledge(
             query=user_message,
@@ -67,7 +69,13 @@ class AgentService:
                 content=content,
                 model=self.model,
                 used_fallback=False,
-                route=AgentRouteInfo.model_validate(route.__dict__),
+                route=AgentRouteInfo(
+                    tool_name=route.tool_name,
+                    confidence=route.confidence,
+                    reason=route.reason,
+                    strategy=route.strategy.value,
+                    matched_keyword=route.matched_keyword,
+                ),
                 structured_result=parse_structured_result(tool_name, content),
             )
         fallback_content = get_agent_tool(tool_name).fallback_content
@@ -76,7 +84,13 @@ class AgentService:
             content=fallback_content,
             model=self.model,
             used_fallback=True,
-            route=AgentRouteInfo.model_validate(route.__dict__),
+            route=AgentRouteInfo(
+                tool_name=route.tool_name,
+                confidence=route.confidence,
+                reason=route.reason,
+                strategy=route.strategy.value,
+                matched_keyword=route.matched_keyword,
+            ),
             structured_result=parse_structured_result(tool_name, fallback_content),
         )
 
