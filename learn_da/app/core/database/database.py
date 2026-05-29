@@ -2,6 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from config.settings import settings
 
+# 导出数据库 URL，供 Alembic env.py 使用
+SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 engine_kwargs: dict = {
     "echo": settings.DB_ECHO,

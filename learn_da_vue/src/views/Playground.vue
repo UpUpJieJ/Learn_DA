@@ -4,8 +4,11 @@ import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
+import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
+import { getVisitorId } from "@/lib/visitorId";
 import type { DataFrameCell, ExampleSummary, LessonDetail } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
+import { renderMarkdown } from "@/lib/markdown";
 
 const route = useRoute();
 const router = useRouter();
@@ -92,37 +95,6 @@ function goToNextLesson() {
 
 function toggleDocPanel() {
   isDocPanelCollapsed.value = !isDocPanelCollapsed.value;
-}
-
-// 简易 Markdown 渲染
-function renderMarkdown(md: string): string {
-  if (!md) return "";
-  let html = md
-    .replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
-      const escaped = code
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return `<div class="doc-code-block" data-lang="${
-        lang || "text"
-      }"><div class="doc-code-header"><span>${
-        lang || "text"
-      }</span><button class="doc-code-load" data-code="${encodeURIComponent(
-        code.trim()
-      )}">加载代码</button></div><pre><code>${escaped}</code></pre></div>`;
-    })
-    .replace(/`([^`]+)`/g, '<code class="doc-inline-code">$1</code>')
-    .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, "<ul>$&</ul>")
-    .replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>")
-    .replace(/\n{2,}/g, "</p><p>");
-  return `<p>${html}</p>`;
 }
 
 function handleDocClick(e: MouseEvent) {
@@ -315,11 +287,13 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
   document.addEventListener("click", handleClickOutside);
+  startAutoSave();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   document.removeEventListener("click", handleClickOutside);
+  stopAutoSave();
 });
 
 function handleClickOutside(e: MouseEvent) {
@@ -329,7 +303,67 @@ function handleClickOutside(e: MouseEvent) {
   }
 }
 
+// =====================================================
+// 代码保存 & 自动保存 & 事件追踪
+// =====================================================
+
+const isSaving = ref(false);
+const lastSaveTime = ref<number | null>(null);
+const saveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 手动保存代码快照 */
+async function saveCode() {
+  if (!playgroundStore.code.trim() || isSaving.value) return;
+  isSaving.value = true;
+  saveStatus.value = "saving";
+  try {
+    await saveCodeSnapshot({
+      visitorId: getVisitorId(),
+      lessonSlug: props.slug || undefined,
+      code: playgroundStore.code,
+      language: playgroundStore.language,
+    });
+    lastSaveTime.value = Date.now();
+    saveStatus.value = "saved";
+    setTimeout(() => {
+      if (saveStatus.value === "saved") saveStatus.value = "idle";
+    }, 3000);
+  } catch {
+    saveStatus.value = "error";
+    setTimeout(() => {
+      if (saveStatus.value === "error") saveStatus.value = "idle";
+    }, 5000);
+  } finally {
+    isSaving.value = false;
+  }
+}
+
+/** 启动 30 秒自动保存 */
+function startAutoSave() {
+  stopAutoSave();
+  autoSaveTimer = setInterval(() => {
+    if (playgroundStore.code.trim()) {
+      saveCode();
+    }
+  }, 30000);
+}
+
+function stopAutoSave() {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+}
+
 async function runCode() {
+  // 上报代码运行事件
+  trackEvent({
+    visitorId: getVisitorId(),
+    eventType: "code_run",
+    lessonSlug: props.slug || undefined,
+  }).catch(() => {});
+
   const response = await playgroundStore.runCode();
   activeResultTab.value = response?.resultType === "dataframe" ? "dataframe" : "output";
 }
@@ -496,6 +530,32 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
             +
           </button>
         </div>
+
+        <!-- 保存状态 -->
+        <span
+          v-if="saveStatus === 'saved'"
+          class="text-xs text-emerald-400 flex items-center gap-1"
+        >
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+          已保存
+        </span>
+        <span v-else-if="saveStatus === 'saving'" class="text-xs text-blue-400">保存中…</span>
+        <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
+
+        <!-- 保存 -->
+        <button
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all"
+          title="保存代码 (每30秒自动保存)"
+          @click="saveCode"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+          </svg>
+          保存
+        </button>
 
         <!-- 运行 -->
         <button
@@ -703,7 +763,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
             <div
               v-else-if="currentLesson"
               class="doc-content px-5 py-4"
-              v-html="renderMarkdown(currentLesson.content)"
+              v-html="renderMarkdown(currentLesson.content, { codeLoadable: true })"
             />
 
             <!-- 无内容 -->

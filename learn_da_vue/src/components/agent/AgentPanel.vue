@@ -3,9 +3,10 @@ import { ref, computed, nextTick, watch, onUnmounted } from "vue";
 import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
 import { streamChatMessage, buildChatHistory, explainCode, fixCode } from "@/api/agent";
+import { renderMarkdown } from "@/lib/markdown";
 import type { ChatMessage, AgentContext } from "@/types/api";
 
-type QuickActionKey = "explain" | "fix" | "exercise" | "next";
+type QuickActionKey = "explain" | "fix" | "exercise" | "next" | "pandas2polars" | "sql2duckdb";
 
 interface QuickAction {
     key: QuickActionKey;
@@ -60,13 +61,25 @@ const quickActions = computed<QuickAction[]>(() => [
         key: "explain",
         label: "解释代码",
         disabled: !hasCurrentCode.value,
-        prompt: "请结合当前课程，解释我现在 Playground 里的代码。",
+        prompt: "请结合当前课程，解释我现在 Playground 里的代码，重点说明与 Pandas/SQL 写法的区别。",
     },
     {
         key: "fix",
         label: "修复错误",
         disabled: !hasCurrentCode.value || !hasCurrentError.value,
         prompt: "请结合当前课程和最近一次执行错误，帮我修复当前代码。",
+    },
+    {
+        key: "pandas2polars",
+        label: "Pandas → Polars",
+        disabled: false,
+        prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的迁移示例，说明关键 API 对应关系。",
+    },
+    {
+        key: "sql2duckdb",
+        label: "SQL → DuckDB",
+        disabled: false,
+        prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法示例，说明关键差异。",
     },
     {
         key: "exercise",
@@ -214,7 +227,7 @@ async function sendMessage(text?: string) {
 
 async function sendQuickAction(action: QuickAction) {
     if (action.disabled || isLoading.value) return;
-    if (action.key === "exercise" || action.key === "next") {
+    if (["exercise", "next", "pandas2polars", "sql2duckdb"].includes(action.key)) {
         await sendMessage(action.prompt);
         return;
     }
@@ -316,30 +329,7 @@ function injectToPlayground(code: string) {
 }
 
 function renderMessageContent(content: string): string {
-    if (!content) return "";
-
-    let html = content
-        .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-            const escaped = code
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-            const id = `block-${Math.random().toString(36).slice(2, 7)}`;
-            return `<div class="code-block" data-id="${id}" data-lang="${lang || "text"}" data-code="${encodeURIComponent(code.trim())}"><div class="code-header"><span class="code-lang">${lang || "text"}</span><div class="code-actions"><button class="code-btn copy-btn" data-id="${id}">复制</button><button class="code-btn run-btn" data-id="${id}">运行</button></div></div><pre><code>${escaped}</code></pre></div>`;
-        })
-        .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*(.+?)\*/g, "<em>$1</em>")
-        .replace(/^### (.+)$/gm, '<h4 class="h4">$1</h4>')
-        .replace(/^## (.+)$/gm, '<h3 class="h3">$1</h3>')
-        .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
-        .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, '<ul class="ul">$&</ul>')
-        .replace(/^\d+\. (.+)$/gm, "<li>$1</li>")
-        .replace(/^> (.+)$/gm, '<blockquote class="quote">$1</blockquote>')
-        .replace(/\n\n/g, "</p><p>")
-        .replace(/\n/g, "<br />");
-
-    return `<p>${html}</p>`;
+    return renderMarkdown(content, { codeRunnable: true, newlineToBr: true });
 }
 
 function handleMessageClick(e: MouseEvent) {
@@ -399,7 +389,7 @@ onUnmounted(() => {
         <button
             v-if="!isOpen"
             class="fixed top-20 right-5 z-40 w-10 h-10 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white shadow-lg border border-white/10 flex items-center justify-center transition-all duration-200 hover:shadow-xl"
-            title="助手"
+            title="学习助手"
             @click="localStateStore.openAgent()"
         >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -436,7 +426,7 @@ onUnmounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </div>
-                    <span class="text-sm font-medium text-slate-200">助手</span>
+                    <span class="text-sm font-medium text-slate-200">学习助手</span>
                 </div>
 
                 <div class="flex items-center gap-1">
@@ -473,12 +463,13 @@ onUnmounted(() => {
                     v-if="messageCount === 0"
                     class="flex flex-col items-center justify-center h-full px-6 text-center"
                 >
-                    <div class="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mb-4">
-                        <svg class="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </div>
-                    <p class="text-sm text-slate-500">输入问题获得帮助</p>
+                    <p class="text-sm text-slate-300 font-medium mb-1">我是你的学习助手</p>
+                    <p class="text-xs text-slate-500">可以帮你理解代码、修复错误、对比 Pandas/SQL 迁移写法</p>
                 </div>
 
                 <!-- 消息 -->
@@ -503,7 +494,7 @@ onUnmounted(() => {
                             class="max-w-[90%]"
                         >
                             <div class="rounded-2xl px-4 py-2.5 bg-white/5 border border-white/8 text-slate-300 text-sm leading-relaxed">
-                                <div v-html="renderMessageContent(msg.content)" />
+                                <div class="msg-content" v-html="renderMessageContent(msg.content)" />
                                 <span
                                     v-if="msg.isStreaming"
                                     class="inline-block w-0.5 h-3.5 bg-blue-400 ml-0.5 animate-pulse align-text-bottom"
@@ -539,7 +530,7 @@ onUnmounted(() => {
 
             <!-- 输入区域 -->
             <div class="shrink-0 bg-[#1a1a1a] border-t border-white/8 px-4 py-3">
-                <div class="mb-3 grid grid-cols-2 gap-2">
+                <div class="mb-3 grid grid-cols-3 gap-2">
                     <button
                         v-for="action in quickActions"
                         :key="action.key"
@@ -639,7 +630,7 @@ onUnmounted(() => {
                         class="max-w-[90%]"
                     >
                         <div class="rounded-2xl px-4 py-2.5 bg-white/5 border border-white/8 text-slate-300 text-sm leading-relaxed">
-                            <div v-html="renderMessageContent(msg.content)" />
+                            <div class="msg-content" v-html="renderMessageContent(msg.content)" />
                             <span
                                 v-if="msg.isStreaming"
                                 class="inline-block w-0.5 h-3.5 bg-blue-400 ml-0.5 animate-pulse align-text-bottom"
@@ -751,11 +742,11 @@ onUnmounted(() => {
 </style>
 
 <style>
-/* Markdown 内容 */
+/* Markdown 内容（.msg-content 包装在模板中添加） */
 .msg-content p { margin: 0 0 0.4rem 0; line-height: 1.6; }
 .msg-content p:last-child { margin-bottom: 0; }
-.msg-content .h3 { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; margin: 0.6rem 0 0.3rem 0; }
-.msg-content .h4 { font-size: 0.85rem; font-weight: 600; color: #e2e8f0; margin: 0.5rem 0 0.25rem 0; }
+.msg-content h3 { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; margin: 0.6rem 0 0.3rem 0; }
+.msg-content h4 { font-size: 0.85rem; font-weight: 600; color: #e2e8f0; margin: 0.5rem 0 0.25rem 0; }
 .msg-content strong { font-weight: 600; color: #f1f5f9; }
 .msg-content em { font-style: italic; color: #94a3b8; }
 .msg-content .inline-code {
@@ -766,9 +757,9 @@ onUnmounted(() => {
     padding: 0.1em 0.4em;
     border-radius: 4px;
 }
-.msg-content .ul { padding-left: 1.2rem; margin: 0.3rem 0; list-style: disc; }
-.msg-content .ul li { margin-bottom: 0.2rem; color: #cbd5e1; }
-.msg-content .quote { border-left: 2px solid #4b5563; padding: 0.3rem 0.6rem; margin: 0.4rem 0; background: rgba(255,255,255,0.03); border-radius: 0 4px 4px 0; color: #9ca3af; }
+.msg-content ul { padding-left: 1.2rem; margin: 0.3rem 0; list-style: disc; }
+.msg-content li { margin-bottom: 0.2rem; color: #cbd5e1; }
+.msg-content blockquote { border-left: 2px solid #4b5563; padding: 0.3rem 0.6rem; margin: 0.4rem 0; background: rgba(255,255,255,0.03); border-radius: 0 4px 4px 0; color: #9ca3af; }
 
 /* 代码块 */
 .code-block { margin: 0.5rem 0; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #1e1e1e; }

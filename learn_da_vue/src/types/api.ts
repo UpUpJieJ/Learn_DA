@@ -187,3 +187,115 @@ export interface ExampleDetail extends ExampleSummary {
     code: string;
     expectedOutput: string;
 }
+
+// =====================================================
+// Analytics 模块
+// =====================================================
+
+/** 行为事件类型 */
+export type EventType =
+    | "code_run"
+    | "code_save"
+    | "lesson_complete"
+    | "ai_help"
+    | "lesson_start";
+
+/** 事件上报请求 */
+export interface EventTrackRequest {
+    visitorId: string;
+    eventType: EventType;
+    lessonSlug?: string;
+    durationSeconds?: number;
+}
+
+/** 事件上报响应 */
+export interface EventTrackResponse {
+    recorded: boolean;
+}
+
+/** 代码快照请求 */
+export interface CodeSnapshotRequest {
+    visitorId: string;
+    lessonSlug?: string;
+    code: string;
+    language?: string;
+    description?: string;
+}
+
+/** 代码快照响应 */
+export interface CodeSnapshotResponse {
+    snapshotId: number;
+    version: number;
+}
+
+/** 代码快照列表项 */
+export interface CodeSnapshotItem {
+    id: number;
+    lessonSlug?: string;
+    code: string;
+    language: string;
+    version: number;
+    description?: string;
+    createdTime: string;
+}
+
+/** 首页统计数据 */
+export interface HomeStats {
+    totalLearners: number;
+    todayActiveUsers: number;
+    totalCodeRuns: number;
+    totalLessons: number;
+}
+
+/** 用户画像 */
+export interface UserProfile {
+    totalLearningMinutes: number;
+    lessonsCompleted: number;
+    codeRuns: number;
+    aiHelps: number;
+    currentStreak: number;
+    longestStreak: number;
+    lastActiveDate: string | null;
+    polarsScore: number;
+    duckdbScore: number;
+    sqlScore: number;
+    dataProcessingScore: number;
+    apiMasteryScore: number;
+}
+
+/** 课程学习统计 */
+export interface LessonStat {
+    slug: string;
+    codeRuns: number;
+    aiHelps: number;
+    completed: boolean;
+}
+
+/** 用户课程统计 */
+export interface UserLessonStats {
+    completedLessons: string[];
+    lessonDetails: LessonStat[];
+}
+
+/** 每日趋势数据 */
+export interface DailyTrendItem {
+    date: string;
+    activeUsers: number;
+    codeRuns: number;
+    lessonsCompleted: number;
+    aiHelps: number;
+}
+
+/** 推荐课程响应 */
+export interface RecommendedLessonsResponse {
+    recommended: LessonSummary | null;
+    completedCount: number;
+    totalCount: number;
+}
+
+/** 分类进度 */
+export interface CategoryProgress {
+    polars: number;
+    duckdb: number;
+    combined: number;
+}

@@ -29,6 +29,7 @@ export default defineConfig({
             output: {
                 manualChunks: {
                     "monaco-editor": ["@monaco-editor/loader"],
+                    echarts: ["echarts"],
                 },
             },
         },

@@ -3,6 +3,8 @@ import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useLocalStateStore } from '@/stores/localState'
 import { learningTracks, platformCopy } from '@/lib/learningTracks'
+import { fetchHomeStats } from '@/api/analytics'
+import type { HomeStats } from '@/types/api'
 
 const router = useRouter()
 const localStateStore = useLocalStateStore()
@@ -14,50 +16,29 @@ const cardsVisible = ref(false)
 onMounted(() => {
   setTimeout(() => (heroVisible.value = true), 50)
   setTimeout(() => (cardsVisible.value = true), 300)
+  loadHomeStats()
 })
 
-// ---- 学习路径数据 ----
-const fallbackLearningPaths = [
-  {
-    id: 'polars',
-    icon: '🐻‍❄️',
-    title: 'Polars',
-    subtitle: '现代 DataFrame 库',
-    description: '基于 Rust 构建的高性能数据处理库，语法简洁，比 Pandas 快 10-100x，天然支持惰性求值与并行计算。',
-    tags: ['DataFrame', '惰性执行', '高性能', 'Rust'],
-    color: 'blue',
-    slug: '/learn?category=polars',
-    lessonCount: 12,
-  },
-  {
-    id: 'duckdb',
-    icon: '🦆',
-    title: 'DuckDB',
-    subtitle: '嵌入式分析数据库',
-    description: '无需服务器的列式 OLAP 数据库，直接在 Python 进程内运行 SQL，可无缝读取 CSV、Parquet 等格式。',
-    tags: ['SQL', 'OLAP', '零配置', '列式存储'],
-    color: 'yellow',
-    slug: '/learn?category=duckdb',
-    lessonCount: 10,
-  },
-  {
-    id: 'combined',
-    icon: '⚡',
-    title: '组合实战',
-    subtitle: '联合使用最佳实践',
-    description: '掌握 Polars 与 DuckDB 的协同工作方式，构建完整数据分析管道，处理真实世界的复杂数据场景。',
-    tags: ['数据管道', '最佳实践', '综合案例'],
-    color: 'purple',
-    slug: '/learn?category=combined',
-    lessonCount: 8,
-  },
-]
+// ---- 平台统计数据（从后端获取） ----
+const homeStats = ref<HomeStats | null>(null)
 
+async function loadHomeStats() {
+  try {
+    homeStats.value = await fetchHomeStats()
+  } catch {
+    // 静默失败，使用默认值
+  }
+}
+
+// ---- 学习路径数据 ----
 const learningPaths = learningTracks.map((track) => ({
   id: track.key,
   title: track.label,
   subtitle: track.subtitle,
   description: track.description,
+  targetAudience: track.targetAudience,
+  learningOutcome: track.learningOutcome,
+  recommendedStart: track.recommendedStart,
   tags: track.tags,
   color: track.color,
   slug: track.route,
@@ -88,21 +69,27 @@ const features = [
   },
 ]
 
-// ---- 统计数据 ----
-const stats = [
-  { label: '课程总数', value: '30+' },
-  { label: '代码示例', value: '100+' },
-  { label: '覆盖 API', value: '200+' },
-  { label: '完全免费', value: '✓' },
-]
+// ---- 统计数据（优先展示后端实时数据） ----
+const stats = computed(() => {
+  if (homeStats.value) {
+    return [
+      { label: '课程总数', value: `${homeStats.value.totalLessons}` },
+      { label: '学习人数', value: homeStats.value.totalLearners > 0 ? `${homeStats.value.totalLearners}` : '—' },
+      { label: '代码运行', value: homeStats.value.totalCodeRuns > 0 ? `${homeStats.value.totalCodeRuns}` : '—' },
+      { label: '完全免费', value: '✓' },
+    ]
+  }
+  return [
+    { label: '课程总数', value: '11' },
+    { label: '学习人数', value: '—' },
+    { label: '代码运行', value: '—' },
+    { label: '完全免费', value: '✓' },
+  ]
+})
 
 const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug)
 
 // ---- 操作 ----
-function goToLearning() {
-  router.push('/learn')
-}
-
 function goToPlayground() {
   router.push('/playground')
 }
@@ -179,24 +166,18 @@ const colorTag: Record<string, string> = {
 
         <!-- 标题 -->
         <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-          系统学习
+          {{ platformCopy.heroTitle }}
+          <br />
           <span
             class="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent"
-          >数据分析</span>
-          <br />
-          <span class="text-white/90">实战技能</span>
+          >{{ platformCopy.heroTitleHighlight }}</span>
         </h1>
 
         <!-- 副标题 -->
         <p
           class="text-lg md:text-xl text-slate-300 max-w-2xl mb-4 leading-relaxed"
         >
-          从数据读取、清洗、查询到结果验证，在浏览器里完成可运行的练习。
-          当前开放
-          <code class="px-1.5 py-0.5 rounded bg-white/10 text-blue-300 font-mono text-base">Polars</code>
-          与
-          <code class="px-1.5 py-0.5 rounded bg-white/10 text-yellow-300 font-mono text-base">DuckDB</code>
-          专题，后续持续扩展更多数据分析方向。
+          {{ platformCopy.heroSubtitle }}
         </p>
 
         <!-- 统计数据 -->
@@ -215,23 +196,22 @@ const colorTag: Record<string, string> = {
         <div class="flex flex-wrap gap-4 justify-center">
           <button
             class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold text-base transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-400/40 hover:-translate-y-0.5 active:translate-y-0"
-            @click="goToLearning"
+            @click="router.push('/learn?category=polars')"
           >
-            <span>开始学习</span>
+            <span>开始 Polars 迁移学习</span>
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </button>
 
           <button
-            class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-base border border-white/20 hover:border-white/30 transition-all duration-200 backdrop-blur-sm hover:-translate-y-0.5 active:translate-y-0"
-            @click="goToPlayground"
+            class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-yellow-900 font-semibold text-base transition-all duration-200 shadow-lg shadow-yellow-500/30 hover:shadow-yellow-400/40 hover:-translate-y-0.5 active:translate-y-0"
+            @click="router.push('/learn?category=duckdb')"
           >
-            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <span>开始 DuckDB 迁移学习</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
-            <span>打开 Playground</span>
           </button>
 
           <button
@@ -254,10 +234,44 @@ const colorTag: Record<string, string> = {
     ================================================= -->
     <section class="max-w-6xl mx-auto px-6 py-16">
       <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold text-slate-800 mb-3">选择你的学习路径</h2>
+        <h2 class="text-3xl font-bold text-slate-800 mb-3">选择你的迁移学习路径</h2>
         <p class="text-slate-500 max-w-xl mx-auto">
-          先从当前开放专题入手，逐步扩展到更完整的数据分析技能体系。
+          根据你的技术背景，选择最适合的起点开始学习。
         </p>
+      </div>
+
+      <!-- 推荐起步路径 -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+        <div
+          class="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-100 cursor-pointer hover:shadow-md transition-all"
+          @click="router.push('/learn?category=polars')"
+        >
+          <span class="text-2xl">🐼</span>
+          <div>
+            <p class="text-sm font-semibold text-blue-800">我会 Pandas → 先学 Polars</p>
+            <p class="text-xs text-blue-600/70">Pandas 用户的最短迁移路径</p>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-3 p-4 rounded-xl bg-yellow-50 border border-yellow-100 cursor-pointer hover:shadow-md transition-all"
+          @click="router.push('/learn?category=duckdb')"
+        >
+          <span class="text-2xl">🗃️</span>
+          <div>
+            <p class="text-sm font-semibold text-yellow-800">我会 SQL → 先学 DuckDB</p>
+            <p class="text-xs text-yellow-600/70">SQL 用户的本地分析升级</p>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-3 p-4 rounded-xl bg-purple-50 border border-purple-100 cursor-pointer hover:shadow-md transition-all"
+          @click="router.push('/learn')"
+        >
+          <span class="text-2xl">⚡</span>
+          <div>
+            <p class="text-sm font-semibold text-purple-800">我都会 → 进入组合实战</p>
+            <p class="text-xs text-purple-600/70">构建完整数据分析管道</p>
+          </div>
+        </div>
       </div>
 
       <div
@@ -285,10 +299,17 @@ const colorTag: Record<string, string> = {
             </div>
           </div>
 
-          <!-- 描述 -->
-          <p class="text-sm text-slate-600 leading-relaxed mb-5">
-            {{ path.description }}
-          </p>
+          <!-- 适合谁 -->
+          <div class="mb-3">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">适合谁</p>
+            <p class="text-sm text-slate-600 leading-relaxed">{{ path.targetAudience }}</p>
+          </div>
+
+          <!-- 你将获得什么 -->
+          <div class="mb-4">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">你将获得什么</p>
+            <p class="text-sm text-slate-600 leading-relaxed">{{ path.learningOutcome }}</p>
+          </div>
 
           <!-- 标签 -->
           <div class="flex flex-wrap gap-2 mb-5">
@@ -302,22 +323,25 @@ const colorTag: Record<string, string> = {
             </span>
           </div>
 
-          <!-- 底部：课程数 + 箭头 -->
-          <div class="flex items-center justify-between mt-auto pt-4 border-t border-black/5">
-            <span class="text-xs text-slate-400">{{ path.lessonCount }} 节课程</span>
-            <span
-              class="flex items-center gap-1 text-sm font-medium text-slate-500 group-hover:text-blue-600 transition-colors"
-            >
-              开始学习
-              <svg
-                class="w-4 h-4 transition-transform group-hover:translate-x-1"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+          <!-- 底部：推荐起点 + 课程数 + 箭头 -->
+          <div class="mt-auto pt-4 border-t border-black/5">
+            <p class="text-xs text-blue-600/70 mb-2">💡 {{ path.recommendedStart }}</p>
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-400">{{ path.lessonCount }} 节课程</span>
+              <span
+                class="flex items-center gap-1 text-sm font-medium text-slate-500 group-hover:text-blue-600 transition-colors"
               >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-              </svg>
-            </span>
+                开始学习
+                <svg
+                  class="w-4 h-4 transition-transform group-hover:translate-x-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </span>
+            </div>
           </div>
         </div>
       </div>

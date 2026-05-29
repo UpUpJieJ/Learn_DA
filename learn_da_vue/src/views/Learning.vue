@@ -9,7 +9,7 @@ import type {
     LessonDifficulty,
 } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
-import { currentTrackKeys, learningTrackMeta } from "@/lib/learningTracks";
+import { currentTrackKeys, learningTrackMeta, learningTracks } from "@/lib/learningTracks";
 
 const router = useRouter();
 const route = useRoute();
@@ -167,6 +167,15 @@ const completedCount = computed(
             .length,
 );
 
+// ---- 当前选中路径的元信息 ----
+const currentTrackInfo = computed(() => {
+    if (activeCategory.value === "all") return null;
+    return learningTrackMeta[activeCategory.value] ?? null;
+});
+
+// ---- 继续学习 ----
+const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug);
+
 // =====================================================
 // 分组展示（按 category 分组，仅在「全部」模式下）
 // =====================================================
@@ -261,7 +270,7 @@ function clearFilters() {
                                 </span>
                             </div>
                             <p class="hidden md:block text-xs text-slate-500 mt-0.5">
-                                按专题学习数据分析工具与方法，当前支持 Polars / DuckDB。
+                                按迁移路径学习 Polars 与 DuckDB，从你熟悉的技术栈出发。
                             </p>
                         </div>
                     </div>
@@ -345,6 +354,64 @@ function clearFilters() {
         </div>
 
         <div class="max-w-6xl mx-auto px-6 py-8">
+            <!-- ================================================
+           路径说明（选中具体分类时显示）
+      ================================================= -->
+            <div
+                v-if="currentTrackInfo"
+                class="mb-6 p-5 rounded-2xl border transition-all"
+                :class="
+                    currentTrackInfo.color === 'blue'
+                        ? 'bg-blue-50/50 border-blue-100'
+                        : currentTrackInfo.color === 'yellow'
+                        ? 'bg-yellow-50/50 border-yellow-100'
+                        : 'bg-purple-50/50 border-purple-100'
+                "
+            >
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="flex-1 min-w-0">
+                        <h2 class="text-lg font-bold text-slate-800 mb-1">
+                            {{ currentTrackInfo.label }}
+                        </h2>
+                        <p class="text-sm text-slate-500 mb-2">
+                            {{ currentTrackInfo.description }}
+                        </p>
+                        <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                            <span class="text-slate-500">
+                                <strong class="text-slate-700">适合：</strong>{{ currentTrackInfo.targetAudience }}
+                            </span>
+                            <span class="text-slate-500">
+                                <strong class="text-slate-700">你将获得：</strong>{{ currentTrackInfo.learningOutcome }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-xs text-blue-600/70 shrink-0">
+                        💡 {{ currentTrackInfo.recommendedStart }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================================================
+           继续学习（全部模式 + 有历史记录时显示）
+      ================================================= -->
+            <div
+                v-if="activeCategory === 'all' && lastVisitedSlug"
+                class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-200 hover:shadow-sm cursor-pointer transition-all"
+                @click="router.push(`/learn/${lastVisitedSlug}`)"
+            >
+                <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-700">继续上次学习</p>
+                    <p class="text-xs text-slate-400 truncate">{{ lastVisitedSlug }}</p>
+                </div>
+                <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
             <!-- ================================================
            筛选栏
       ================================================= -->
@@ -505,6 +572,12 @@ function clearFilters() {
                             class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs font-medium ml-1"
                         >
                             {{ group.items.length }} 课
+                        </span>
+                        <span
+                            v-if="group.items.filter(l => localStateStore.isLessonCompleted(l.slug)).length > 0"
+                            class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-xs font-medium"
+                        >
+                            已完成 {{ group.items.filter(l => localStateStore.isLessonCompleted(l.slug)).length }}/{{ group.items.length }}
                         </span>
                     </div>
 

@@ -2,9 +2,12 @@
 import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
+import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
+import { getVisitorId } from "@/lib/visitorId";
 import type { LessonDetail, LessonDifficulty } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
+import { renderMarkdown } from "@/lib/markdown";
 
 // =====================================================
 // Props
@@ -73,6 +76,13 @@ async function loadLesson(slug: string) {
     try {
         lesson.value = await fetchLessonBySlug(slug);
         localStateStore.setLastVisitedLesson(slug);
+
+        // 上报课程开始学习事件
+        trackEvent({
+            visitorId: getVisitorId(),
+            eventType: "lesson_start",
+            lessonSlug: slug,
+        }).catch(() => {});
 
         // 等 DOM 渲染后提取目录
         await nextTick();
@@ -144,9 +154,24 @@ const isCompleted = computed(() =>
     lesson.value ? localStateStore.isLessonCompleted(lesson.value.slug) : false,
 );
 
+// ---- 完成动画控制 ----
+const showCompletionAnim = ref(false);
+
 function toggleCompleted() {
     if (!lesson.value) return;
+    const wasCompleted = localStateStore.isLessonCompleted(lesson.value.slug);
     localStateStore.toggleLessonCompleted(lesson.value.slug);
+
+    // 标记为完成时播放庆祝动画 + 上报事件
+    if (!wasCompleted) {
+        showCompletionAnim.value = true;
+        setTimeout(() => (showCompletionAnim.value = false), 2000);
+        trackEvent({
+            visitorId: getVisitorId(),
+            eventType: "lesson_complete",
+            lessonSlug: lesson.value.slug,
+        }).catch(() => {});
+    }
 }
 
 // =====================================================
@@ -192,55 +217,6 @@ function scrollToAnchor(id: string) {
 
 function goToLesson(slug: string) {
     router.push(`/learn/${slug}`);
-}
-
-// =====================================================
-// 简易 Markdown 渲染（无外部依赖，后续可替换为 marked/markdown-it）
-// =====================================================
-
-function renderMarkdown(md: string): string {
-    if (!md) return "";
-
-    let html = md
-        // 转义 HTML 特殊字符（仅在代码块外）
-        // 代码块（```lang ... ```）
-        .replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
-            const escaped = code
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-            const langClass = lang ? ` class="language-${lang}"` : "";
-            return `<pre class="code-block" data-lang="${lang || "text"}"><code${langClass}>${escaped}</code></pre>`;
-        })
-        // 行内代码
-        .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-        // 标题 h1-h4
-        .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
-        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-        .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-        // 粗体 / 斜体
-        .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
-        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*(.+?)\*/g, "<em>$1</em>")
-        // 无序列表
-        .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
-        .replace(/(<li>[\s\S]*?<\/li>\n?)+/g, "<ul>$&</ul>")
-        // 有序列表
-        .replace(/^\d+\. (.+)$/gm, "<li>$1</li>")
-        // 水平线
-        .replace(/^---+$/gm, "<hr />")
-        // 引用块
-        .replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>")
-        // 链接
-        .replace(
-            /\[([^\]]+)\]\(([^)]+)\)/g,
-            '<a href="$2" target="_blank" rel="noopener">$1</a>',
-        )
-        // 段落（连续空行分段）
-        .replace(/\n{2,}/g, "</p><p>");
-
-    return `<p>${html}</p>`;
 }
 
 </script>
@@ -292,6 +268,21 @@ function renderMarkdown(md: string): string {
          正常内容
     ================================================= -->
         <template v-else-if="lesson">
+            <!-- 完成庆祝动画 -->
+            <Transition name="completion-fade">
+                <div
+                    v-if="showCompletionAnim"
+                    class="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+                >
+                    <div class="flex flex-col items-center gap-4 animate-completion-bounce">
+                        <div class="text-7xl">🎉</div>
+                        <div class="text-2xl font-bold text-emerald-600 bg-white/90 px-6 py-3 rounded-2xl shadow-xl border border-emerald-100">
+                            课程完成！
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+
             <!-- 顶部导航面包屑 -->
             <div class="bg-white border-b border-slate-100 sticky top-0 z-20">
                 <div
@@ -583,6 +574,103 @@ function renderMarkdown(md: string): string {
                     </div>
 
                     <!-- ================================================
+               练习任务
+          ================================================= -->
+                    <div class="mt-10 rounded-2xl border border-blue-100 bg-blue-50/50 p-6">
+                        <div class="flex items-center gap-2 mb-3">
+                            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                            </svg>
+                            <h3 class="text-lg font-bold text-blue-800">动手练习</h3>
+                        </div>
+                        <p class="text-sm text-blue-700/80 mb-4">
+                            学完之后，试试在 Playground 中自己动手改一改：
+                        </p>
+                        <ul class="space-y-2 text-sm text-blue-700">
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-0.5">•</span>
+                                <span>尝试修改代码中的筛选条件或排序方式，观察输出变化</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-0.5">•</span>
+                                <span>增加一个新的聚合操作（如 group_by / GROUP BY）</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-blue-400 mt-0.5">•</span>
+                                <span>向 Agent 提问："根据本课给我一个小练习"</span>
+                            </li>
+                        </ul>
+                        <button
+                            class="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                            @click="openInPlayground()"
+                        >
+                            <svg class="w-4 h-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            去 Playground 练习
+                        </button>
+                    </div>
+
+                    <!-- ================================================
+               下一步引导
+          ================================================= -->
+                    <div class="mt-8 rounded-2xl border border-slate-100 bg-white p-6">
+                        <h3 class="text-base font-bold text-slate-800 mb-4">下一步</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <!-- 去 Playground 练习 -->
+                            <button
+                                class="flex items-center gap-3 p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 text-left transition-all"
+                                @click="openInPlayground()"
+                            >
+                                <div class="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                                    <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-700">去 Playground 练习</p>
+                                    <p class="text-xs text-slate-400">动手改代码、跑起来看效果</p>
+                                </div>
+                            </button>
+
+                            <!-- 让 AI 出题 -->
+                            <button
+                                class="flex items-center gap-3 p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 text-left transition-all"
+                                @click="router.push(`/playground/${lesson.slug}`)"
+                            >
+                                <div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+                                    <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-700">让 AI 出题</p>
+                                    <p class="text-xs text-slate-400">基于本课内容生成练习</p>
+                                </div>
+                            </button>
+
+                            <!-- 下一课 -->
+                            <button
+                                v-if="lesson.nextLesson"
+                                class="flex items-center gap-3 p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 text-left transition-all"
+                                @click="goToLesson(lesson.nextLesson!.slug)"
+                            >
+                                <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-700">下一课</p>
+                                    <p class="text-xs text-slate-400 truncate max-w-[120px]">{{ lesson.nextLesson.title }}</p>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ================================================
                上一节 / 下一节导航
           ================================================= -->
                     <div class="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -819,6 +907,30 @@ function renderMarkdown(md: string): string {
 </template>
 
 <style scoped>
+/* =====================================================
+   完成庆祝动画
+===================================================== */
+.completion-fade-enter-active {
+    transition: opacity 0.3s ease;
+}
+.completion-fade-leave-active {
+    transition: opacity 0.8s ease;
+}
+.completion-fade-enter-from,
+.completion-fade-leave-to {
+    opacity: 0;
+}
+
+@keyframes completion-bounce {
+    0% { transform: scale(0.3); opacity: 0; }
+    50% { transform: scale(1.1); }
+    70% { transform: scale(0.95); }
+    100% { transform: scale(1); opacity: 1; }
+}
+.animate-completion-bounce {
+    animation: completion-bounce 0.6s ease-out forwards;
+}
+
 /* =====================================================
    Markdown 正文排版样式
 ===================================================== */

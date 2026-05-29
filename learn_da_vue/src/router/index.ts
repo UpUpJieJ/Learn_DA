@@ -45,6 +45,15 @@ const routes: RouteRecordRaw[] = [
     },
     props: true,
   },
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/Dashboard.vue'),
+    meta: {
+      title: '学习看板',
+      keepAlive: false,
+    },
+  },
   // ---- 404 兜底 ----
   {
     path: '/:pathMatch(.*)*',

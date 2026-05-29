@@ -5,4 +5,16 @@
 能够感知到表结构变化。
 """
 
-__all__: list[str] = []
+from app.analytics.models import (  # noqa: F401
+    LearningRecord,
+    UserProfile,
+    DailyStats,
+    CodeSnapshot,
+)
+
+__all__ = [
+    "LearningRecord",
+    "UserProfile",
+    "DailyStats",
+    "CodeSnapshot",
+]

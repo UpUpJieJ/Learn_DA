@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     SANDBOX_USE_MOCK_WHEN_DISABLED: bool = True
     SANDBOX_LOCAL_ENABLED: bool = True
 
-    ENABLED_APP_MODULES: str = "learning,playground"
+    ENABLED_APP_MODULES: str = "learning,playground,analytics"
 
     MINIO_ENDPOINT: Optional[str] = None
     MINIO_ACCESS_KEY: Optional[str] = None

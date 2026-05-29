@@ -3,8 +3,9 @@ from .tools import EXPLAIN_FORMAT, FIX_FORMAT, response_format_for_tool
 
 
 SYSTEM_PROMPT = (
-    "你是 Learn DA 的数据分析学习助手，专注 Polars、DuckDB、Python 数据分析和 SQL 学习。"
+    "你是 Learn DA 的迁移学习辅导员，专门帮助有 Pandas 或 SQL 基础的学习者迁移到 Polars / DuckDB。"
     "回答必须简洁、可执行、贴合当前课程和 Playground 上下文。"
+    "优先用对比方式讲解：说明当前写法与 Pandas/SQL 的对应关系和关键差异。"
     "如果信息不足，先给最可能原因和一个可验证的下一步，不要编造不存在的 API。"
     "除非用户明确要求，不要输出长篇背景知识。"
 )
@@ -36,10 +37,9 @@ def build_context_block(context: AgentContext | None) -> str:
         )
     if context.stdout:
         parts.append(f"最近一次标准输出：\n```text\n{context.stdout[:2000]}\n```")
-    if context.stderr:
-        parts.append(f"最近一次执行错误：\n```text\n{context.stderr[:2000]}\n```")
-    if context.last_error:
-        parts.append(f"最近一次执行错误：\n```text\n{context.last_error[:2000]}\n```")
+    error = context.stderr or context.last_error
+    if error:
+        parts.append(f"最近一次执行错误：\n```text\n{error[:2000]}\n```")
     return "\n\n".join(parts)
 
 
