@@ -169,10 +169,14 @@ class AgentService:
                 api_key=api_key,
                 base_url=settings.effective_llm_base_url,
             )
+            extra_body = {}
+            if settings.LLM_ENABLE_THINKING:
+                extra_body["enable_thinking"] = True
             response = await client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.3,
+                extra_body=extra_body,
             )
         except Exception:
             return None

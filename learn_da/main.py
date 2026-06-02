@@ -33,6 +33,10 @@ async def lifespan(app: FastAPI):
         from app.core.redis import redis_pool_manager
 
         redis_pool_manager.close_all_pools()
+
+    from app.core.database.database import engine
+
+    await engine.dispose()
     log.info(f"{settings.APP_NAME} 已关闭")
 
 

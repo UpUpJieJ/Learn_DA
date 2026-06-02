@@ -1,6 +1,7 @@
 import pytest
 
 from app.agent.prompts import (
+    SYSTEM_PROMPT,
     build_chat_messages,
     build_context_block,
     build_explain_messages,
@@ -143,6 +144,15 @@ def test_tool_registry_contains_format_and_fallback_for_each_tool():
         assert tool.fallback_content
 
 
+def test_system_prompt_emphasizes_coach_role_and_no_direct_answer_bias():
+    assert "迁移学习教练" in SYSTEM_PROMPT
+    assert "先解释思路" in SYSTEM_PROMPT
+    assert "不要直接给最终答案" in SYSTEM_PROMPT
+    assert "围绕当前课程和 Playground 上下文" in SYSTEM_PROMPT
+    assert "不是代写工具" in SYSTEM_PROMPT
+    assert "1 到 3 个" in SYSTEM_PROMPT
+
+
 def test_parse_structured_result_extracts_sections_and_code_blocks():
     content = (
         "问题原因：\n"
@@ -208,6 +218,19 @@ def test_chat_prompt_uses_exercise_format_instruction():
     assert "任务：" in content
     assert "提示：" in content
     assert "完成后检查：" in content
+
+
+def test_chat_prompt_for_exercise_preserves_hint_first_instruction():
+    messages = build_chat_messages(
+        user_message="根据本课生成一个练习",
+        history=[],
+        context=AgentContext(currentLesson="polars-basics"),
+        max_turns=3,
+        tool_name="generate_exercise",
+    )
+    system_messages = [message["content"] for message in messages if message["role"] == "system"]
+
+    assert any("不要直接给最终答案" in content for content in system_messages)
 
 
 @pytest.mark.unit

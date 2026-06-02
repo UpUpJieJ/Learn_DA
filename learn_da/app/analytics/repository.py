@@ -323,3 +323,169 @@ class AnalyticsRepository:
                         category_completed[cat] += row.completed or 0
 
         return category_completed
+
+    # ── 回补建议查询 ─────────────────────────────────────
+
+    async def get_lesson_specific_stats(
+        self, visitor_id: str, lesson_slug: str
+    ) -> dict[str, int | bool]:
+        """获取用户在特定课程的学习统计（用于回补建议）"""
+        stmt = (
+            select(
+                LearningRecord.event_type,
+                func.count().label("count"),
+            )
+            .where(
+                LearningRecord.visitor_id == visitor_id,
+                LearningRecord.lesson_slug == lesson_slug,
+                LearningRecord.is_deleted == False,  # noqa: E712
+            )
+            .group_by(LearningRecord.event_type)
+        )
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        stats = {"codeRuns": 0, "aiHelps": 0, "completed": False}
+        for row in rows:
+            if row.event_type == "code_run":
+                stats["codeRuns"] = row.count
+            elif row.event_type == "ai_help":
+                stats["aiHelps"] = row.count
+            elif row.event_type == "lesson_complete":
+                stats["completed"] = True
+
+        return stats
+
+    async def get_lesson_snapshots_count(self, visitor_id: str, lesson_slug: str) -> int:
+        """获取用户在特定课程的代码快照数量（用于回补建议）"""
+        stmt = select(func.count()).select_from(CodeSnapshot).where(
+            CodeSnapshot.visitor_id == visitor_id,
+            CodeSnapshot.lesson_slug == lesson_slug,
+            CodeSnapshot.is_deleted == False,  # noqa: E712
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
+
+    # ── 回流建议查询 ─────────────────────────────────────
+
+    async def get_incomplete_lessons_with_activity(
+        self, visitor_id: str, completed_lessons: list[str]
+    ) -> list[dict]:
+        """
+        获取有活动但未完成的课程列表（用于回流建议）
+
+        返回格式：
+        [
+            {
+                "lesson_slug": str,
+                "code_runs": int,
+                "ai_helps": int,
+                "snapshots_count": int,
+                "last_activity_time": datetime,
+            },
+            ...
+        ]
+        """
+        # 子查询：获取每个课程的最后活动时间
+        last_activity_subq = (
+            select(
+                LearningRecord.lesson_slug,
+                func.max(LearningRecord.created_time).label("last_activity_time"),
+            )
+            .where(
+                LearningRecord.visitor_id == visitor_id,
+                LearningRecord.lesson_slug.isnot(None),
+                LearningRecord.is_deleted == False,  # noqa: E712
+            )
+            .group_by(LearningRecord.lesson_slug)
+            .subquery()
+        )
+
+        # 主查询：获取每个课程的统计数据
+        stmt = (
+            select(
+                LearningRecord.lesson_slug,
+                LearningRecord.event_type,
+                func.count().label("count"),
+            )
+            .where(
+                LearningRecord.visitor_id == visitor_id,
+                LearningRecord.lesson_slug.isnot(None),
+                LearningRecord.is_deleted == False,  # noqa: E712
+            )
+            .group_by(LearningRecord.lesson_slug, LearningRecord.event_type)
+        )
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        # 聚合统计数据
+        lesson_stats: dict = {}
+        for row in rows:
+            slug = row.lesson_slug
+            if slug not in lesson_stats:
+                lesson_stats[slug] = {
+                    "lesson_slug": slug,
+                    "code_runs": 0,
+                    "ai_helps": 0,
+                    "completed": False,
+                }
+            if row.event_type == "code_run":
+                lesson_stats[slug]["code_runs"] = row.count
+            elif row.event_type == "ai_help":
+                lesson_stats[slug]["ai_helps"] = row.count
+            elif row.event_type == "lesson_complete":
+                lesson_stats[slug]["completed"] = True
+
+        # 过滤：只保留有活动但未完成的课程
+        incomplete_with_activity = []
+        for slug, stats in lesson_stats.items():
+            # 必须有活动（code_runs > 0 OR ai_helps > 0）且未完成
+            has_activity = stats["code_runs"] > 0 or stats["ai_helps"] > 0
+            is_completed = stats["completed"] or slug in completed_lessons
+
+            if has_activity and not is_completed:
+                incomplete_with_activity.append(slug)
+
+        if not incomplete_with_activity:
+            return []
+
+        # 获取快照数量
+        snapshot_stmt = (
+            select(
+                CodeSnapshot.lesson_slug,
+                func.count().label("snapshots_count"),
+            )
+            .where(
+                CodeSnapshot.visitor_id == visitor_id,
+                CodeSnapshot.lesson_slug.in_(incomplete_with_activity),
+                CodeSnapshot.is_deleted == False,  # noqa: E712
+            )
+            .group_by(CodeSnapshot.lesson_slug)
+        )
+        snapshot_result = await self.db.execute(snapshot_stmt)
+        snapshot_rows = snapshot_result.all()
+        snapshot_map = {row.lesson_slug: row.snapshots_count for row in snapshot_rows}
+
+        # 获取最后活动时间
+        last_activity_stmt = select(last_activity_subq).where(
+            last_activity_subq.c.lesson_slug.in_(incomplete_with_activity)
+        )
+        last_activity_result = await self.db.execute(last_activity_stmt)
+        last_activity_rows = last_activity_result.all()
+        last_activity_map = {
+            row.lesson_slug: row.last_activity_time for row in last_activity_rows
+        }
+
+        # 组装最终结果
+        result_list = []
+        for slug in incomplete_with_activity:
+            stats = lesson_stats[slug]
+            result_list.append({
+                "lesson_slug": slug,
+                "code_runs": stats["code_runs"],
+                "ai_helps": stats["ai_helps"],
+                "snapshots_count": snapshot_map.get(slug, 0),
+                "last_activity_time": last_activity_map.get(slug),
+            })
+
+        return result_list

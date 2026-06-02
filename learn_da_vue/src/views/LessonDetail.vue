@@ -3,8 +3,9 @@ import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
+import { getRecommendations } from "@/api/recommendation";
 import { getVisitorId } from "@/lib/visitorId";
-import type { LessonDetail, LessonDifficulty } from "@/types/api";
+import type { LessonDetail, LessonDifficulty, RecommendationResponse } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
 import { renderMarkdown } from "@/lib/markdown";
@@ -32,6 +33,9 @@ const playgroundStore = usePlaygroundStore();
 const lesson = ref<LessonDetail | null>(null);
 const isLoading = ref(false);
 const errorMsg = ref<string | null>(null);
+const recommendation = ref<RecommendationResponse | null>(null);
+const isSavingSnapshot = ref(false);
+const snapshotSaved = ref(false);
 
 // 目录锚点
 const activeAnchor = ref("");
@@ -72,9 +76,20 @@ async function loadLesson(slug: string) {
     lesson.value = null;
     tocItems.value = [];
     activeAnchor.value = "";
+    recommendation.value = null;
 
     try {
-        lesson.value = await fetchLessonBySlug(slug);
+        const [lessonData, recommendationData] = await Promise.all([
+            fetchLessonBySlug(slug),
+            getRecommendations({
+                visitorId: getVisitorId(),
+                completedLessons: localStateStore.progress.completedLessons,
+                currentLesson: slug,
+            }).catch(() => null),
+        ]);
+
+        lesson.value = lessonData;
+        recommendation.value = recommendationData;
         localStateStore.setLastVisitedLesson(slug);
 
         // 上报课程开始学习事件
@@ -94,6 +109,14 @@ async function loadLesson(slug: string) {
     } finally {
         isLoading.value = false;
     }
+}
+
+async function refreshRecommendation(slug: string) {
+    recommendation.value = await getRecommendations({
+        visitorId: getVisitorId(),
+        completedLessons: localStateStore.progress.completedLessons,
+        currentLesson: slug,
+    }).catch(() => null);
 }
 
 // slug 变化时重新加载
@@ -159,8 +182,10 @@ const showCompletionAnim = ref(false);
 
 function toggleCompleted() {
     if (!lesson.value) return;
-    const wasCompleted = localStateStore.isLessonCompleted(lesson.value.slug);
-    localStateStore.toggleLessonCompleted(lesson.value.slug);
+    const lessonSlug = lesson.value.slug;
+    const wasCompleted = localStateStore.isLessonCompleted(lessonSlug);
+    localStateStore.toggleLessonCompleted(lessonSlug);
+    void refreshRecommendation(lessonSlug);
 
     // 标记为完成时播放庆祝动画 + 上报事件
     if (!wasCompleted) {
@@ -169,7 +194,7 @@ function toggleCompleted() {
         trackEvent({
             visitorId: getVisitorId(),
             eventType: "lesson_complete",
-            lessonSlug: lesson.value.slug,
+            lessonSlug,
         }).catch(() => {});
     }
 }
@@ -184,6 +209,36 @@ function openInPlayground(code?: string) {
 
     playgroundStore.setCode(target);
     router.push(`/playground/${lesson.value?.slug ?? ''}`);
+}
+
+async function saveLessonSnapshot() {
+    if (!lesson.value?.codeExample?.trim() || isSavingSnapshot.value) return;
+
+    isSavingSnapshot.value = true;
+    snapshotSaved.value = false;
+
+    try {
+        await saveCodeSnapshot({
+            visitorId: getVisitorId(),
+            lessonSlug: lesson.value.slug,
+            code: lesson.value.codeExample,
+            language: "python",
+            description: `课程示例起点：${lesson.value.title}`,
+        });
+        trackEvent({
+            visitorId: getVisitorId(),
+            eventType: "code_save",
+            lessonSlug: lesson.value.slug,
+        }).catch(() => {});
+        snapshotSaved.value = true;
+        setTimeout(() => {
+            snapshotSaved.value = false;
+        }, 2200);
+    } catch {
+        console.warn("保存代码快照失败");
+    } finally {
+        isSavingSnapshot.value = false;
+    }
 }
 
 // =====================================================
@@ -217,6 +272,80 @@ function scrollToAnchor(id: string) {
 
 function goToLesson(slug: string) {
     router.push(`/learn/${slug}`);
+}
+
+const recommendationCta = computed(() => {
+    if (recommendation.value?.primary) {
+        return {
+            title: recommendation.value.primary.targetTitle,
+            actionLabel: recommendation.value.primary.actionLabel,
+            reason: recommendation.value.primary.reason,
+            slug: recommendation.value.primary.targetSlug,
+        };
+    }
+    if (lesson.value?.nextLesson) {
+        return {
+            title: lesson.value.nextLesson.title,
+            actionLabel: "继续学习",
+            reason: "按当前课程顺序继续推进，保持迁移学习节奏。",
+            slug: lesson.value.nextLesson.slug,
+        };
+    }
+    return null;
+});
+
+function getRecommendationStyle(rec: any) {
+    const type = rec.type;
+
+    // 回补建议 - 橙色警示
+    if (type === "review_lesson") {
+        return {
+            containerClass: "bg-gradient-to-br from-orange-50 via-amber-50 to-orange-50 border-2 border-orange-200",
+            labelClass: "text-orange-800 font-semibold",
+            buttonClass: "bg-orange-600 hover:bg-orange-700 shadow-md hover:shadow-lg",
+            badgeClass: "bg-orange-100 border border-orange-200",
+            iconBgClass: "bg-orange-100 border-2 border-orange-200",
+            icon: "⚠️",
+            label: "建议回补前置课程",
+        };
+    }
+
+    // 分支建议 - 紫色高亮
+    if (type === "branch_path") {
+        return {
+            containerClass: "bg-gradient-to-br from-purple-50 via-indigo-50 to-purple-50 border-2 border-purple-200",
+            labelClass: "text-purple-800 font-semibold",
+            buttonClass: "bg-purple-600 hover:bg-purple-700 shadow-md hover:shadow-lg",
+            badgeClass: "bg-purple-100 border border-purple-200",
+            iconBgClass: "bg-purple-100 border-2 border-purple-200",
+            icon: "🔀",
+            label: "学习路径分支点",
+        };
+    }
+
+    // 回流建议 - 绿色温馨
+    if (type === "resume_session") {
+        return {
+            containerClass: "bg-gradient-to-br from-emerald-50 via-green-50 to-emerald-50 border-2 border-emerald-200",
+            labelClass: "text-emerald-800 font-semibold",
+            buttonClass: "bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg",
+            badgeClass: "bg-emerald-100 border border-emerald-200",
+            iconBgClass: "bg-emerald-100 border-2 border-emerald-200",
+            icon: "👋",
+            label: "欢迎回来继续学习",
+        };
+    }
+
+    // 顺学建议 - 蓝色默认
+    return {
+        containerClass: "bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-200",
+        labelClass: "text-blue-800 font-semibold",
+        buttonClass: "bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg",
+        badgeClass: "bg-blue-100 border border-blue-200",
+        iconBgClass: "bg-blue-100 border-2 border-blue-200",
+        icon: "💡",
+        label: "学完本课后的建议",
+    };
 }
 
 </script>
@@ -446,6 +575,64 @@ function goToLesson(slug: string) {
                     </header>
 
                     <!-- ================================================
+               Phase 2: 练习结构卡片（仅样板课展示）
+          ================================================= -->
+                    <div v-if="lesson.practiceObjective || (lesson.completionCriteria && lesson.completionCriteria.length)" class="mb-8 space-y-4">
+                        <!-- 训练目标 -->
+                        <div v-if="lesson.practiceObjective" class="rounded-xl border border-blue-200 bg-blue-50/60 p-5">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-lg">🎯</span>
+                                <h3 class="text-sm font-bold text-blue-800">本课训练目标</h3>
+                            </div>
+                            <p class="text-sm text-blue-900/80 leading-relaxed">{{ lesson.practiceObjective }}</p>
+                        </div>
+
+                        <!-- 完成标准 -->
+                        <div v-if="lesson.completionCriteria && lesson.completionCriteria.length" class="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5">
+                            <div class="flex items-center gap-2 mb-3">
+                                <span class="text-lg">✅</span>
+                                <h3 class="text-sm font-bold text-emerald-800">完成标准</h3>
+                            </div>
+                            <ul class="space-y-2">
+                                <li
+                                    v-for="(criteria, idx) in lesson.completionCriteria"
+                                    :key="idx"
+                                    class="flex items-start gap-2.5 text-sm text-emerald-900/80"
+                                >
+                                    <span class="w-5 h-5 rounded-full border-2 border-emerald-300 flex items-center justify-center shrink-0 mt-0.5 text-xs text-emerald-500">
+                                        {{ idx + 1 }}
+                                    </span>
+                                    <span>{{ criteria }}</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div class="flex flex-wrap gap-3">
+                            <button
+                                class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+                                @click="openInPlayground()"
+                            >
+                                <svg class="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                立刻开始练习
+                            </button>
+                            <button
+                                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+                                :disabled="isSavingSnapshot"
+                                @click="saveLessonSnapshot"
+                            >
+                                <svg class="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14v14H5z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5v4h6V5" />
+                                </svg>
+                                {{ snapshotSaved ? "已保存练习起点" : isSavingSnapshot ? "保存中..." : "保存当前示例" }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ================================================
                Markdown 正文内容
           ================================================= -->
                     <div
@@ -453,6 +640,108 @@ function goToLesson(slug: string) {
                         class="lesson-content prose prose-slate max-w-none"
                         v-html="renderMarkdown(lesson.content)"
                     />
+
+                    <!-- ================================================
+               Phase 3: 下一步学习建议
+          ================================================= -->
+                    <div v-if="recommendation?.primary" class="mt-12 space-y-4">
+                        <!-- 主要建议 -->
+                        <div
+                            class="p-6 rounded-xl border shadow-sm hover:shadow-md transition-shadow"
+                            :class="getRecommendationStyle(recommendation.primary).containerClass"
+                        >
+                            <div class="flex items-start gap-4">
+                                <div
+                                    class="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+                                    :class="getRecommendationStyle(recommendation.primary).iconBgClass"
+                                >
+                                    <span class="text-3xl">{{ getRecommendationStyle(recommendation.primary).icon }}</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span
+                                            class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+                                            :class="getRecommendationStyle(recommendation.primary).badgeClass"
+                                        >
+                                            {{ getRecommendationStyle(recommendation.primary).label }}
+                                        </span>
+                                    </div>
+                                    <h4 class="text-xl font-bold text-slate-900 mb-2">{{ recommendation.primary.targetTitle }}</h4>
+                                    <p class="text-sm text-slate-700 leading-relaxed mb-5">{{ recommendation.primary.reason }}</p>
+                                    <button
+                                        class="inline-flex items-center gap-2 px-6 py-3 text-white text-sm font-semibold rounded-lg transition-all"
+                                        :class="getRecommendationStyle(recommendation.primary).buttonClass"
+                                        @click="router.push(`/learn/${recommendation.primary.targetSlug}`)"
+                                    >
+                                        <span>{{ recommendation.primary.actionLabel }}</span>
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 备选建议 -->
+                        <div
+                            v-if="recommendation.alternatives && recommendation.alternatives.length > 0"
+                            class="space-y-3"
+                        >
+                            <h5 class="text-sm font-semibold text-slate-600 px-1">其他选择</h5>
+                            <div
+                                v-for="(alt, idx) in recommendation.alternatives"
+                                :key="idx"
+                                class="p-4 rounded-lg border bg-white hover:border-slate-300 hover:shadow-sm transition-all cursor-pointer"
+                                @click="router.push(`/learn/${alt.targetSlug}`)"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <div
+                                        class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                                        :class="getRecommendationStyle(alt).iconBgClass"
+                                    >
+                                        <span class="text-xl">{{ getRecommendationStyle(alt).icon }}</span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <h5 class="text-base font-bold text-slate-800">{{ alt.targetTitle }}</h5>
+                                            <span
+                                                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                                :class="getRecommendationStyle(alt).badgeClass"
+                                            >
+                                                {{ getRecommendationStyle(alt).label }}
+                                            </span>
+                                        </div>
+                                        <p class="text-xs text-slate-600 leading-relaxed">{{ alt.reason }}</p>
+                                    </div>
+                                    <svg class="w-5 h-5 text-slate-400 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 兜底：推荐系统无结果时，使用课程导航的下一课 -->
+                    <div
+                        v-else-if="lesson.nextLesson"
+                        class="mt-12 p-5 rounded-xl border border-blue-100 bg-blue-50/50"
+                    >
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                                <span class="text-xl">💡</span>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-medium text-blue-700 mb-0.5">下一步学习建议</p>
+                                <h4 class="text-base font-bold text-slate-800">{{ lesson.nextLesson.title }}</h4>
+                            </div>
+                            <button
+                                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shrink-0"
+                                @click="goToLesson(lesson.nextLesson!.slug)"
+                            >
+                                继续学习
+                            </button>
+                        </div>
+                    </div>
 
                     <!-- ================================================
                示例代码卡片
@@ -574,9 +863,9 @@ function goToLesson(slug: string) {
                     </div>
 
                     <!-- ================================================
-               练习任务
+               动手练习（Phase 2 有结构化练习时自动隐藏）
           ================================================= -->
-                    <div class="mt-10 rounded-2xl border border-blue-100 bg-blue-50/50 p-6">
+                    <div v-if="!lesson.practiceObjective" class="mt-10 rounded-2xl border border-blue-100 bg-blue-50/50 p-6">
                         <div class="flex items-center gap-2 mb-3">
                             <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -638,7 +927,7 @@ function goToLesson(slug: string) {
                             <!-- 让 AI 出题 -->
                             <button
                                 class="flex items-center gap-3 p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 text-left transition-all"
-                                @click="router.push(`/playground/${lesson.slug}`)"
+                                @click="router.push(`/playground/${lesson.slug}?action=exercise`)"
                             >
                                 <div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
                                     <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -653,9 +942,9 @@ function goToLesson(slug: string) {
 
                             <!-- 下一课 -->
                             <button
-                                v-if="lesson.nextLesson"
+                                v-if="recommendationCta"
                                 class="flex items-center gap-3 p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 text-left transition-all"
-                                @click="goToLesson(lesson.nextLesson!.slug)"
+                                @click="goToLesson(recommendationCta.slug)"
                             >
                                 <div class="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                                     <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -663,11 +952,17 @@ function goToLesson(slug: string) {
                                     </svg>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-semibold text-slate-700">下一课</p>
-                                    <p class="text-xs text-slate-400 truncate max-w-[120px]">{{ lesson.nextLesson.title }}</p>
+                                    <p class="text-sm font-semibold text-slate-700">{{ recommendationCta.actionLabel }}</p>
+                                    <p class="text-xs text-slate-400 truncate max-w-[160px]">{{ recommendationCta.title }}</p>
                                 </div>
                             </button>
                         </div>
+                        <p
+                            v-if="recommendationCta?.reason"
+                            class="mt-4 text-xs leading-relaxed text-slate-500"
+                        >
+                            {{ recommendationCta.reason }}
+                        </p>
                     </div>
 
                     <!-- ================================================
@@ -870,6 +1165,17 @@ function goToLesson(slug: string) {
                                     在 Playground 运行
                                 </button>
                                 <button
+                                    class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:text-slate-800"
+                                    :disabled="isSavingSnapshot"
+                                    @click="saveLessonSnapshot"
+                                >
+                                    <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14v14H5z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5v4h6V5" />
+                                    </svg>
+                                    {{ snapshotSaved ? "已保存练习起点" : isSavingSnapshot ? "保存中..." : "保存当前示例" }}
+                                </button>
+                                <button
                                     class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all"
                                     :class="
                                         isCompleted
@@ -988,6 +1294,10 @@ function goToLesson(slug: string) {
     list-style-type: decimal;
 }
 
+.lesson-content :deep(ol li::marker) {
+    color: #3b82f6;
+}
+
 .lesson-content :deep(ul li::marker) {
     color: #3b82f6;
 }
@@ -1070,5 +1380,34 @@ function goToLesson(slug: string) {
     color: #e2e8f0;
     overflow-x: auto;
     white-space: pre;
+}
+
+/* 表格 */
+.lesson-content :deep(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.25rem 0;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+.lesson-content :deep(th),
+.lesson-content :deep(td) {
+    border: 1px solid #e2e8f0;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+.lesson-content :deep(th) {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #1e293b;
+}
+.lesson-content :deep(td) {
+    color: #374151;
+}
+.lesson-content :deep(tr:nth-child(even)) {
+    background: #f8fafc;
+}
+.lesson-content :deep(table .inline-code) {
+    font-size: 0.8em;
 }
 </style>

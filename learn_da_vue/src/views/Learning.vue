@@ -3,13 +3,17 @@ import { ref, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { CancelledError } from "@/api";
 import { fetchLessons, fetchCategoryStats } from "@/api/learning";
+import { getRecommendations } from "@/api/recommendation";
+import { getVisitorId } from "@/lib/visitorId";
 import type {
     LessonSummary,
     LessonCategory,
     LessonDifficulty,
+    RecommendationResponse,
 } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
-import { currentTrackKeys, learningTrackMeta, learningTracks } from "@/lib/learningTracks";
+import { currentTrackKeys, learningTrackMeta } from "@/lib/learningTracks";
+import { getRecommendationContextLesson } from "@/lib/recommendation";
 
 const router = useRouter();
 const route = useRoute();
@@ -22,6 +26,7 @@ const localStateStore = useLocalStateStore();
 const lessons = ref<LessonSummary[]>([]);
 const isLoading = ref(false);
 const errorMsg = ref<string | null>(null);
+const recommendation = ref<RecommendationResponse | null>(null);
 
 const categoryCounts = ref<Record<string, number>>({
     polars: 0,
@@ -99,28 +104,34 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
     errorMsg.value = null;
 
     try {
-        const requestCategory = category === "all" ? undefined : category;
-
-        const [allLessons, stats] = await Promise.all([
-            fetchLessons({ category: requestCategory }),
+        const currentLesson = getRecommendationContextLesson({
+            lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
+        });
+        const [lessonsData, statsData, recommendationData] = await Promise.all([
+            fetchLessons({
+                category: category === "all" ? undefined : category,
+            }),
             fetchCategoryStats(),
+            getRecommendations({
+                visitorId: getVisitorId(),
+                completedLessons: localStateStore.progress.completedLessons,
+                currentLesson,
+            }).catch(() => null),
         ]);
 
         if (requestId !== latestLessonRequestId) return;
 
-        lessons.value = allLessons;
-
-        // 更新分类计数
-        stats.forEach((s) => {
-            categoryCounts.value[s.category] = s.count;
-        });
+        lessons.value = lessonsData;
+        categoryCounts.value = {
+            polars: statsData.find((s) => s.category === "polars")?.count ?? 0,
+            duckdb: statsData.find((s) => s.category === "duckdb")?.count ?? 0,
+            combined: statsData.find((s) => s.category === "combined")?.count ?? 0,
+        };
+        recommendation.value = recommendationData;
     } catch (err) {
         if (requestId !== latestLessonRequestId) return;
         if (err instanceof CancelledError) return;
-
-        errorMsg.value =
-            err instanceof Error ? err.message : "加载课程列表失败，请稍后重试";
-        lessons.value = [];
+        errorMsg.value = err instanceof Error ? err.message : "加载失败";
     } finally {
         if (requestId === latestLessonRequestId) {
             isLoading.value = false;
@@ -175,6 +186,39 @@ const currentTrackInfo = computed(() => {
 
 // ---- 继续学习 ----
 const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug);
+const lastVisitedTitle = computed(() => {
+    if (!lastVisitedSlug.value) return null;
+    const lesson = lessons.value.find((l) => l.slug === lastVisitedSlug.value);
+    return lesson?.title ?? null;
+});
+const currentTrackLessons = computed(() => {
+    if (activeCategory.value === "all") return [];
+    return filteredLessons.value.filter((lesson) => lesson.category === activeCategory.value);
+});
+const currentTrackCompletedCount = computed(() => {
+    return currentTrackLessons.value.filter((lesson) =>
+        localStateStore.isLessonCompleted(lesson.slug),
+    ).length;
+});
+const currentTrackProgressPercent = computed(() => {
+    if (currentTrackLessons.value.length === 0) return 0;
+    return Math.round((currentTrackCompletedCount.value / currentTrackLessons.value.length) * 100);
+});
+const currentTrackContinueLesson = computed(() => {
+    if (activeCategory.value === "all") return null;
+
+    const recommendationLesson =
+        recommendation.value?.primary &&
+        lessons.value.find((lesson) => lesson.slug === recommendation.value?.primary?.targetSlug);
+    if (recommendationLesson?.category === activeCategory.value) {
+        return recommendationLesson;
+    }
+
+    const firstUnfinished = currentTrackLessons.value.find(
+        (lesson) => !localStateStore.isLessonCompleted(lesson.slug),
+    );
+    return firstUnfinished ?? currentTrackLessons.value[0] ?? null;
+});
 
 // =====================================================
 // 分组展示（按 category 分组，仅在「全部」模式下）
@@ -218,6 +262,13 @@ watch(
     { immediate: true },
 );
 
+watch(
+    () => localStateStore.progress.updatedAt,
+    () => {
+        void loadLessons(activeCategory.value);
+    },
+);
+
 // =====================================================
 // 操作
 // =====================================================
@@ -243,6 +294,61 @@ function clearFilters() {
     selectCategory("all");
     activeDifficulty.value = "all";
     searchKeyword.value = "";
+}
+
+function getRecommendationStyle(rec: any) {
+    const type = rec.type;
+    const priority = rec.priority || 1;
+
+    // 回补建议 - 橙色警示
+    if (type === "review_lesson") {
+        return {
+            containerClass: "bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 hover:border-orange-300 hover:shadow-md",
+            labelClass: "text-orange-700 font-semibold",
+            buttonClass: "bg-orange-600 hover:bg-orange-700 shadow-sm",
+            badgeClass: "bg-orange-100 text-orange-700",
+            icon: "⚠️",
+            label: "建议回补前置课程",
+            priorityBadge: priority >= 5 ? "高优先级" : null,
+        };
+    }
+
+    // 分支建议 - 紫色高亮
+    if (type === "branch_path") {
+        return {
+            containerClass: "bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 hover:border-purple-300 hover:shadow-md",
+            labelClass: "text-purple-700 font-semibold",
+            buttonClass: "bg-purple-600 hover:bg-purple-700 shadow-sm",
+            badgeClass: "bg-purple-100 text-purple-700",
+            icon: "🔀",
+            label: "学习路径分支点",
+            priorityBadge: priority >= 4 ? "推荐路径" : null,
+        };
+    }
+
+    // 回流建议 - 绿色温馨
+    if (type === "resume_session") {
+        return {
+            containerClass: "bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-200 hover:border-emerald-300 hover:shadow-md",
+            labelClass: "text-emerald-700 font-semibold",
+            buttonClass: "bg-emerald-600 hover:bg-emerald-700 shadow-sm",
+            badgeClass: "bg-emerald-100 text-emerald-700",
+            icon: "👋",
+            label: "欢迎回来继续学习",
+            priorityBadge: null,
+        };
+    }
+
+    // 顺学建议 - 蓝色默认
+    return {
+        containerClass: "bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-100 hover:border-blue-200 hover:shadow-md",
+        labelClass: "text-blue-700 font-semibold",
+        buttonClass: "bg-blue-600 hover:bg-blue-700 shadow-sm",
+        badgeClass: "bg-blue-100 text-blue-700",
+        icon: "💡",
+        label: "下一步学习建议",
+        priorityBadge: null,
+    };
 }
 
 </script>
@@ -368,8 +474,8 @@ function clearFilters() {
                         : 'bg-purple-50/50 border-purple-100'
                 "
             >
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                    <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div class="flex-1 min-w-0">
                         <h2 class="text-lg font-bold text-slate-800 mb-1">
                             {{ currentTrackInfo.label }}
                         </h2>
@@ -384,18 +490,108 @@ function clearFilters() {
                                 <strong class="text-slate-700">你将获得：</strong>{{ currentTrackInfo.learningOutcome }}
                             </span>
                         </div>
+                        <div class="mt-4 max-w-xl">
+                            <div class="mb-2 flex items-center justify-between text-xs text-slate-500">
+                                <span>当前路径进度</span>
+                                <span>{{ currentTrackCompletedCount }} / {{ currentTrackLessons.length }} 课</span>
+                            </div>
+                            <div class="h-2 overflow-hidden rounded-full bg-white/80">
+                                <div
+                                    class="h-full rounded-full transition-all duration-300"
+                                    :class="
+                                        currentTrackInfo.color === 'blue'
+                                            ? 'bg-blue-500'
+                                            : currentTrackInfo.color === 'yellow'
+                                            ? 'bg-amber-500'
+                                            : 'bg-purple-500'
+                                    "
+                                    :style="{ width: `${currentTrackProgressPercent}%` }"
+                                />
+                            </div>
+                        </div>
                     </div>
-                    <div class="text-xs text-blue-600/70 shrink-0">
-                        💡 {{ currentTrackInfo.recommendedStart }}
+                    <div class="shrink-0 space-y-2 text-right">
+                        <div class="text-xs text-blue-600/70">
+                            💡 {{ currentTrackInfo.recommendedStart }}
+                        </div>
+                        <button
+                            v-if="currentTrackContinueLesson"
+                            class="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700"
+                            @click="goToLesson(currentTrackContinueLesson.slug)"
+                        >
+                            {{ localStateStore.isLessonCompleted(currentTrackContinueLesson.slug) ? "回顾这条路径" : "继续这条路径" }}
+                            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- ================================================
-           继续学习（全部模式 + 有历史记录时显示）
+           下一步学习建议 (Phase 3)
       ================================================= -->
             <div
-                v-if="activeCategory === 'all' && lastVisitedSlug"
+                v-if="recommendation?.primary"
+                class="mb-6 rounded-xl border transition-all"
+                :class="getRecommendationStyle(recommendation.primary).containerClass"
+            >
+                <div class="flex items-start gap-4 p-5">
+                    <div
+                        class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                        :class="getRecommendationStyle(recommendation.primary).badgeClass"
+                    >
+                        <span class="text-2xl">{{ getRecommendationStyle(recommendation.primary).icon }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <p class="text-xs font-semibold" :class="getRecommendationStyle(recommendation.primary).labelClass">
+                                {{ getRecommendationStyle(recommendation.primary).label }}
+                            </p>
+                            <span
+                                v-if="getRecommendationStyle(recommendation.primary).priorityBadge"
+                                class="px-2 py-0.5 rounded-full text-xs font-medium"
+                                :class="getRecommendationStyle(recommendation.primary).badgeClass"
+                            >
+                                {{ getRecommendationStyle(recommendation.primary).priorityBadge }}
+                            </span>
+                        </div>
+                        <h3 class="text-base font-bold text-slate-800 mb-2">{{ recommendation.primary.targetTitle }}</h3>
+                        <p class="text-sm text-slate-600 leading-relaxed mb-4">{{ recommendation.primary.reason }}</p>
+                        <div class="flex items-center gap-3">
+                            <button
+                                class="px-5 py-2 text-white text-sm font-medium rounded-lg transition-all"
+                                :class="getRecommendationStyle(recommendation.primary).buttonClass"
+                                @click="goToLesson(recommendation.primary.targetSlug)"
+                            >
+                                {{ recommendation.primary.actionLabel }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 备选建议（如果有） -->
+                <div
+                    v-if="recommendation.alternatives && recommendation.alternatives.length > 0"
+                    class="border-t border-slate-200/50 px-5 py-3 bg-white/30"
+                >
+                    <p class="text-xs text-slate-500 font-medium mb-2">其他选择：</p>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="alt in recommendation.alternatives"
+                            :key="alt.targetSlug"
+                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:shadow-sm transition-all"
+                            @click="goToLesson(alt.targetSlug)"
+                        >
+                            {{ alt.targetTitle }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 继续学习（兜底，无建议时显示）-->
+            <div
+                v-else-if="activeCategory === 'all' && lastVisitedSlug"
                 class="mb-6 flex items-center gap-3 p-4 rounded-xl bg-white border border-slate-200 hover:border-blue-200 hover:shadow-sm cursor-pointer transition-all"
                 @click="router.push(`/learn/${lastVisitedSlug}`)"
             >
@@ -406,7 +602,7 @@ function clearFilters() {
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-slate-700">继续上次学习</p>
-                    <p class="text-xs text-slate-400 truncate">{{ lastVisitedSlug }}</p>
+                    <p class="text-xs text-slate-400 truncate">{{ lastVisitedTitle ?? lastVisitedSlug }}</p>
                 </div>
                 <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />

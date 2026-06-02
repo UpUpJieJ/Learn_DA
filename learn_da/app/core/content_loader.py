@@ -82,6 +82,16 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             'code_example': code_example or '',
             'prev_lesson': frontmatter.get('prev_lesson'),
             'next_lesson': frontmatter.get('next_lesson'),
+            # Phase 2: 练习结构字段（可选）
+            'practice_objective': frontmatter.get('practice_objective', ''),
+            'completion_criteria': frontmatter.get('completion_criteria', []),
+            # Phase 3: 建议系统元数据（可选）
+            'track': frontmatter.get('track', ''),
+            'prerequisites': frontmatter.get('prerequisites', []),
+            'recommended_next': frontmatter.get('recommended_next', []),
+            'skill_tags': frontmatter.get('skill_tags', []),
+            'is_review_friendly': frontmatter.get('is_review_friendly', False),
+            'is_branch_point': frontmatter.get('is_branch_point', False),
         }
         
         # 验证必需字段

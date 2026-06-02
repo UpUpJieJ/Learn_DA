@@ -1,9 +1,19 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics.service import AnalyticsService
+from app.core.database.database import get_db
 from app.utils.base_response import StdResp
 
+from .recommendation import RecommendationService
 from .repository import LearningRepository
-from .schemas import ExampleDetail, ExampleSummary, LessonDetail, LessonSummary
+from .schemas import (
+    ExampleDetail,
+    ExampleSummary,
+    LessonDetail,
+    LessonSummary,
+    RecommendationResponse,
+)
 from .service import LearningService
 
 router = APIRouter(tags=["learning"])
@@ -11,6 +21,13 @@ router = APIRouter(tags=["learning"])
 
 def get_learning_service() -> LearningService:
     return LearningService(repository=LearningRepository())
+
+
+def get_recommendation_service(db: AsyncSession = Depends(get_db)) -> RecommendationService:
+    return RecommendationService(
+        repository=LearningRepository(),
+        analytics_service=AnalyticsService(db),
+    )
 
 
 @router.get("/lessons", response_model=StdResp[list[LessonSummary]])
@@ -76,3 +93,33 @@ async def get_example(
     service: LearningService = Depends(get_learning_service),
 ):
     return StdResp.success(data=service.get_example(slug))
+
+
+# =====================================================
+# Phase 3: 学习建议接口
+# =====================================================
+
+@router.get("/recommendations", response_model=StdResp[RecommendationResponse])
+async def get_recommendations(
+    visitor_id: str,
+    completed_lessons: str = "",  # 逗号分隔的 slug 列表
+    current_lesson: str | None = None,
+    service: RecommendationService = Depends(get_recommendation_service),
+):
+    """
+    获取用户的下一步学习建议
+
+    Args:
+        visitor_id: 访客 ID
+        completed_lessons: 已完成课程列表（逗号分隔）
+        current_lesson: 当前正在学习的课程 slug（可选）
+    """
+    completed_list = [s.strip() for s in completed_lessons.split(",") if s.strip()]
+
+    result = await service.get_recommendation(
+        visitor_id=visitor_id,
+        completed_lessons=completed_list,
+        current_lesson_slug=current_lesson,
+    )
+
+    return StdResp.success(data=result)

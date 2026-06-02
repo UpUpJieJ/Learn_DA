@@ -32,6 +32,10 @@ export interface LessonDetail extends LessonSummary {
     codeExample: string;
     prevLesson: LessonNav | null;
     nextLesson: LessonNav | null;
+    /** Phase 2: 训练目标（可选，无则降级为纯内容展示） */
+    practiceObjective?: string;
+    /** Phase 2: 完成标准（可选） */
+    completionCriteria?: string[];
 }
 
 export interface LessonNav {
@@ -156,6 +160,8 @@ export interface LocalPreferences {
     editorTheme: "vs-dark" | "light";
     editorFontSize: number;
     language: "zh" | "en";
+    /** 自动保存间隔（秒），0 表示手动保存 */
+    autoSaveInterval: number;
 }
 
 export interface LearningProgress {
@@ -298,4 +304,42 @@ export interface CategoryProgress {
     polars: number;
     duckdb: number;
     combined: number;
+}
+
+// =====================================================
+// Phase 3: 学习建议系统
+// =====================================================
+
+/** 建议类型 */
+export type RecommendationType =
+    | "next_lesson" // 顺学建议：继续下一课
+    | "review_lesson" // 回补建议：回看前置课
+    | "branch_path" // 分支建议：切换学习路径
+    | "resume_session"; // 回流建议：恢复中断的学习
+
+/** 建议理由代码 */
+export type RecommendationReasonCode =
+    | "sequential_progress" // 顺序推进
+    | "prerequisite_weak" // 前置知识薄弱
+    | "stuck_on_practice" // 练习卡住
+    | "path_completed" // 路径完成
+    | "long_absence" // 长时间未学习
+    | "incomplete_practice"; // 未完成的练习
+
+/** 学习建议 */
+export interface LearningRecommendation {
+    type: RecommendationType;
+    targetSlug: string;
+    targetTitle: string;
+    reason: string;
+    reasonCode: RecommendationReasonCode;
+    priority: number;
+    actionLabel: string;
+    context?: Record<string, unknown> | null;
+}
+
+/** 建议响应 */
+export interface RecommendationResponse {
+    primary: LearningRecommendation | null;
+    alternatives: LearningRecommendation[];
 }

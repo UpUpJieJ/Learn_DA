@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useLocalStateStore } from "@/stores/localState";
 import { getVisitorId } from "@/lib/visitorId";
+import { getRecommendationContextLesson } from "@/lib/recommendation";
 import {
   fetchUserProfile,
   fetchUserLessonStats,
@@ -10,12 +11,14 @@ import {
   fetchRecommendedLessons,
   fetchCategoryProgress,
 } from "@/api/analytics";
+import { getRecommendations } from "@/api/recommendation";
 import type {
   UserProfile,
   UserLessonStats,
   DailyTrendItem,
   RecommendedLessonsResponse,
   CategoryProgress,
+  RecommendationResponse,
 } from "@/types/api";
 import * as echarts from "echarts/core";
 import { LineChart, RadarChart } from "echarts/charts";
@@ -54,6 +57,7 @@ const lessonStats = ref<UserLessonStats | null>(null);
 const dailyTrend = ref<DailyTrendItem[]>([]);
 const recommended = ref<RecommendedLessonsResponse | null>(null);
 const categoryProgress = ref<CategoryProgress | null>(null);
+const recommendation = ref<RecommendationResponse | null>(null);
 
 const tabs = [
   { key: "overview", label: "学习概览", icon: "📊" },
@@ -69,18 +73,27 @@ const tabs = [
 async function loadAllData() {
   isLoading.value = true;
   try {
+    const currentLesson = getRecommendationContextLesson({
+      lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
+    });
     const results = await Promise.all([
       fetchUserProfile(visitorId).catch(() => null),
       fetchUserLessonStats(visitorId).catch(() => null),
       fetchDailyTrend(30).catch(() => null),
       fetchRecommendedLessons(visitorId).catch(() => null),
       fetchCategoryProgress(visitorId).catch(() => null),
+      getRecommendations({
+        visitorId,
+        completedLessons: localStateStore.progress.completedLessons,
+        currentLesson,
+      }).catch(() => null),
     ]);
     if (results[0]) profile.value = results[0];
     if (results[1]) lessonStats.value = results[1];
     if (results[2]) dailyTrend.value = results[2];
     if (results[3]) recommended.value = results[3];
     if (results[4]) categoryProgress.value = results[4];
+    if (results[5]) recommendation.value = results[5];
   } catch {
     // 静默处理
   } finally {
@@ -204,6 +217,68 @@ const completionRate = computed(() => {
   if (!recommended.value || recommended.value.totalCount === 0) return 0;
   return Math.round((recommended.value.completedCount / recommended.value.totalCount) * 100);
 });
+
+// =====================================================
+// 下一步学习建议
+// =====================================================
+
+function goToLesson(slug: string) {
+  router.push(`/learn/${slug}`);
+}
+
+function getRecommendationStyle(rec: any) {
+  const type = rec.type;
+
+  // 回补建议 - 橙色警示
+  if (type === "review_lesson") {
+    return {
+      containerClass: "bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200",
+      labelClass: "text-orange-700",
+      buttonClass: "bg-orange-600 hover:bg-orange-700",
+      badgeClass: "bg-orange-100",
+      icon: "⚠️",
+      emoji: "📖",
+      label: "建议回补前置课程",
+    };
+  }
+
+  // 分支建议 - 紫色高亮
+  if (type === "branch_path") {
+    return {
+      containerClass: "bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200",
+      labelClass: "text-purple-700",
+      buttonClass: "bg-purple-600 hover:bg-purple-700",
+      badgeClass: "bg-purple-100",
+      icon: "🔀",
+      emoji: "🎯",
+      label: "学习路径分支点",
+    };
+  }
+
+  // 回流建议 - 绿色温馨
+  if (type === "resume_session") {
+    return {
+      containerClass: "bg-gradient-to-r from-emerald-50 to-green-50 border-emerald-200",
+      labelClass: "text-emerald-700",
+      buttonClass: "bg-emerald-600 hover:bg-emerald-700",
+      badgeClass: "bg-emerald-100",
+      icon: "👋",
+      emoji: "🔄",
+      label: "欢迎回来继续学习",
+    };
+  }
+
+  // 顺学建议 - 蓝色默认
+  return {
+    containerClass: "bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100",
+    labelClass: "text-blue-700",
+    buttonClass: "bg-blue-600 hover:bg-blue-700",
+    badgeClass: "bg-blue-100",
+    icon: "💡",
+    emoji: "📚",
+    label: "下一步学习建议",
+  };
+}
 </script>
 
 <template>
@@ -338,8 +413,65 @@ const completionRate = computed(() => {
             </div>
           </div>
 
-          <!-- 推荐课程 -->
-          <div v-if="recommended?.recommended" class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-6">
+          <!-- 下一步学习建议 (Phase 3) -->
+          <div
+            v-if="recommendation?.primary"
+            class="rounded-2xl border p-6"
+            :class="getRecommendationStyle(recommendation.primary).containerClass"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-lg">{{ getRecommendationStyle(recommendation.primary).icon }}</span>
+                  <h3 class="text-sm font-semibold" :class="getRecommendationStyle(recommendation.primary).labelClass">
+                    {{ getRecommendationStyle(recommendation.primary).label }}
+                  </h3>
+                </div>
+                <h4 class="text-lg font-bold text-slate-800 mb-1">
+                  {{ recommendation.primary.targetTitle }}
+                </h4>
+                <p class="text-sm text-slate-600 mb-4">
+                  {{ recommendation.primary.reason }}
+                </p>
+                <button
+                  class="px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
+                  :class="getRecommendationStyle(recommendation.primary).buttonClass"
+                  @click="goToLesson(recommendation.primary.targetSlug)"
+                >
+                  {{ recommendation.primary.actionLabel }}
+                </button>
+              </div>
+              <div class="flex-shrink-0">
+                <div
+                  class="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+                  :class="getRecommendationStyle(recommendation.primary).badgeClass"
+                >
+                  {{ getRecommendationStyle(recommendation.primary).emoji }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 备选建议 -->
+            <div
+              v-if="recommendation.alternatives && recommendation.alternatives.length > 0"
+              class="mt-4 pt-4 border-t border-slate-200/50"
+            >
+              <p class="text-xs text-slate-500 font-medium mb-2">其他选择：</p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="alt in recommendation.alternatives"
+                  :key="alt.targetSlug"
+                  class="px-3 py-1.5 text-xs font-medium rounded-lg bg-white/70 border border-slate-200 text-slate-700 hover:border-slate-300 hover:shadow-sm transition-all"
+                  @click="goToLesson(alt.targetSlug)"
+                >
+                  {{ alt.targetTitle }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 推荐课程 (旧版，保留兼容) -->
+          <div v-else-if="recommended?.recommended" class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-6">
             <div class="flex items-center justify-between">
               <div>
                 <h3 class="text-sm font-semibold text-blue-700 mb-1">📌 推荐下一步</h3>

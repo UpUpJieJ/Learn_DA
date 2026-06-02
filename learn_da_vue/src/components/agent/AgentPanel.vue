@@ -44,7 +44,6 @@ const isOpen = computed(() => localStateStore.isAgentOpen);
 
 const agentContext = computed<AgentContext>(() => ({
     currentCode: playgroundStore.code || undefined,
-    lastError: playgroundStore.stderr || undefined,
     stdout: playgroundStore.stdout || undefined,
     stderr: playgroundStore.stderr || undefined,
     ...props.context,
@@ -53,8 +52,64 @@ const agentContext = computed<AgentContext>(() => ({
 const messageCount = computed(() => messages.value.length);
 const hasCurrentCode = computed(() => !!agentContext.value.currentCode?.trim());
 const hasCurrentError = computed(
-    () => !!(agentContext.value.stderr || agentContext.value.lastError)?.trim(),
+    () => !!agentContext.value.stderr?.trim(),
 );
+const currentLessonLabel = computed(
+    () => agentContext.value.lessonTitle || agentContext.value.currentLesson || "当前课程",
+);
+const contextBadges = computed(() => [
+    {
+        label: "当前课程",
+        active: !!agentContext.value.currentLesson || !!agentContext.value.lessonTitle,
+    },
+    {
+        label: "当前代码",
+        active: hasCurrentCode.value,
+    },
+    {
+        label: "最近报错",
+        active: hasCurrentError.value,
+    },
+]);
+const coachContextSummary = computed(() => {
+    if (hasCurrentError.value) {
+        return "我会优先结合当前报错定位原因，再给出可验证的修复建议。";
+    }
+    if (hasCurrentCode.value) {
+        return "我会围绕你当前的代码、课程和运行结果来解释与引导。";
+    }
+    return "你可以直接问当前课程的概念、迁移写法，或让我先出一道小练习。";
+});
+const emptyStateSuggestions = computed(() => {
+    if (hasCurrentError.value) {
+        return [
+            "先帮我解释这个报错为什么出现",
+            "给我一个最小修复步骤，不要直接重写整段",
+            "修完后我该怎么验证",
+        ];
+    }
+    if (hasCurrentCode.value) {
+        return [
+            "解释这段代码在当前课里的作用",
+            "告诉我这段写法和 Pandas / SQL 的差异",
+            "基于这段代码出一道下一步练习",
+        ];
+    }
+    return [
+        "这节课最关键的迁移心智是什么",
+        "先给我一道热身练习",
+        "如果我学完这一课，下一步该去哪",
+    ];
+});
+const inputPlaceholder = computed(() => {
+    if (hasCurrentError.value) {
+        return "例如：先帮我定位这次报错的原因";
+    }
+    if (hasCurrentCode.value) {
+        return "例如：解释这段代码，或告诉我下一步怎么练";
+    }
+    return "例如：这节课和 Pandas / SQL 的差异是什么？";
+});
 
 const quickActions = computed<QuickAction[]>(() => [
     {
@@ -71,19 +126,19 @@ const quickActions = computed<QuickAction[]>(() => [
     },
     {
         key: "pandas2polars",
-        label: "Pandas → Polars",
+        label: "迁移到 Polars",
         disabled: false,
         prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的迁移示例，说明关键 API 对应关系。",
     },
     {
         key: "sql2duckdb",
-        label: "SQL → DuckDB",
+        label: "迁移到 DuckDB",
         disabled: false,
         prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法示例，说明关键差异。",
     },
     {
         key: "exercise",
-        label: "生成练习",
+        label: "出一道练习",
         disabled: false,
         prompt: "请根据当前课程生成一个小练习，并给出提示但先不要直接给最终答案。",
     },
@@ -94,6 +149,13 @@ const quickActions = computed<QuickAction[]>(() => [
         prompt: "请根据当前课程、代码和运行结果，告诉我下一步应该学习或尝试什么。",
     },
 ]);
+
+function formatAgentErrorMessage(message?: string) {
+    if (!message?.trim()) {
+        return "这次请求没有成功发出。\n\n建议你先重试一次，或者把问题缩小成“解释这段代码 / 为什么报错 / 下一步练什么”这样的单一步骤。";
+    }
+    return `这次请求失败了：${message}\n\n你可以重试一次，或者让我先围绕当前课程给一个更小的提示。`;
+}
 
 // 面板尺寸（支持自由拖拽调整）
 const panelWidth = ref(400);
@@ -205,7 +267,7 @@ async function sendMessage(text?: string) {
             onError: (error) => {
                 const msg = messages.value.find((m) => m.id === assistantId);
                 if (msg) {
-                    msg.content = `请求失败：${error.message}`;
+                    msg.content = formatAgentErrorMessage(error.message);
                     msg.isStreaming = false;
                 }
                 streamingMessageId.value = null;
@@ -217,7 +279,7 @@ async function sendMessage(text?: string) {
     } catch {
         const msg = messages.value.find((m) => m.id === assistantId);
         if (msg) {
-            msg.content = "发生未知错误，请稍后重试。";
+            msg.content = formatAgentErrorMessage();
             msg.isStreaming = false;
         }
         streamingMessageId.value = null;
@@ -264,7 +326,6 @@ async function sendQuickAction(action: QuickAction) {
         } else {
             const errorMessage =
                 agentContext.value.stderr ||
-                agentContext.value.lastError ||
                 "当前没有捕获到具体错误，请检查代码逻辑。";
             const response = await fixCode({
                 code,
@@ -282,7 +343,7 @@ async function sendQuickAction(action: QuickAction) {
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : "请求失败";
-        assistantMsg.content = `请求失败：${message}`;
+        assistantMsg.content = formatAgentErrorMessage(message);
     } finally {
         assistantMsg.isStreaming = false;
         isLoading.value = false;
@@ -426,7 +487,10 @@ onUnmounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </div>
-                    <span class="text-sm font-medium text-slate-200">学习助手</span>
+                    <div>
+                        <div class="text-sm font-medium text-slate-200">迁移学习教练</div>
+                        <p class="text-[11px] text-slate-500">{{ currentLessonLabel }}</p>
+                    </div>
                 </div>
 
                 <div class="flex items-center gap-1">
@@ -468,8 +532,28 @@ onUnmounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </div>
-                    <p class="text-sm text-slate-300 font-medium mb-1">我是你的学习助手</p>
-                    <p class="text-xs text-slate-500">可以帮你理解代码、修复错误、对比 Pandas/SQL 迁移写法</p>
+                    <p class="text-sm text-slate-300 font-medium mb-1">我是你的迁移学习教练</p>
+                    <p class="text-xs text-slate-500 max-w-xs leading-relaxed">{{ coachContextSummary }}</p>
+                    <div class="mt-4 flex flex-wrap justify-center gap-2">
+                        <span
+                            v-for="badge in contextBadges"
+                            :key="badge.label"
+                            class="rounded-full border px-2.5 py-1 text-[11px]"
+                            :class="badge.active ? 'border-blue-400/40 bg-blue-500/10 text-blue-200' : 'border-white/10 bg-white/5 text-slate-500'"
+                        >
+                            {{ badge.label }}
+                        </span>
+                    </div>
+                    <div class="mt-5 w-full max-w-sm space-y-2 text-left">
+                        <button
+                            v-for="suggestion in emptyStateSuggestions"
+                            :key="suggestion"
+                            class="w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 transition-colors hover:border-blue-400/30 hover:bg-blue-500/5 hover:text-slate-200"
+                            @click="sendMessage(suggestion)"
+                        >
+                            {{ suggestion }}
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 消息 -->
@@ -508,7 +592,7 @@ onUnmounted(() => {
                                     class="text-xs text-slate-600 hover:text-slate-400 transition-colors"
                                     @click="copyCode(msg.content, msg.id)"
                                 >
-                                    {{ copiedBlockId === msg.id ? '已复制' : '复制' }}
+                                    {{ copiedBlockId === msg.id ? '已复制' : '复制回复' }}
                                 </button>
                             </div>
                         </div>
@@ -530,6 +614,9 @@ onUnmounted(() => {
 
             <!-- 输入区域 -->
             <div class="shrink-0 bg-[#1a1a1a] border-t border-white/8 px-4 py-3">
+                <p class="mb-3 text-[11px] leading-relaxed text-slate-500">
+                    围绕当前课程、代码和报错提供提示，默认先讲思路，再给可执行建议。
+                </p>
                 <div class="mb-3 grid grid-cols-3 gap-2">
                     <button
                         v-for="action in quickActions"
@@ -556,7 +643,7 @@ onUnmounted(() => {
                         <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                             <rect x="6" y="6" width="12" height="12" rx="1" />
                         </svg>
-                        停止
+                        停止回答
                     </button>
                 </div>
 
@@ -566,7 +653,7 @@ onUnmounted(() => {
                         ref="inputRef"
                         v-model="inputText"
                         class="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-600 resize-none outline-none leading-relaxed max-h-[100px]"
-                        placeholder="输入问题..."
+                        :placeholder="inputPlaceholder"
                         rows="1"
                         :disabled="isLoading"
                         @keydown="handleInputKeydown"
@@ -589,6 +676,26 @@ onUnmounted(() => {
 
     <!-- 内嵌模式 -->
     <div v-if="embedded" class="flex flex-col h-full min-h-0 bg-[#0d1117]">
+        <header class="flex items-center justify-between border-b border-white/8 px-4 py-3 shrink-0">
+            <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                </div>
+                <div>
+                    <div class="text-sm font-medium text-slate-200">迁移学习教练</div>
+                    <p class="text-[11px] text-slate-500">{{ currentLessonLabel }}</p>
+                </div>
+            </div>
+            <button
+                v-if="messageCount > 0"
+                class="rounded px-2 py-1 text-[11px] text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
+                @click="clearMessages"
+            >
+                清空
+            </button>
+        </header>
         <!-- 消息列表 -->
         <div
             ref="messagesContainerRef"
@@ -605,7 +712,28 @@ onUnmounted(() => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                 </div>
-                <p class="text-sm text-slate-500">输入问题获得帮助</p>
+                <p class="text-sm text-slate-300 font-medium mb-1">我是你的迁移学习教练</p>
+                <p class="text-xs text-slate-500 max-w-xs leading-relaxed">{{ coachContextSummary }}</p>
+                <div class="mt-4 flex flex-wrap justify-center gap-2">
+                    <span
+                        v-for="badge in contextBadges"
+                        :key="badge.label"
+                        class="rounded-full border px-2.5 py-1 text-[11px]"
+                        :class="badge.active ? 'border-blue-400/40 bg-blue-500/10 text-blue-200' : 'border-white/10 bg-white/5 text-slate-500'"
+                    >
+                        {{ badge.label }}
+                    </span>
+                </div>
+                <div class="mt-5 w-full max-w-sm space-y-2 text-left">
+                    <button
+                        v-for="suggestion in emptyStateSuggestions"
+                        :key="suggestion"
+                        class="w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 transition-colors hover:border-blue-400/30 hover:bg-blue-500/5 hover:text-slate-200"
+                        @click="sendMessage(suggestion)"
+                    >
+                        {{ suggestion }}
+                    </button>
+                </div>
             </div>
 
             <!-- 消息 -->
@@ -644,7 +772,7 @@ onUnmounted(() => {
                                 class="text-xs text-slate-600 hover:text-slate-400 transition-colors"
                                 @click="copyCode(msg.content, msg.id)"
                             >
-                                {{ copiedBlockId === msg.id ? '已复制' : '复制' }}
+                                {{ copiedBlockId === msg.id ? '已复制' : '复制回复' }}
                             </button>
                         </div>
                     </div>
@@ -666,6 +794,9 @@ onUnmounted(() => {
 
         <!-- 输入区域 -->
         <div class="shrink-0 bg-[#0d1117] border-t border-white/8 px-4 py-3">
+            <p class="mb-3 text-[11px] leading-relaxed text-slate-500">
+                优先结合当前课程、代码和报错给你提示，不直接跳过思考过程。
+            </p>
             <div class="mb-3 grid grid-cols-2 gap-2">
                 <button
                     v-for="action in quickActions"
@@ -692,7 +823,7 @@ onUnmounted(() => {
                     <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                         <rect x="6" y="6" width="12" height="12" rx="1" />
                     </svg>
-                    停止
+                    停止回答
                 </button>
             </div>
 
@@ -702,7 +833,7 @@ onUnmounted(() => {
                     ref="inputRef"
                     v-model="inputText"
                     class="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-600 resize-none outline-none leading-relaxed max-h-[100px]"
-                    placeholder="输入问题..."
+                    :placeholder="inputPlaceholder"
                     rows="1"
                     :disabled="isLoading"
                     @keydown="handleInputKeydown"
@@ -758,8 +889,13 @@ onUnmounted(() => {
     border-radius: 4px;
 }
 .msg-content ul { padding-left: 1.2rem; margin: 0.3rem 0; list-style: disc; }
+.msg-content ol { padding-left: 1.2rem; margin: 0.3rem 0; list-style: decimal; }
 .msg-content li { margin-bottom: 0.2rem; color: #cbd5e1; }
 .msg-content blockquote { border-left: 2px solid #4b5563; padding: 0.3rem 0.6rem; margin: 0.4rem 0; background: rgba(255,255,255,0.03); border-radius: 0 4px 4px 0; color: #9ca3af; }
+.msg-content table { width: 100%; border-collapse: collapse; margin: 0.4rem 0; font-size: 0.78rem; }
+.msg-content th, .msg-content td { border: 1px solid rgba(255,255,255,0.08); padding: 0.3rem 0.5rem; text-align: left; }
+.msg-content th { background: rgba(255,255,255,0.04); font-weight: 600; color: #cbd5e1; }
+.msg-content td { color: #94a3b8; }
 
 /* 代码块 */
 .code-block { margin: 0.5rem 0; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #1e1e1e; }

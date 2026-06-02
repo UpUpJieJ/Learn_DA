@@ -1,0 +1,79 @@
+services:
+  backend:
+    build:
+      context: ./learn_da
+      dockerfile: Dockerfile
+    container_name: learn_da_backend
+    restart: unless-stopped
+    env_file:
+      - ./deploy/.env
+    environment:
+      APP_ENV: production
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      DATABASE_URL: sqlite+aiosqlite:///./data/learn_da.db
+      CORS_ORIGINS: ${PUBLIC_ORIGIN:-http://localhost}
+      ENABLED_APP_MODULES: learning,playground,agent,analytics
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SANDBOX_DOCKER_ENABLED: ${SANDBOX_DOCKER_ENABLED:-false}
+      SANDBOX_LOCAL_ENABLED: ${SANDBOX_LOCAL_ENABLED:-true}
+      SANDBOX_USE_MOCK_WHEN_DISABLED: "true"
+      SANDBOX_DOCKER_IMAGE: ${SANDBOX_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+    volumes:
+      - learn_da_data:/app/data
+      - learn_da_logs:/app/logs
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    command: >
+      sh -c "alembic upgrade head &&
+      uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  web:
+    build:
+      context: ./learn_da_vue
+      dockerfile: Dockerfile
+    container_name: learn_da_web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+
+  redis:
+    image: redis:7-alpine
+    container_name: learn_da_redis
+    restart: unless-stopped
+    profiles: ["redis"]
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    expose:
+      - "6379"
+
+  sandbox-image:
+    build:
+      context: ./learn_da
+      dockerfile: Dockerfile.sandbox
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+    image: ${SANDBOX_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+    profiles: ["sandbox"]
+
+volumes:
+  learn_da_data:
+  learn_da_logs:
+  redis_data:

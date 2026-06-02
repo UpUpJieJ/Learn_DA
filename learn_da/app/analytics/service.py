@@ -132,3 +132,25 @@ class AnalyticsService:
     async def get_category_progress(self, visitor_id: str) -> dict:
         """获取分类进度"""
         return await self.repo.get_category_progress(visitor_id)
+
+    # ── 回补建议查询 ─────────────────────────────────────
+
+    async def get_lesson_specific_stats(
+        self, visitor_id: str, lesson_slug: str
+    ) -> dict[str, int | bool]:
+        """获取用户在特定课程的学习统计（用于回补建议）"""
+        return await self.repo.get_lesson_specific_stats(visitor_id, lesson_slug)
+
+    async def get_lesson_snapshots_count(self, visitor_id: str, lesson_slug: str) -> int:
+        """获取用户在特定课程的代码快照数量（用于回补建议）"""
+        return await self.repo.get_lesson_snapshots_count(visitor_id, lesson_slug)
+
+    # ── 回流建议查询 ─────────────────────────────────────
+
+    async def get_incomplete_lessons_with_activity(
+        self, visitor_id: str, completed_lessons: list[str]
+    ) -> list[dict]:
+        """获取有活动但未完成的课程列表（用于回流建议）"""
+        return await self.repo.get_incomplete_lessons_with_activity(
+            visitor_id, completed_lessons
+        )

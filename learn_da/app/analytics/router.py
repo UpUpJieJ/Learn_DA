@@ -72,12 +72,17 @@ async def get_learning_progress(
     return StdResp.success(data=result)
 
 
-@router.get("/analytics/recommended-lessons")
+@router.get("/analytics/recommended-lessons", deprecated=True)
 async def get_recommended_lessons(
     visitor_id: str = Query(..., alias="visitorId"),
     db: AsyncSession = Depends(get_db),
 ):
-    """基于用户进度推荐下一节课"""
+    """
+    [DEPRECATED] 基于用户进度推荐下一节课
+
+    此接口已被 `/learning/recommendations` 替代。
+    保留用于前端 Dashboard 的旧版 fallback 展示，将在后续版本移除。
+    """
     service = AnalyticsService(db)
     repo = LearningRepository()
 

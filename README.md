@@ -132,7 +132,7 @@ npm run dev
 
 前端默认运行在 `http://127.0.0.1:5173`，已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
 
-### Docker Compose 一键启动
+### Docker Compose 一键启动（仅后端）
 
 ```bash
 cd learn_da
@@ -146,6 +146,24 @@ docker-compose --profile redis up -d
 # 构建沙箱镜像（用于隔离执行用户代码）
 docker-compose --profile sandbox build
 ```
+
+### Docker Compose 生产部署（前端 + 后端 + Nginx）
+
+在仓库根目录一键拉起：
+
+```bash
+# 1. 配置环境变量
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env：PUBLIC_ORIGIN、LLM_API_KEY 等
+
+# 2. 构建并启动
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 3. 访问
+# 浏览器打开 http://服务器IP  （默认映射 80 端口）
+```
+
+可选：`--profile redis` 启用 Redis；`--profile sandbox` 构建 Playground 沙箱镜像。
 
 ---
 

@@ -21,10 +21,7 @@ class Settings(BaseSettings):
     DB_POOL_PRE_PING: bool = True
     DB_ECHO: bool = False
 
-    CORS_ORIGINS: str = (
-        "http://localhost:3000,http://localhost:5173,"
-        "http://127.0.0.1:3000,http://127.0.0.1:5173"
-    )
+    CORS_ORIGINS: str
     CORS_ALLOW_CREDENTIALS: bool = False
     CORS_ALLOW_ALL_ORIGINS: bool = False
 
@@ -35,7 +32,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_PLAYGROUND_EXECUTE: str = "10/minute"
 
     REDIS_ENABLED: bool = False
-    REDIS_URL: Optional[str] = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
@@ -45,8 +41,6 @@ class Settings(BaseSettings):
     REDIS_SOCKET_TIMEOUT: int = 5
     REDIS_RETRY_ON_TIMEOUT: bool = True
     REDIS_HEALTH_CHECK_INTERVAL: int = 30
-    REDIS_DEFAULT_EXPIRE: int = 300
-    REDIS_SESSION_EXPIRE: int = 86400
     REDIS_CACHE_PREFIX: str = "learn-da"
     REDIS_CACHE_NULL_EXPIRE: int = 180
 
@@ -57,6 +51,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: Optional[str] = None
     LLM_BASE_URL: Optional[str] = None
     LLM_MODEL: Optional[str] = None
+    LLM_ENABLE_THINKING: bool = False
     LEARN_DA_EMBEDDING_PROVIDER: str = "openai_compatible"
     LEARN_DA_EMBEDDING_API_KEY: Optional[str] = None
     LEARN_DA_EMBEDDING_BASE_URL: Optional[str] = None
@@ -69,53 +64,10 @@ class Settings(BaseSettings):
     SANDBOX_TIMEOUT_SECONDS: int = 5
     SANDBOX_MEMORY_LIMIT_MB: int = 256
     SANDBOX_CPU_QUOTA: int = 50000
-    SANDBOX_USE_MOCK_WHEN_DISABLED: bool = True
     SANDBOX_LOCAL_ENABLED: bool = True
 
     ENABLED_APP_MODULES: str = "learning,playground,analytics"
 
-    MINIO_ENDPOINT: Optional[str] = None
-    MINIO_ACCESS_KEY: Optional[str] = None
-    MINIO_SECRET_KEY: Optional[str] = None
-    BUCKET_NAME: str = "learn-da"
-    CELERY_BROKER_URL: Optional[str] = None
-    CELERY_RESULT_BACKEND: Optional[str] = None
-    MAIL_FROM_NAME: Optional[str] = None
-    MAIL_SERVER: Optional[str] = None
-    MAIL_PORT: Optional[int] = None
-    MAIL_USERNAME: Optional[str] = None
-    MAIL_PASSWORD: Optional[str] = None
-    USE_CREDENTIALS: bool = True
-    EMAIL_VERIFICATION_EXPIRE: int = 300
-    UPLOAD_DIR: str = "uploads"
-    MAX_FILE_SIZE: int = 1024 * 1024 * 1024
-    ALLOWED_EXTENSIONS: list[str] = [
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".gif",
-        ".bmp",
-        ".webp",
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".ppt",
-        ".pptx",
-        ".txt",
-        ".md",
-        ".csv",
-        ".zip",
-        ".rar",
-        ".7z",
-        ".tar",
-        ".gz",
-        ".json",
-        ".xml",
-        ".yaml",
-        ".yml",
-    ]
 
     model_config = SettingsConfigDict(
         env_file=".env",

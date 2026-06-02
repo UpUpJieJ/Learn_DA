@@ -22,8 +22,8 @@ export const platformCopy = {
   heroTitle: "从 Pandas / SQL",
   heroTitleHighlight: "迁移到 Polars / DuckDB",
   heroSubtitle:
-    "面向已有 Pandas 或 SQL 基础的数据分析学习者，通过可运行的交互式课程，快速掌握现代高性能分析工具的用法与心智模型。",
-  currentScope: "当前已开放 Polars、DuckDB 与组合实战专题",
+    "面向已有 Pandas 或 SQL 基础的学习者，用课程、练习、Playground 和学习教练，把熟悉的分析习惯迁移到 Polars / DuckDB。",
+  currentScope: "当前版本聚焦 11 节核心课程与 3 条迁移路径",
   expansionHint: "后续可扩展更多数据分析迁移方向。",
 };
 
@@ -42,7 +42,7 @@ export const learningTracks: LearningTrackMeta[] = [
     tags: ["DataFrame", "惰性执行", "高性能", "Python"],
     color: "blue",
     route: "/learn?category=polars",
-    lessonCount: 12,
+    lessonCount: 6,
   },
   {
     key: "duckdb",
@@ -58,7 +58,7 @@ export const learningTracks: LearningTrackMeta[] = [
     tags: ["SQL", "OLAP", "零配置", "文件分析"],
     color: "yellow",
     route: "/learn?category=duckdb",
-    lessonCount: 10,
+    lessonCount: 4,
   },
   {
     key: "combined",
@@ -74,7 +74,7 @@ export const learningTracks: LearningTrackMeta[] = [
     tags: ["数据管道", "综合案例", "工作流"],
     color: "purple",
     route: "/learn?category=combined",
-    lessonCount: 8,
+    lessonCount: 1,
   },
 ];
 

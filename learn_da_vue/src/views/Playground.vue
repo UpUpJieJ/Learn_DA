@@ -4,9 +4,9 @@ import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
-import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
+import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
 import { getVisitorId } from "@/lib/visitorId";
-import type { DataFrameCell, ExampleSummary, LessonDetail } from "@/types/api";
+import type { DataFrameCell, ExampleSummary, LessonDetail, CodeSnapshotItem } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
 
@@ -71,6 +71,22 @@ watch(
     } else {
       currentLesson.value = null;
       loadDraftForContext();
+    }
+  },
+  { immediate: true }
+);
+
+// ---- 自动触发 Agent 快捷操作（从课程页"让 AI 出题"跳转） ----
+watch(
+  () => route.query.action,
+  (action) => {
+    if (action === 'exercise') {
+      // 切换到助手 Tab
+      activeResultTab.value = 'assistant';
+      // 打开 Agent 面板（浮动模式兼容）
+      localStateStore.openAgent();
+      // 清除 query 参数避免重复触发
+      router.replace({ query: {} });
     }
   },
   { immediate: true }
@@ -182,11 +198,86 @@ const isDragging = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 const lineNumbersRef = ref<HTMLElement | null>(null);
 
-const activeResultTab = ref<"output" | "dataframe" | "history" | "assistant">(
+const activeResultTab = ref<"output" | "dataframe" | "history" | "assistant" | "attempts">(
   "assistant"
 );
 
-const resultTabs = ["output", "dataframe", "history", "assistant"] as const;
+const resultTabs = ["output", "dataframe", "history", "attempts", "assistant"] as const;
+
+// =====================================================
+// 练习态上下文
+// =====================================================
+
+const isPracticeContextCollapsed = ref(false);
+
+function togglePracticeContext() {
+  isPracticeContextCollapsed.value = !isPracticeContextCollapsed.value;
+  localStorage.setItem('playground:practiceContextCollapsed', String(isPracticeContextCollapsed.value));
+}
+
+// =====================================================
+// 代码快照 / 尝试记录
+// =====================================================
+
+const snapshots = ref<CodeSnapshotItem[]>([]);
+const isLoadingSnapshots = ref(false);
+const showSaveDialog = ref(false);
+const saveDescription = ref("");
+const restoreMessage = ref("");
+
+/** 加载快照列表 */
+async function loadSnapshots() {
+  isLoadingSnapshots.value = true;
+  try {
+    snapshots.value = await fetchCodeSnapshots(getVisitorId(), props.slug);
+  } catch (err) {
+    console.error("加载快照失败:", err);
+  } finally {
+    isLoadingSnapshots.value = false;
+  }
+}
+
+/** 恢复某个快照 */
+function restoreSnapshot(snapshot: CodeSnapshotItem) {
+  playgroundStore.setCode(snapshot.code);
+  localStateStore.savePlaygroundDraft(draftKey.value, snapshot.code, playgroundStore.language);
+  restoreMessage.value = `已恢复到 ${formatRelativeTime(snapshot.createdTime)} 的尝试`;
+  setTimeout(() => {
+    restoreMessage.value = "";
+  }, 3000);
+}
+
+/** 格式化相对时间 */
+function formatRelativeTime(timeStr: string): string {
+  const time = new Date(timeStr).getTime();
+  const now = Date.now();
+  const diff = now - time;
+
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}分钟前`;
+  if (hours < 24) return `${hours}小时前`;
+  if (days < 7) return `${days}天前`;
+  return new Date(time).toLocaleDateString("zh-CN");
+}
+
+// 监听 attempts tab 切换，自动加载快照
+watch(activeResultTab, (newTab) => {
+  if (newTab === "attempts" && snapshots.value.length === 0) {
+    loadSnapshots();
+  }
+});
+
+// 从 localStorage 恢复折叠状态
+onMounted(() => {
+  const saved = localStorage.getItem('playground:practiceContextCollapsed');
+  if (saved !== null) {
+    isPracticeContextCollapsed.value = saved === 'true';
+  }
+});
 
 const docWidthStyle = computed(() => `${docPanelWidth.value}px`);
 const editorWidthStyle = computed(() => `${splitRatio.value}%`);
@@ -290,6 +381,11 @@ onMounted(() => {
   startAutoSave();
 });
 
+// 当用户切换自动保存间隔时，重启定时器
+watch(() => localStateStore.autoSaveInterval, () => {
+  startAutoSave();
+});
+
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   document.removeEventListener("click", handleClickOutside);
@@ -311,10 +407,22 @@ const isSaving = ref(false);
 const lastSaveTime = ref<number | null>(null);
 const saveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+/** 记录上次成功保存时的代码内容，用于脏检测 */
+let lastSavedCode: string | null = null;
+/** 记录用户上次取消保存时的代码内容，避免反复弹窗 */
+let lastDismissedCode: string | null = null;
 
 /** 手动保存代码快照 */
 async function saveCode() {
   if (!playgroundStore.code.trim() || isSaving.value) return;
+
+  // 显示保存对话框
+  showSaveDialog.value = true;
+}
+
+/** 确认保存快照 */
+async function confirmSave() {
+  if (isSaving.value) return;
   isSaving.value = true;
   saveStatus.value = "saving";
   try {
@@ -323,9 +431,20 @@ async function saveCode() {
       lessonSlug: props.slug || undefined,
       code: playgroundStore.code,
       language: playgroundStore.language,
+      description: saveDescription.value.trim() || undefined,
     });
     lastSaveTime.value = Date.now();
+    lastSavedCode = playgroundStore.code;
+    lastDismissedCode = null; // 保存成功后清除取消记录
     saveStatus.value = "saved";
+    showSaveDialog.value = false;
+    saveDescription.value = "";
+
+    // 刷新快照列表
+    if (activeResultTab.value === "attempts") {
+      loadSnapshots();
+    }
+
     setTimeout(() => {
       if (saveStatus.value === "saved") saveStatus.value = "idle";
     }, 3000);
@@ -339,14 +458,37 @@ async function saveCode() {
   }
 }
 
-/** 启动 30 秒自动保存 */
+/** 取消保存 */
+function cancelSave() {
+  // 记住当前取消的代码内容，避免下次自动保存针对同样的代码再次弹窗
+  lastDismissedCode = playgroundStore.code;
+  showSaveDialog.value = false;
+  saveDescription.value = "";
+}
+
+/** 启动自动保存定时器 */
 function startAutoSave() {
   stopAutoSave();
+  const interval = localStateStore.autoSaveInterval;
+  // 0 = 手动模式，不启动定时器
+  if (!interval || interval <= 0) {
+    autoSaveTimer = null;
+    return;
+  }
+  // 初始记录：将当前代码记为"已保存"状态，避免无修改时弹窗
+  lastSavedCode = playgroundStore.code || null;
+  lastDismissedCode = null;
   autoSaveTimer = setInterval(() => {
-    if (playgroundStore.code.trim()) {
+    // 条件：代码不为空 + 相比上次保存有变化 + 不是上次取消的代码 + 没在弹窗中
+    if (
+      playgroundStore.code.trim() &&
+      playgroundStore.code !== lastSavedCode &&
+      playgroundStore.code !== lastDismissedCode &&
+      !showSaveDialog.value
+    ) {
       saveCode();
     }
-  }, 30000);
+  }, interval * 1000);
 }
 
 function stopAutoSave() {
@@ -422,6 +564,9 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
 
         <!-- 课程名（有slug时显示） -->
         <div v-if="currentLesson" class="flex items-center gap-2">
+          <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
           <span class="text-xs text-slate-400">{{ currentLesson.title }}</span>
         </div>
 
@@ -539,7 +684,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          已保存
+          已保存本次尝试
         </span>
         <span v-else-if="saveStatus === 'saving'" class="text-xs text-blue-400">保存中…</span>
         <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
@@ -547,15 +692,32 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
         <!-- 保存 -->
         <button
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all"
-          title="保存代码 (每30秒自动保存)"
+          title="保存本次练习尝试（可添加备注）"
           @click="saveCode"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
-          保存
+          保存本次尝试
         </button>
+
+        <!-- 自动保存间隔选择 -->
+        <div class="relative">
+          <select
+            :value="localStateStore.autoSaveInterval"
+            class="appearance-none bg-transparent border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:border-white/20 focus:outline-none focus:border-emerald-500/50 cursor-pointer pr-6"
+            title="自动保存间隔"
+            @change="localStateStore.setAutoSaveInterval(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option :value="0" class="bg-[#1c2128]">手动</option>
+            <option :value="30" class="bg-[#1c2128]">30秒</option>
+            <option :value="60" class="bg-[#1c2128]">60秒</option>
+          </select>
+          <svg class="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
 
         <!-- 运行 -->
         <button
@@ -594,6 +756,76 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
         </button>
       </div>
     </header>
+
+    <!-- 练习上下文卡片 -->
+    <div
+      v-if="currentLesson && (currentLesson.practiceObjective || currentLesson.completionCriteria?.length)"
+      class="shrink-0 border-b border-white/5 bg-[#161b22]"
+    >
+      <div class="px-4 py-3">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <!-- 练习目标 -->
+            <div v-if="!isPracticeContextCollapsed && currentLesson.practiceObjective" class="mb-3">
+              <div class="flex items-center gap-2 mb-1.5">
+                <svg class="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span class="text-xs font-semibold text-blue-300">练习目标</span>
+              </div>
+              <p class="text-sm text-slate-300 leading-relaxed pl-6">
+                {{ currentLesson.practiceObjective }}
+              </p>
+            </div>
+
+            <!-- 完成标准 -->
+            <div v-if="!isPracticeContextCollapsed && currentLesson.completionCriteria?.length" class="mb-0">
+              <div class="flex items-center gap-2 mb-1.5">
+                <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                <span class="text-xs font-semibold text-emerald-300">完成标准</span>
+              </div>
+              <ul class="space-y-1 pl-6">
+                <li
+                  v-for="(criterion, index) in currentLesson.completionCriteria"
+                  :key="index"
+                  class="text-sm text-slate-300 flex items-start gap-2"
+                >
+                  <span class="text-slate-600 shrink-0">•</span>
+                  <span>{{ criterion }}</span>
+                </li>
+              </ul>
+            </div>
+
+            <!-- 折叠态提示 -->
+            <div v-if="isPracticeContextCollapsed" class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span class="text-xs text-slate-400">练习模式</span>
+            </div>
+          </div>
+
+          <!-- 折叠按钮 -->
+          <button
+            class="shrink-0 w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+            :title="isPracticeContextCollapsed ? '展开练习信息' : '折叠练习信息'"
+            @click="togglePracticeContext"
+          >
+            <svg
+              class="w-3.5 h-3.5 transition-transform"
+              :class="isPracticeContextCollapsed ? 'rotate-180' : ''"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 主体 -->
     <div class="flex flex-1 min-h-0 overflow-hidden">
@@ -895,6 +1127,8 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                   ? "数据"
                   : tab === "history"
                   ? "历史"
+                  : tab === "attempts"
+                  ? "尝试"
                   : "助手"
               }}</span>
             </button>
@@ -1014,6 +1248,78 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                     class="font-mono text-xs text-red-400 whitespace-pre-wrap"
                     >{{ playgroundStore.stderr }}</pre
                   >
+                </div>
+
+                <!-- 练习反馈：成功时 -->
+                <div
+                  v-if="currentLesson && playgroundStore.lastResponse?.status === 'success'"
+                  class="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/20 p-3"
+                >
+                  <div class="flex items-start gap-2 mb-2">
+                    <svg class="w-4 h-4 text-blue-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <div class="flex-1">
+                      <p class="text-sm font-medium text-blue-300 mb-2">💡 练习提示</p>
+                      <p class="text-xs text-slate-400 mb-2">检查是否完成了所有完成标准：</p>
+                      <ul class="space-y-1 mb-3">
+                        <li
+                          v-for="(criterion, index) in currentLesson.completionCriteria"
+                          :key="index"
+                          class="text-xs text-slate-300 flex items-start gap-2"
+                        >
+                          <span class="text-slate-600 shrink-0">□</span>
+                          <span>{{ criterion }}</span>
+                        </li>
+                      </ul>
+                      <p class="text-xs text-slate-400">
+                        完成后可以：
+                        <button
+                          class="text-blue-400 hover:text-blue-300 underline"
+                          @click="saveCode"
+                        >
+                          保存本次尝试
+                        </button>
+                        <span v-if="currentLesson.nextLesson">
+                          或
+                          <button
+                            class="text-blue-400 hover:text-blue-300 underline"
+                            @click="goToNextLesson"
+                          >
+                            继续下一节课
+                          </button>
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 练习反馈：出错时 -->
+                <div
+                  v-if="currentLesson && playgroundStore.lastResponse?.status === 'error'"
+                  class="mt-4 rounded-lg bg-yellow-500/5 border border-yellow-500/20 p-3"
+                >
+                  <div class="flex items-start gap-2">
+                    <svg class="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <div class="flex-1">
+                      <p class="text-sm font-medium text-yellow-300 mb-2">💡 遇到问题？</p>
+                      <ul class="space-y-1 text-xs text-slate-300">
+                        <li>
+                          • 切换到
+                          <button
+                            class="text-yellow-400 hover:text-yellow-300 underline"
+                            @click="activeResultTab = 'assistant'"
+                          >
+                            "助手"Tab
+                          </button>
+                          寻求帮助
+                        </li>
+                        <li>• 查看左侧课程文档中的常见错误</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1158,6 +1464,90 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 </div>
               </div>
             </div>
+            <!-- 尝试记录面板 -->
+            <div
+              v-show="activeResultTab === 'attempts'"
+              class="absolute inset-0 overflow-y-auto p-4"
+            >
+              <!-- 恢复成功提示 -->
+              <div
+                v-if="restoreMessage"
+                class="mb-3 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs"
+              >
+                {{ restoreMessage }}
+              </div>
+
+              <div
+                v-if="isLoadingSnapshots"
+                class="flex flex-col items-center justify-center h-full text-center"
+              >
+                <div
+                  class="w-8 h-8 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin"
+                />
+                <p class="text-sm text-slate-500 mt-3">加载中...</p>
+              </div>
+              <div
+                v-else-if="snapshots.length === 0"
+                class="flex flex-col items-center justify-center h-full text-center"
+              >
+                <p class="text-sm text-slate-600">暂无练习尝试记录</p>
+                <p class="text-xs text-slate-700 mt-2">点击"保存本次尝试"来记录你的练习</p>
+              </div>
+              <div v-else>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs text-slate-500"
+                    >最近 {{ snapshots.length }} 次尝试</span
+                  >
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="snapshot in snapshots"
+                    :key="snapshot.id"
+                    class="p-3 rounded-lg bg-white/3 border border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
+                    @click="restoreSnapshot(snapshot)"
+                  >
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-xs text-slate-400">{{
+                            formatRelativeTime(snapshot.createdTime)
+                          }}</span>
+                          <span
+                            v-if="snapshot.lessonSlug"
+                            class="text-xs text-slate-600"
+                          >
+                            · {{ snapshot.lessonSlug }}
+                          </span>
+                        </div>
+                        <p
+                          v-if="snapshot.description"
+                          class="text-sm text-slate-300 mb-1"
+                        >
+                          {{ snapshot.description }}
+                        </p>
+                      </div>
+                      <svg
+                        class="w-4 h-4 text-slate-600 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                    </div>
+                    <code
+                      class="text-xs text-slate-500 font-mono block truncate"
+                      >{{ truncateCode(snapshot.code) }}</code
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
             <!-- 助手面板 -->
             <div
               v-show="activeResultTab === 'assistant'"
@@ -1166,6 +1556,50 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
               <AgentPanel :embedded="true" :context="agentContext" />
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 保存对话框 -->
+    <div
+      v-if="showSaveDialog"
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      @click.self="cancelSave"
+    >
+      <div class="bg-[#1c2128] border border-white/10 rounded-lg shadow-xl w-full max-w-md mx-4">
+        <div class="px-4 py-3 border-b border-white/10">
+          <h3 class="text-sm font-semibold text-slate-200">保存本次尝试</h3>
+        </div>
+        <div class="p-4">
+          <label class="block text-xs text-slate-400 mb-2">
+            添加描述（可选）
+          </label>
+          <textarea
+            v-model="saveDescription"
+            class="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-lg text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500/50 resize-none"
+            rows="3"
+            maxlength="100"
+            placeholder="例如：尝试用 filter 筛选数据"
+            @keydown.enter.ctrl="confirmSave"
+          />
+          <div class="text-xs text-slate-600 mt-1">
+            {{ saveDescription.length }}/100
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-white/10 flex items-center justify-end gap-2">
+          <button
+            class="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            @click="cancelSave"
+          >
+            取消
+          </button>
+          <button
+            class="px-3 py-1.5 rounded-lg text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+            :disabled="isSaving"
+            @click="confirmSave"
+          >
+            {{ isSaving ? "保存中..." : "确认保存" }}
+          </button>
         </div>
       </div>
     </div>
@@ -1316,5 +1750,33 @@ textarea::-webkit-scrollbar-thumb {
   line-height: 1.6;
   color: #e2e8f0;
   white-space: pre;
+}
+/* 表格 */
+.doc-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.doc-content th,
+.doc-content td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+.doc-content th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.doc-content td {
+  color: #94a3b8;
+}
+.doc-content tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.02);
+}
+.doc-content table .doc-inline-code {
+  font-size: 0.75em;
 }
 </style>
