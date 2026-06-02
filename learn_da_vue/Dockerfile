@@ -1,5 +1,6 @@
 # Debian 12 (bookworm)
-FROM node:22-bookworm-slim AS build
+ARG NODE_BASE_IMAGE=node:22-slim
+FROM ${NODE_BASE_IMAGE} AS build
 
 WORKDIR /app
 
@@ -18,7 +19,8 @@ RUN npm ci
 COPY . .
 RUN npm run build-only
 
-FROM nginx:1.27-bookworm
+ARG NGINX_BASE_IMAGE=nginx:1.27-slim
+FROM ${NGINX_BASE_IMAGE}
 
 ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 

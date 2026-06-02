@@ -1,5 +1,6 @@
-# Debian 12 (bookworm)
-FROM python:3.12-bookworm-slim
+# Debian 12 (bookworm) — 使用 python:3.12-slim（与 bookworm-slim 同源，镜像站兼容性更好）
+ARG PYTHON_BASE_IMAGE=python:3.12-slim
+FROM ${PYTHON_BASE_IMAGE}
 
 WORKDIR /app
 

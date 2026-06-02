@@ -7,6 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile.sandbox
       args:
+        PYTHON_BASE_IMAGE: ${SANDBOX_PYTHON_BASE_IMAGE:-python:3.11-slim}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
@@ -17,6 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
@@ -51,7 +53,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-bookworm
+    image: ${REDIS_IMAGE:-redis:7-slim}
     container_name: learn_da_redis
     ports:
       - "6379:6379"
