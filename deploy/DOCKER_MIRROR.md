@@ -19,14 +19,19 @@ unexpected status from HEAD request to https://docker.m.daocloud.io/...: 403 For
 docker compose -f docker-compose.prod.yml build --no-cache
 ```
 
-## 方案二：在 deploy/.env 指定可访问的完整镜像名
+## 方案二：构建时传入基础镜像（勿在 .env 里留空变量）
 
 ```bash
-# 示例：经可用代理拉取（按你环境替换）
-PYTHON_BASE_IMAGE=docker.1ms.run/library/python:3.12-slim
-NODE_BASE_IMAGE=docker.1ms.run/library/node:22-slim
-NGINX_BASE_IMAGE=docker.1ms.run/library/nginx:1.27-slim
+docker compose -f docker-compose.prod.yml build \
+  --build-arg PYTHON_BASE_IMAGE=docker.1ms.run/library/python:3.12-slim
+
+cd learn_da_vue && docker build \
+  --build-arg NODE_BASE_IMAGE=docker.1ms.run/library/node:22-slim \
+  --build-arg NGINX_BASE_IMAGE=docker.1ms.run/library/nginx:1.27-slim \
+  -t learn_da_web .
 ```
+
+注意：不要在 `deploy/.env` 中写 `NGINX_BASE_IMAGE=` 空值，否则会覆盖 Dockerfile 默认值导致构建失败。
 
 ## 方案三：修改 / 移除有问题的 registry-mirror
 

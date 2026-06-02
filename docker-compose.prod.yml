@@ -4,7 +4,6 @@ services:
       context: ./learn_da
       dockerfile: Dockerfile
       args:
-        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.12-slim}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
@@ -51,8 +50,6 @@ services:
       context: ./learn_da_vue
       dockerfile: Dockerfile
       args:
-        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:22-slim}
-        NGINX_BASE_IMAGE: ${NGINX_BASE_IMAGE:-nginx:1.27-slim}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     container_name: learn_da_web
@@ -79,7 +76,6 @@ services:
       context: ./learn_da
       dockerfile: Dockerfile.sandbox
       args:
-        PYTHON_BASE_IMAGE: ${SANDBOX_PYTHON_BASE_IMAGE:-python:3.11-slim}
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
