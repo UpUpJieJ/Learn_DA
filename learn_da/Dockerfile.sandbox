@@ -1,22 +1,26 @@
-# 基础镜像
-FROM python:3.11-slim
+# Debian 12 (bookworm) — Playground 沙箱镜像
+FROM python:3.11-bookworm-slim
 
-# 工作目录
 WORKDIR /tmp
 
-# pip 源
+ARG APT_MIRROR=mirrors.tuna.tsinghua.edu.cn
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
 
-# 环境变量
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
-# 创建非 root 用户（去掉 pip 警告）
+COPY docker/setup-debian-apt-mirrors.sh /tmp/setup-debian-apt-mirrors.sh
+RUN chmod +x /tmp/setup-debian-apt-mirrors.sh && APT_MIRROR=${APT_MIRROR} /tmp/setup-debian-apt-mirrors.sh \
+    && rm -f /tmp/setup-debian-apt-mirrors.sh
+
 RUN useradd -m appuser
 USER appuser
 
-# 安装依赖
-RUN pip install --upgrade pip && \
-    pip install --index-url ${PIP_INDEX_URL} polars duckdb pandas
+RUN pip install --upgrade pip -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
+    pip install --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
+    polars duckdb pandas

@@ -165,6 +165,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 可选：`--profile redis` 启用 Redis；`--profile sandbox` 构建 Playground 沙箱镜像。
 
+镜像基于 **Debian 12 (bookworm)**；构建时默认 **APT 清华源**、`pip/uv` **阿里 PyPI**、`npm` **npmmirror（阿里）**。可在 `deploy/.env` 中调整 `APT_MIRROR`、`PIP_INDEX_URL`、`NPM_REGISTRY`。
+
 ---
 
 ## 核心配置说明
