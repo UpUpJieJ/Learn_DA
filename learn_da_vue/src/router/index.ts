@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { cancelAllRequests } from '@/api/index'
+import { useLocalStateStore } from '@/stores/localState'
 
 // =====================================================
 // 路由表定义（全部懒加载，代码分割）
@@ -116,12 +117,8 @@ router.afterEach((to, _from, failure) => {
   // 记录最后访问的课程 slug（仅在课程详情页）
   if (to.name === 'LessonDetail' && to.params.slug) {
     try {
-      // 使用动态导入避免循环依赖（store 内部可能也 import router）
-      import('@/stores/localState').then(({ useLocalStateStore }) => {
-        // 注意：store 必须在 pinia 激活后才能调用
-        const localStateStore = useLocalStateStore()
-        localStateStore.setLastVisitedLesson(to.params.slug as string)
-      })
+      const localStateStore = useLocalStateStore()
+      localStateStore.setLastVisitedLesson(to.params.slug as string)
     } catch (e) {
       // store 尚未初始化时静默忽略
     }

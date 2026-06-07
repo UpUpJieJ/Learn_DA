@@ -187,7 +187,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 | `SANDBOX_DOCKER_ENABLED` | `false` | 是否启用 Docker 沙箱执行 |
 | `SANDBOX_LOCAL_ENABLED` | `true` | 是否允许开发环境本地执行 |
 | `SANDBOX_USE_MOCK_WHEN_DISABLED` | `true` | Docker 与本地执行都关闭时是否返回模拟结果 |
-| `ENABLED_APP_MODULES` | `learning,playground,agent` | 启用的业务模块 |
+| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
 
