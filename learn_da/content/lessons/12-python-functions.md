@@ -18,7 +18,7 @@ completion_criteria:
   - 调用函数并打印输出
 track: python_basics
 prerequisites: []
-recommended_next: []
+recommended_next: [python-collections]
 skill_tags: [function, parameter, return_value]
 is_review_friendly: true
 is_branch_point: false

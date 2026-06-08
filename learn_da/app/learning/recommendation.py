@@ -86,6 +86,7 @@ class LessonMetadata(BaseModel):
 
     slug: str
     title: str
+    topic: str = "data-analysis"
     category: str
     difficulty: str
     order: int
@@ -215,6 +216,7 @@ class RecommendationService:
             metadata = LessonMetadata(
                 slug=self._lesson_value(lesson, 'slug'),
                 title=self._lesson_value(lesson, 'title'),
+                topic=self._lesson_value(lesson, 'topic', 'data-analysis'),
                 category=self._lesson_value(lesson, 'category'),
                 difficulty=self._lesson_value(lesson, 'difficulty'),
                 order=self._lesson_value(lesson, 'order', 0),
@@ -392,6 +394,12 @@ class RecommendationService:
                                 reason_code="sequential_progress",
                                 priority=4,
                                 action_label="继续学习",
+                                context={
+                                    "from_lesson": current_meta.slug,
+                                    "track": next_meta.track,
+                                    "topic": next_meta.topic,
+                                    "category": next_meta.category,
+                                },
                             )
             else:
                 # 未完成当前课，不推荐新课程
@@ -419,6 +427,11 @@ class RecommendationService:
                     reason_code="sequential_progress",
                     priority=priority,
                     action_label="开始学习",
+                    context={
+                        "track": lesson_meta.track,
+                        "topic": lesson_meta.topic,
+                        "category": lesson_meta.category,
+                    },
                 )
 
         # 规则 3: 全部完成 - 兜底建议
@@ -661,7 +674,11 @@ class RecommendationService:
         # 从配置中获取分支选项
         branch_options = self.BRANCH_CONFIG.get(current_meta.slug, [])
         if not branch_options:
-            return []
+            return self._get_generic_branch_recommendations(
+                completed_lessons=completed_lessons,
+                current_meta=current_meta,
+                metadata_map=metadata_map,
+            )
 
         branch_recommendations = []
 
@@ -705,6 +722,49 @@ class RecommendationService:
         branch_recommendations.sort(key=lambda x: x.priority, reverse=True)
 
         return branch_recommendations
+
+    def _get_generic_branch_recommendations(
+        self,
+        completed_lessons: list[str],
+        current_meta: LessonMetadata,
+        metadata_map: dict[str, LessonMetadata],
+    ) -> list[LearningRecommendation]:
+        """从 recommended_next 生成不依赖特定技术栈的分支建议。"""
+        recommendations: list[LearningRecommendation] = []
+
+        for target_slug in current_meta.recommended_next:
+            if target_slug not in metadata_map or target_slug in completed_lessons:
+                continue
+
+            target_meta = metadata_map[target_slug]
+            prerequisites = target_meta.prerequisites
+            prereqs_met = all(slug in completed_lessons for slug in prerequisites)
+            recommendations.append(
+                LearningRecommendation(
+                    type="branch_path",
+                    target_slug=target_meta.slug,
+                    target_title=target_meta.title,
+                    reason=(
+                        f"你已完成《{current_meta.title}》，可以选择《{target_meta.title}》作为下一条学习分支。"
+                        if prereqs_met
+                        else f"《{target_meta.title}》是可选分支，但建议先确认相关前置知识。"
+                    ),
+                    reason_code="path_completed",
+                    priority=4 if prereqs_met else 3,
+                    action_label="进入这条分支",
+                    context={
+                        "branch_point": current_meta.slug,
+                        "track": target_meta.track,
+                        "topic": target_meta.topic,
+                        "category": target_meta.category,
+                    },
+                )
+            )
+
+        recommendations.sort(
+            key=lambda rec: (-rec.priority, metadata_map[rec.target_slug].order)
+        )
+        return recommendations
 
     async def _get_resume_recommendation(
         self,
