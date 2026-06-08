@@ -149,7 +149,12 @@ class LearningRepository:
         from collections import Counter
         lessons = self._load_lessons()
         counts = Counter(lesson.category for lesson in lessons)
-        label_map = {"polars": "🐻‍❄️ Polars", "duckdb": "🦆 DuckDB", "combined": "⚡ 组合实战"}
+        label_map = {
+            "polars": "🐻‍❄️ Polars",
+            "duckdb": "🦆 DuckDB",
+            "combined": "⚡ 组合实战",
+            "python": "🐍 Python",
+        }
         return [
             {"category": cat, "label": label_map.get(cat, cat), "count": count}
             for cat, count in counts.items()

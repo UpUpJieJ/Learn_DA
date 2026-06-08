@@ -11,6 +11,7 @@ import {
   fetchRecommendedLessons,
   fetchCategoryProgress,
 } from "@/api/analytics";
+import { fetchCatalog, fetchLessons } from "@/api/learning";
 import { getRecommendations } from "@/api/recommendation";
 import type {
   UserProfile,
@@ -19,6 +20,8 @@ import type {
   RecommendedLessonsResponse,
   CategoryProgress,
   RecommendationResponse,
+  PlatformCatalog,
+  LessonSummary,
 } from "@/types/api";
 import * as echarts from "echarts/core";
 import { LineChart, RadarChart } from "echarts/charts";
@@ -54,10 +57,12 @@ const activeTab = ref<"overview" | "lessons" | "trend" | "ability">("overview");
 const isLoading = ref(true);
 const profile = ref<UserProfile | null>(null);
 const lessonStats = ref<UserLessonStats | null>(null);
+const lessons = ref<LessonSummary[]>([]);
 const dailyTrend = ref<DailyTrendItem[]>([]);
 const recommended = ref<RecommendedLessonsResponse | null>(null);
 const categoryProgress = ref<CategoryProgress | null>(null);
 const recommendation = ref<RecommendationResponse | null>(null);
+const catalog = ref<PlatformCatalog | null>(null);
 
 const tabs = [
   { key: "overview", label: "学习概览", icon: "📊" },
@@ -87,6 +92,8 @@ async function loadAllData() {
         completedLessons: localStateStore.progress.completedLessons,
         currentLesson,
       }).catch(() => null),
+      fetchCatalog().catch(() => null),
+      fetchLessons().catch(() => [] as LessonSummary[]),
     ]);
     if (results[0]) profile.value = results[0];
     if (results[1]) lessonStats.value = results[1];
@@ -94,6 +101,8 @@ async function loadAllData() {
     if (results[3]) recommended.value = results[3];
     if (results[4]) categoryProgress.value = results[4];
     if (results[5]) recommendation.value = results[5];
+    if (results[6]) catalog.value = results[6];
+    lessons.value = results[7] ?? [];
   } catch {
     // 静默处理
   } finally {
@@ -205,13 +214,62 @@ watch(activeTab, (tab) => {
 // =====================================================
 
 const categoryList = computed(() => {
-  const cp = categoryProgress.value;
-  return [
-    { key: "polars", label: "🐻‍❄️ Polars", color: "blue", count: cp?.polars ?? 0, barClass: "bg-blue-500" },
-    { key: "duckdb", label: "🦆 DuckDB", color: "yellow", count: cp?.duckdb ?? 0, barClass: "bg-yellow-500" },
-    { key: "combined", label: "⚡ 组合实战", color: "purple", count: cp?.combined ?? 0, barClass: "bg-purple-500" },
-  ];
+  const progress = categoryProgress.value ?? {};
+  const totals = lessons.value.reduce<Record<string, number>>((acc, lesson) => {
+    acc[lesson.category] = (acc[lesson.category] ?? 0) + 1;
+    return acc;
+  }, {});
+  const byCategory = new Map<string, { key: string; label: string; color?: string }>();
+
+  catalog.value?.tracks
+    .filter((track) => track.category)
+    .forEach((track) => {
+      byCategory.set(track.category!, {
+        key: track.category!,
+        label: track.label,
+        color: track.color,
+      });
+    });
+
+  Object.keys(progress).forEach((category) => {
+    if (!byCategory.has(category)) {
+      byCategory.set(category, {
+        key: category,
+        label: category,
+      });
+    }
+  });
+
+  return Array.from(byCategory.values()).map((item) => {
+    const count = progress[item.key] ?? 0;
+    const total = totals[item.key] ?? 0;
+    return {
+      ...item,
+      count,
+      total,
+      percent: total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0,
+      barClass: categoryBarClass(item.color ?? item.key),
+    };
+  });
 });
+
+function categoryBarClass(color: string): string {
+  const classes: Record<string, string> = {
+    blue: "bg-blue-500",
+    yellow: "bg-yellow-500",
+    purple: "bg-purple-500",
+    emerald: "bg-emerald-500",
+    green: "bg-emerald-500",
+    orange: "bg-orange-500",
+    red: "bg-red-500",
+    slate: "bg-slate-500",
+    polars: "bg-blue-500",
+    duckdb: "bg-yellow-500",
+    combined: "bg-purple-500",
+    python: "bg-emerald-500",
+  };
+  return classes[color] ?? "bg-slate-500";
+}
 
 const completionRate = computed(() => {
   if (!recommended.value || recommended.value.totalCount === 0) return 0;
@@ -559,14 +617,14 @@ function getRecommendationStyle(rec: any) {
                   <div class="flex items-center justify-between mb-1.5">
                     <span class="text-sm text-slate-600">{{ cat.label }}</span>
                     <span class="text-xs text-slate-400">
-                      完成 {{ cat.count }} 课
+                      完成 {{ cat.count }} / {{ cat.total }} 课
                     </span>
                   </div>
                   <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all duration-500"
                       :class="cat.barClass"
-                      :style="{ width: `${Math.min(100, cat.count * 10)}%` }"
+                      :style="{ width: `${cat.percent}%` }"
                     />
                   </div>
                 </div>

@@ -203,11 +203,18 @@ const currentTrackInfo = computed(() => {
             targetAudience: legacy?.targetAudience ?? "想系统学习该主题的学习者",
             learningOutcome: legacy?.learningOutcome ?? `能完成 ${catalogTrack.label} 的核心学习任务`,
             recommendedStart: legacy?.recommendedStart ?? "建议从本路径第一课开始",
-            color: (catalogTrack.color ?? legacy?.color ?? "blue") as "blue" | "yellow" | "purple",
+            color: normalizeTrackColor(catalogTrack.color ?? legacy?.color),
         };
     }
     return learningTrackMeta[activeCategory.value] ?? null;
 });
+
+function normalizeTrackColor(color?: string): "blue" | "yellow" | "purple" | "emerald" | "slate" {
+    if (color === "blue" || color === "yellow" || color === "purple" || color === "emerald") {
+        return color;
+    }
+    return "slate";
+}
 
 // ---- 继续学习 ----
 const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug);
@@ -405,7 +412,7 @@ function getRecommendationStyle(rec: any) {
                                 </span>
                             </div>
                             <p class="hidden md:block text-xs text-slate-500 mt-0.5">
-                                按迁移路径学习 Polars 与 DuckDB，从你熟悉的技术栈出发。
+                                按主题路径学习，从清晰起点推进到可复用的实践能力。
                             </p>
                         </div>
                     </div>
@@ -500,6 +507,10 @@ function getRecommendationStyle(rec: any) {
                         ? 'bg-blue-50/50 border-blue-100'
                         : currentTrackInfo.color === 'yellow'
                         ? 'bg-yellow-50/50 border-yellow-100'
+                        : currentTrackInfo.color === 'emerald'
+                        ? 'bg-emerald-50/50 border-emerald-100'
+                        : currentTrackInfo.color === 'slate'
+                        ? 'bg-slate-50/50 border-slate-100'
                         : 'bg-purple-50/50 border-purple-100'
                 "
             >
@@ -528,10 +539,14 @@ function getRecommendationStyle(rec: any) {
                                 <div
                                     class="h-full rounded-full transition-all duration-300"
                                     :class="
-                                        currentTrackInfo.color === 'blue'
+                                            currentTrackInfo.color === 'blue'
                                             ? 'bg-blue-500'
                                             : currentTrackInfo.color === 'yellow'
                                             ? 'bg-amber-500'
+                                            : currentTrackInfo.color === 'emerald'
+                                            ? 'bg-emerald-500'
+                                            : currentTrackInfo.color === 'slate'
+                                            ? 'bg-slate-500'
                                             : 'bg-purple-500'
                                     "
                                     :style="{ width: `${currentTrackProgressPercent}%` }"

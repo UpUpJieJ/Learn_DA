@@ -4,6 +4,8 @@ Phase 2: 学习行为事件采集 Service
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.learning.repository import LearningRepository
+
 from .repository import AnalyticsRepository
 from .schemas import (
     CodeSnapshotItem,
@@ -83,7 +85,7 @@ class AnalyticsService:
             "totalLearners": total_learners,
             "todayActiveUsers": today_active,
             "totalCodeRuns": total_code_runs,
-            "totalLessons": 11,  # 静态课程数
+            "totalLessons": len(LearningRepository().list_lessons()),
         }
 
     # ── Dashboard ────────────────────────────────────────

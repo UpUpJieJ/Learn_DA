@@ -334,11 +334,7 @@ export interface RecommendedLessonsResponse {
 }
 
 /** 分类进度 */
-export interface CategoryProgress {
-    polars: number;
-    duckdb: number;
-    combined: number;
-}
+export type CategoryProgress = Record<string, number>;
 
 // =====================================================
 // Phase 3: 学习建议系统

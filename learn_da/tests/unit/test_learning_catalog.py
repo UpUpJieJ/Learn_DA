@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from app.analytics.models import LearningRecord
 from app.core.content_loader import load_catalog, load_lesson_from_file
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
@@ -120,6 +121,56 @@ async def test_catalog_endpoint_returns_platform_topics_and_tracks(client):
     assert body["data"]["platform"]["name"]
     assert body["data"]["topics"]
     assert body["data"]["tracks"]
+
+
+@pytest.mark.unit
+async def test_category_stats_returns_general_topic_labels(client):
+    resp = await client.get("/api/v1/lessons/categories")
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    labels = {item["category"]: item["label"] for item in body["data"]}
+    assert labels["python"] == "🐍 Python"
+
+
+@pytest.mark.unit
+async def test_home_stats_uses_loaded_lesson_count(client):
+    resp = await client.get("/api/v1/analytics/home-stats")
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]["totalLessons"] == len(LearningRepository().list_lessons())
+
+
+@pytest.mark.unit
+async def test_category_progress_uses_lesson_metadata_for_all_categories(client, db_session):
+    visitor_id = "catalog-progress-user"
+    db_session.add_all(
+        [
+            LearningRecord(
+                visitor_id=visitor_id,
+                event_type="lesson_complete",
+                lesson_slug=slug,
+            )
+            for slug in ["python-functions", "polars-duckdb-workflow"]
+        ]
+    )
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/v1/analytics/category-progress",
+        params={"visitorId": visitor_id},
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]["python"] == 1
+    assert body["data"]["combined"] == 1
+    assert body["data"]["polars"] == 0
+    assert body["data"]["duckdb"] == 0
 
 
 def test_recommendation_metadata_uses_lesson_model_fields():
