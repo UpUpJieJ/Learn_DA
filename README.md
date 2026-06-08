@@ -187,7 +187,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 | `SANDBOX_DOCKER_ENABLED` | `false` | 是否启用 Docker 沙箱执行 |
 | `SANDBOX_LOCAL_ENABLED` | `true` | 是否允许开发环境本地执行 |
 | `SANDBOX_USE_MOCK_WHEN_DISABLED` | `true` | Docker 与本地执行都关闭时是否返回模拟结果 |
-| `ENABLED_APP_MODULES` | `learning,playground,agent` | 启用的业务模块 |
+| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
 
@@ -230,6 +230,37 @@ docker compose -f docker-compose.prod.yml up -d --build
 - 平台不提供账号、登录、注册或 JWT 认证。
 - 学习进度、最近访问课程、编辑器偏好、Playground 草稿等状态保存在当前浏览器本地。
 - 清理浏览器数据、更换浏览器或更换设备后，本地学习状态不会自动同步。
+
+---
+
+## 添加新的学习主题
+
+平台已支持通过内容配置扩展学习主题。新增主题通常只需要两步：
+
+1. 在 [`learn_da/content/catalog.yml`](learn_da/content/catalog.yml) 中添加 `topics` 和 `tracks`。
+2. 在 [`learn_da/content/lessons`](learn_da/content/lessons) 中新增 Markdown 课程，并填写 `topic`、`category`、`track`、`prerequisites`、`recommended_next`、`skill_tags` 等 frontmatter。
+
+最小课程示例：
+
+```yaml
+---
+id: 12
+slug: python-functions
+title: Python 函数入门
+topic: programming
+category: python
+track: python_basics
+difficulty: beginner
+tags: [python, function]
+prerequisites: []
+recommended_next: []
+skill_tags: [function, parameter, return_value]
+is_review_friendly: true
+is_branch_point: false
+---
+```
+
+新增课程后，`/api/v1/catalog` 会返回新的主题/路径，`/api/v1/lessons?topic=programming&track=python_basics` 可按主题和路径筛选课程，前端学习中心会优先使用 catalog 动态生成专题入口。
 
 ---
 

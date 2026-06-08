@@ -126,6 +126,13 @@ def test_router_priority_prefers_fix_over_example_generation():
     assert route.tool_name == "fix_code"
 
 
+def test_router_recognizes_general_python_example_requests():
+    route = AgentRouter().resolve("给我一个 Python 函数示例")
+
+    assert route.tool_name == "generate_example_code"
+    assert route.reason == "用户希望获得课程相关示例或代码"
+
+
 def test_tool_registry_contains_format_and_fallback_for_each_tool():
     expected_tools = {
         "generate_example_code",
@@ -145,12 +152,37 @@ def test_tool_registry_contains_format_and_fallback_for_each_tool():
 
 
 def test_system_prompt_emphasizes_coach_role_and_no_direct_answer_bias():
-    assert "迁移学习教练" in SYSTEM_PROMPT
+    assert "通用学习教练" in SYSTEM_PROMPT
+    assert "专门帮助有 Pandas 或 SQL 基础" not in SYSTEM_PROMPT
     assert "先解释思路" in SYSTEM_PROMPT
     assert "不要直接给最终答案" in SYSTEM_PROMPT
     assert "围绕当前课程和 Playground 上下文" in SYSTEM_PROMPT
     assert "不是代写工具" in SYSTEM_PROMPT
+    assert "如果当前课程涉及 Polars、DuckDB、Pandas 或 SQL" in SYSTEM_PROMPT
     assert "1 到 3 个" in SYSTEM_PROMPT
+
+
+def test_agent_fallbacks_are_general_learning_friendly():
+    example_tool = get_agent_tool("generate_example_code")
+    explain_tool = get_agent_tool("explain_code")
+    next_tool = get_agent_tool("suggest_next_step")
+
+    assert "DuckDB 在 Python 中查询内存数据" not in example_tool.fallback_content
+    assert "Polars 或 DuckDB 的核心 API" not in explain_tool.fallback_content
+    assert "数据分析代码" not in next_tool.fallback_content
+    assert "当前课程" in explain_tool.fallback_content
+
+
+@pytest.mark.unit
+async def test_explain_code_fallback_is_general_learning_friendly():
+    service = AgentService(knowledge_retriever=FakeKnowledgeRetriever([]))
+
+    result = await service.explain_code(ExplainCodeRequest(code="print('ok')"))
+
+    assert result.used_fallback is True
+    assert "Polars 或 DuckDB API" not in result.explanation
+    assert "Polars LazyFrame" not in result.explanation
+    assert "当前课程" in result.explanation
 
 
 def test_parse_structured_result_extracts_sections_and_code_blocks():

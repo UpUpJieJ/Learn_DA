@@ -11,11 +11,13 @@ class LessonSummary(BaseResponseModel):
     slug: str
     title: str
     description: str
+    topic: str = "data-analysis"
     category: str
     difficulty: str
     estimated_minutes: int = 15  # → estimatedMinutes in JSON
     order: int = 0
     tags: list[str] = []
+    track: str = ""
 
 
 class LessonDetail(LessonSummary):
@@ -26,6 +28,11 @@ class LessonDetail(LessonSummary):
     # Phase 2: 练习结构（可选，无则降级为纯内容展示）
     practice_objective: str = ''  # → practiceObjective in JSON
     completion_criteria: list[str] = []  # → completionCriteria in JSON
+    prerequisites: list[str] = []
+    recommended_next: list[str] = []  # → recommendedNext in JSON
+    skill_tags: list[str] = []  # → skillTags in JSON
+    is_review_friendly: bool = False  # → isReviewFriendly in JSON
+    is_branch_point: bool = False  # → isBranchPoint in JSON
 
 
 class ExampleSummary(BaseResponseModel):

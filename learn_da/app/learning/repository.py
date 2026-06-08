@@ -39,12 +39,14 @@ class LearningRepository:
                     id=raw['id'],
                     slug=raw['slug'],
                     title=raw['title'],
+                    topic=raw.get('topic', 'data-analysis'),
                     category=raw['category'],
                     difficulty=raw['difficulty'],
                     description=raw.get('description', ''),
                     estimated_minutes=raw.get('estimated_minutes', 15),
                     order=raw.get('order', 0),
                     tags=raw.get('tags', []),
+                    track=raw.get('track', ''),
                     content=raw['content'],
                     code_example=raw.get('code_example', ''),
                     prev_lesson=prev_lesson,
@@ -52,6 +54,11 @@ class LearningRepository:
                     # Phase 2: 练习结构（可选）
                     practice_objective=raw.get('practice_objective', ''),
                     completion_criteria=raw.get('completion_criteria', []),
+                    prerequisites=raw.get('prerequisites', []),
+                    recommended_next=raw.get('recommended_next', []),
+                    skill_tags=raw.get('skill_tags', []),
+                    is_review_friendly=raw.get('is_review_friendly', False),
+                    is_branch_point=raw.get('is_branch_point', False),
                 )
                 self._lessons.append(lesson)
         
@@ -77,12 +84,20 @@ class LearningRepository:
     
     def list_lessons(
         self,
+        topic: str | None = None,
+        track: str | None = None,
         category: str | None = None,
         difficulty: str | None = None,
         keyword: str | None = None,
     ) -> list[LessonDetail]:
         """获取课程列表，可按分类、难度和关键词过滤"""
         lessons = self._load_lessons()
+
+        if topic:
+            lessons = [lesson for lesson in lessons if lesson.topic == topic]
+
+        if track:
+            lessons = [lesson for lesson in lessons if lesson.track == track]
 
         if category:
             lessons = [lesson for lesson in lessons if lesson.category == category]
@@ -134,7 +149,12 @@ class LearningRepository:
         from collections import Counter
         lessons = self._load_lessons()
         counts = Counter(lesson.category for lesson in lessons)
-        label_map = {"polars": "🐻‍❄️ Polars", "duckdb": "🦆 DuckDB", "combined": "⚡ 组合实战"}
+        label_map = {
+            "polars": "🐻‍❄️ Polars",
+            "duckdb": "🦆 DuckDB",
+            "combined": "⚡ 组合实战",
+            "python": "🐍 Python",
+        }
         return [
             {"category": cat, "label": label_map.get(cat, cat), "count": count}
             for cat, count in counts.items()

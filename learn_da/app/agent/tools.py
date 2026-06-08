@@ -108,25 +108,17 @@ AGENT_TOOLS: dict[ToolName, AgentTool] = {
         response_format=EXAMPLE_FORMAT,
         fallback_content=(
             "示例目标：\n"
-            "用 DuckDB 在 Python 中查询内存数据，并完成分组统计。\n\n"
+            "演示如何把一个小知识点写成可运行的 Python 练习。\n\n"
             "代码：\n"
             "```python\n"
-            "import duckdb\n\n"
-            "rows = [\n"
-            "    {'category': 'A', 'amount': 10},\n"
-            "    {'category': 'A', 'amount': 15},\n"
-            "    {'category': 'B', 'amount': 7},\n"
-            "]\n\n"
-            "result = duckdb.sql('''\n"
-            "    SELECT category, COUNT(*) AS cnt, SUM(amount) AS total\n"
-            "    FROM rows\n"
-            "    GROUP BY category\n"
-            "    ORDER BY total DESC\n"
-            "''').df()\n\n"
-            "print(result)\n"
+            "def add_bonus(score):\n"
+            "    return score + 5\n\n"
+            "scores = [80, 92, 76]\n"
+            "for score in scores:\n"
+            "    print(add_bonus(score))\n"
             "```\n\n"
             "观察结果：\n"
-            "重点看 category 是否被正确分组，以及 cnt、total 两列是否符合原始数据。"
+            "重点看函数是否被重复调用，以及每个输入是否得到对应输出。"
         ),
     ),
     "generate_exercise": AgentTool(
@@ -134,15 +126,15 @@ AGENT_TOOLS: dict[ToolName, AgentTool] = {
         response_format=EXERCISE_FORMAT,
         fallback_content=(
             "练习目标：\n"
-            "练习筛选、派生列和分组聚合这三个常见数据分析动作。\n\n"
+            "围绕当前课程做一次小改造，确认你理解了输入、处理和输出。\n\n"
             "任务：\n"
-            "1. 基于当前课程代码，修改一个筛选条件。\n"
-            "2. 新增一个派生列，例如金额等级、是否达标或文本标签。\n"
-            "3. 用分组聚合验证新列是否符合预期。\n\n"
+            "1. 先运行当前示例，观察输出。\n"
+            "2. 修改一个变量、参数或条件。\n"
+            "3. 再运行一次，对比结果有什么变化。\n\n"
             "提示：\n"
-            "优先复用当前示例里的 DataFrame，先做小改动再运行。\n\n"
+            "优先做一个很小的改动，不要一次改太多。\n\n"
             "完成后检查：\n"
-            "输出表格中应该能看到筛选后的行数变化，以及新增列或聚合结果。"
+            "输出应该能清楚反映你刚才那处修改。"
         ),
     ),
     "fix_code": AgentTool(
@@ -166,10 +158,10 @@ AGENT_TOOLS: dict[ToolName, AgentTool] = {
         response_format=EXPLAIN_FORMAT,
         fallback_content=(
             "结论：\n"
-            "请把要解释的代码发给我，我会说明它在数据分析流程里完成了什么。\n\n"
+            "请把要解释的代码发给我，我会说明它在当前课程里完成了什么。\n\n"
             "关键步骤：\n"
-            "1. 判断数据从哪里来。\n"
-            "2. 识别 Polars 或 DuckDB 的核心 API。\n"
+            "1. 判断输入是什么。\n"
+            "2. 识别关键语句或函数调用。\n"
             "3. 解释输出结果应该如何阅读。\n\n"
             "容易混淆：\n"
             "同一个变量名可能在多次运行中被覆盖，需要结合当前 Playground 代码判断。\n\n"
@@ -182,7 +174,7 @@ AGENT_TOOLS: dict[ToolName, AgentTool] = {
         response_format=NEXT_STEP_FORMAT,
         fallback_content=(
             "当前状态：\n"
-            "你正在通过 Playground 学习数据分析代码，下一步适合把当前示例跑通并做一次小改造。\n\n"
+            "你正在通过 Playground 学习当前课程，下一步适合把示例跑通并做一次小改造。\n\n"
             "下一步：\n"
             "1. 先运行当前示例，观察输出表格。\n"
             "2. 修改一个筛选条件或计算列，再运行一次对比结果。\n\n"

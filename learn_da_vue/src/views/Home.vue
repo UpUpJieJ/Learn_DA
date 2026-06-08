@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import { useLocalStateStore } from '@/stores/localState'
 import { learningTracks, platformCopy } from '@/lib/learningTracks'
 import { fetchHomeStats } from '@/api/analytics'
-import type { HomeStats } from '@/types/api'
+import { fetchCatalog, fetchCategoryStats, type CategoryStat } from '@/api/learning'
+import type { CatalogTrack, HomeStats, PlatformCatalog } from '@/types/api'
 
 const router = useRouter()
 const localStateStore = useLocalStateStore()
@@ -16,22 +17,33 @@ const cardsVisible = ref(false)
 onMounted(() => {
   setTimeout(() => (heroVisible.value = true), 50)
   setTimeout(() => (cardsVisible.value = true), 300)
-  loadHomeStats()
+  loadHomeData()
 })
 
 // ---- 平台统计数据（从后端获取） ----
 const homeStats = ref<HomeStats | null>(null)
+const catalog = ref<PlatformCatalog | null>(null)
+const categoryStats = ref<CategoryStat[]>([])
 
-async function loadHomeStats() {
+async function loadHomeData() {
   try {
-    homeStats.value = await fetchHomeStats()
+    const [statsData, catalogData, categoryStatsData] = await Promise.all([
+      fetchHomeStats().catch(() => null),
+      fetchCatalog().catch(() => null),
+      fetchCategoryStats().catch(() => [] as CategoryStat[]),
+    ])
+    homeStats.value = statsData
+    catalog.value = catalogData
+    categoryStats.value = categoryStatsData
   } catch {
     // 静默失败，使用默认值
   }
 }
 
 // ---- 学习路径数据 ----
-const learningPaths = learningTracks.map((track) => ({
+type PathColor = 'blue' | 'yellow' | 'purple' | 'emerald' | 'slate'
+
+const legacyPaths = learningTracks.map((track) => ({
   id: track.key,
   title: track.label,
   subtitle: track.subtitle,
@@ -40,24 +52,84 @@ const learningPaths = learningTracks.map((track) => ({
   learningOutcome: track.learningOutcome,
   recommendedStart: track.recommendedStart,
   tags: track.tags,
-  color: track.color,
+  color: track.color as PathColor,
   slug: track.route,
   lessonCount: track.lessonCount,
 }))
+
+const topicLabelByKey = computed(() => {
+  return Object.fromEntries(
+    (catalog.value?.topics ?? []).map((topic) => [topic.key, topic.label]),
+  )
+})
+
+const lessonCountByCategory = computed(() => {
+  return Object.fromEntries(
+    categoryStats.value.map((item) => [item.category, item.count]),
+  )
+})
+
+const learningPaths = computed(() => {
+  const tracks = catalog.value?.tracks ?? []
+  if (tracks.length === 0) return legacyPaths
+
+  return tracks.map((track) => buildCatalogPath(track))
+})
+
+const quickStartPaths = computed(() => learningPaths.value.slice(0, 3))
+const platformTitle = computed(() => catalog.value?.platform.title ?? platformCopy.title)
+const heroTitle = computed(() => catalog.value?.platform.name ?? platformCopy.heroTitle)
+const heroTitleHighlight = computed(() => catalog.value?.platform.title ?? platformCopy.heroTitleHighlight)
+const heroSubtitle = computed(() => catalog.value?.platform.subtitle ?? platformCopy.heroSubtitle)
+const currentScope = computed(() => {
+  const totalLessons = homeStats.value?.totalLessons
+  const pathCount = learningPaths.value.length
+  if (totalLessons) return `当前版本包含 ${totalLessons} 节课程与 ${pathCount} 条学习路径`
+  return platformCopy.currentScope
+})
+
+function buildCatalogPath(track: CatalogTrack) {
+  const legacy = learningTracks.find((item) => item.key === track.category || item.key === track.key)
+  const topicLabel = topicLabelByKey.value[track.topic] ?? '学习主题'
+  const category = track.category ?? track.key
+  const lessonCount = track.category ? lessonCountByCategory.value[track.category] ?? 0 : 0
+
+  return {
+    id: track.key,
+    title: track.label,
+    subtitle: legacy?.subtitle ?? topicLabel,
+    description: track.description ?? legacy?.description ?? `围绕 ${track.label} 的系统学习路径。`,
+    targetAudience: legacy?.targetAudience ?? `想学习 ${track.label} 的学习者`,
+    learningOutcome: legacy?.learningOutcome ?? `能完成 ${track.label} 的核心学习任务`,
+    recommendedStart: legacy?.recommendedStart ?? '建议从本路径第一课开始',
+    tags: legacy?.tags ?? [topicLabel, category, '学习路径'],
+    color: normalizePathColor(track.color ?? legacy?.color),
+    slug: track.category ? `/learn?category=${track.category}` : `/learn?track=${track.key}`,
+    lessonCount,
+  }
+}
+
+function normalizePathColor(color?: string): PathColor {
+  if (color === 'blue' || color === 'yellow' || color === 'purple' || color === 'emerald') {
+    return color
+  }
+  return 'slate'
+}
 
 // ---- 统计数据（优先展示后端实时数据） ----
 const stats = computed(() => {
   if (homeStats.value) {
     return [
       { label: '课程总数', value: `${homeStats.value.totalLessons}` },
-      { label: '学习路径', value: `${learningPaths.length}` },
+      { label: '学习路径', value: `${learningPaths.value.length}` },
       { label: '今日活跃', value: homeStats.value.todayActiveUsers > 0 ? `${homeStats.value.todayActiveUsers}` : '—' },
       { label: '代码运行', value: homeStats.value.totalCodeRuns > 0 ? `${homeStats.value.totalCodeRuns}` : '—' },
     ]
   }
+  const fallbackLessonCount = legacyPaths.reduce((total, path) => total + path.lessonCount, 0)
   return [
-    { label: '课程总数', value: '11' },
-    { label: '学习路径', value: `${learningPaths.length}` },
+    { label: '课程总数', value: `${fallbackLessonCount}` },
+    { label: '学习路径', value: `${learningPaths.value.length}` },
     { label: '今日活跃', value: '—' },
     { label: '代码运行', value: '—' },
   ]
@@ -80,26 +152,28 @@ function goToLearning() {
   router.push('/learn')
 }
 
-function goToTrack(category: 'polars' | 'duckdb' | 'combined') {
-  router.push(`/learn?category=${category}`)
-}
-
 const colorMap: Record<string, string> = {
   blue: 'from-blue-500 to-blue-700',
   yellow: 'from-yellow-400 to-orange-500',
   purple: 'from-purple-500 to-indigo-600',
+  emerald: 'from-emerald-500 to-teal-600',
+  slate: 'from-slate-500 to-slate-700',
 }
 
 const colorBg: Record<string, string> = {
   blue: 'bg-blue-50 border-blue-100',
   yellow: 'bg-yellow-50 border-yellow-100',
   purple: 'bg-purple-50 border-purple-100',
+  emerald: 'bg-emerald-50 border-emerald-100',
+  slate: 'bg-slate-50 border-slate-100',
 }
 
 const colorTag: Record<string, string> = {
   blue: 'bg-blue-100 text-blue-700',
   yellow: 'bg-yellow-100 text-yellow-700',
   purple: 'bg-purple-100 text-purple-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+  slate: 'bg-slate-100 text-slate-700',
 }
 </script>
 
@@ -142,27 +216,27 @@ const colorTag: Record<string, string> = {
           class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 text-sm font-medium text-blue-200 mb-6 backdrop-blur-sm"
         >
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          {{ platformCopy.title }}
+          {{ platformTitle }}
         </span>
 
         <!-- 标题 -->
         <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-          {{ platformCopy.heroTitle }}
+          {{ heroTitle }}
           <br />
           <span
             class="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent"
-          >{{ platformCopy.heroTitleHighlight }}</span>
+          >{{ heroTitleHighlight }}</span>
         </h1>
 
         <!-- 副标题 -->
         <p
           class="text-lg md:text-xl text-slate-300 max-w-2xl mb-4 leading-relaxed"
         >
-          {{ platformCopy.heroSubtitle }}
+          {{ heroSubtitle }}
         </p>
 
         <p class="text-sm text-slate-400 mb-6">
-          {{ platformCopy.currentScope }}
+          {{ currentScope }}
         </p>
 
         <!-- 统计数据 -->
@@ -181,7 +255,7 @@ const colorTag: Record<string, string> = {
         <div class="flex flex-wrap gap-4 justify-center">
           <button
             class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold text-base transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-400/40 hover:-translate-y-0.5 active:translate-y-0"
-            @click="hasLearningProgress ? continueLearning() : goToTrack('polars')"
+            @click="hasLearningProgress ? continueLearning() : router.push(learningPaths[0]?.slug ?? '/learn')"
           >
             <span>{{ hasLearningProgress ? '继续学习' : '从推荐路径开始' }}</span>
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,14 +275,13 @@ const colorTag: Record<string, string> = {
         </div>
 
         <div class="mt-5 flex flex-wrap justify-center gap-3 text-xs text-slate-400">
-          <button class="rounded-full border border-white/10 px-3 py-1 hover:border-blue-300/30 hover:text-blue-200 transition-colors" @click="goToTrack('polars')">
-            Pandas 基础 → Polars
-          </button>
-          <button class="rounded-full border border-white/10 px-3 py-1 hover:border-yellow-300/30 hover:text-yellow-200 transition-colors" @click="goToTrack('duckdb')">
-            SQL 基础 → DuckDB
-          </button>
-          <button class="rounded-full border border-white/10 px-3 py-1 hover:border-purple-300/30 hover:text-purple-200 transition-colors" @click="goToTrack('combined')">
-            两者都会 → 组合实战
+          <button
+            v-for="path in quickStartPaths"
+            :key="path.id"
+            class="rounded-full border border-white/10 px-3 py-1 hover:border-blue-300/30 hover:text-blue-200 transition-colors"
+            @click="router.push(path.slug)"
+          >
+            {{ path.title }}
           </button>
         </div>
       </div>
@@ -219,42 +292,25 @@ const colorTag: Record<string, string> = {
     ================================================= -->
     <section class="max-w-6xl mx-auto px-6 py-16">
       <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold text-slate-800 mb-3">选择你的迁移学习路径</h2>
+        <h2 class="text-3xl font-bold text-slate-800 mb-3">选择你的学习路径</h2>
         <p class="text-slate-500 max-w-xl mx-auto">
-          根据你的技术背景，选择最适合的起点开始学习。
+          根据你的目标和基础，选择最适合的起点开始学习。
         </p>
       </div>
 
       <!-- 推荐起步路径 -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <div
-          class="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-100 cursor-pointer hover:shadow-md transition-all"
-          @click="router.push('/learn?category=polars')"
+          v-for="path in quickStartPaths"
+          :key="`quick-${path.id}`"
+          class="flex items-center gap-3 p-4 rounded-xl cursor-pointer hover:shadow-md transition-all"
+          :class="colorBg[path.color]"
+          @click="router.push(path.slug)"
         >
-          <span class="text-2xl">🐼</span>
+          <span class="text-2xl">✦</span>
           <div>
-            <p class="text-sm font-semibold text-blue-800">我会 Pandas → 先学 Polars</p>
-            <p class="text-xs text-blue-600/70">Pandas 用户的最短迁移路径</p>
-          </div>
-        </div>
-        <div
-          class="flex items-center gap-3 p-4 rounded-xl bg-yellow-50 border border-yellow-100 cursor-pointer hover:shadow-md transition-all"
-          @click="router.push('/learn?category=duckdb')"
-        >
-          <span class="text-2xl">🗃️</span>
-          <div>
-            <p class="text-sm font-semibold text-yellow-800">我会 SQL → 先学 DuckDB</p>
-            <p class="text-xs text-yellow-600/70">SQL 用户的本地分析升级</p>
-          </div>
-        </div>
-        <div
-          class="flex items-center gap-3 p-4 rounded-xl bg-purple-50 border border-purple-100 cursor-pointer hover:shadow-md transition-all"
-          @click="goToTrack('combined')"
-        >
-          <span class="text-2xl">⚡</span>
-          <div>
-            <p class="text-sm font-semibold text-purple-800">我都会 → 进入组合实战</p>
-            <p class="text-xs text-purple-600/70">构建完整数据分析管道</p>
+            <p class="text-sm font-semibold text-slate-800">{{ path.title }}</p>
+            <p class="text-xs text-slate-500">{{ path.subtitle }}</p>
           </div>
         </div>
       </div>
@@ -338,30 +394,30 @@ const colorTag: Record<string, string> = {
     <section class="bg-white border-y border-slate-100 py-16">
       <div class="max-w-6xl mx-auto px-6">
         <div class="text-center mb-12">
-          <h2 class="text-3xl font-bold text-slate-800 mb-3">为什么选择迁移学习</h2>
-          <p class="text-slate-500">从你已有的技术栈出发，用最短路径掌握新工具</p>
+          <h2 class="text-3xl font-bold text-slate-800 mb-3">为什么选择路径化学习</h2>
+          <p class="text-slate-500">从明确目标出发，把课程、练习和回顾串成可持续的学习节奏</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div class="flex flex-col items-start p-6 rounded-2xl bg-blue-50/50 border border-blue-100">
             <span class="text-3xl mb-4">🐼</span>
-            <h4 class="font-semibold text-slate-800 mb-2">Polars 更适合表达式化与高性能处理</h4>
+            <h4 class="font-semibold text-slate-800 mb-2">路径清晰，降低起步成本</h4>
             <p class="text-sm text-slate-500 leading-relaxed">
-              重点不是背性能口号，而是学会用表达式、惰性执行和清晰的数据管道，替代熟悉但更重的 Pandas 写法。
+              每条路径都有推荐起点和阶段目标，不需要在零散资料里反复判断下一步该学什么。
             </p>
           </div>
           <div class="flex flex-col items-start p-6 rounded-2xl bg-yellow-50/50 border border-yellow-100">
             <span class="text-3xl mb-4">🦆</span>
-            <h4 class="font-semibold text-slate-800 mb-2">DuckDB 让本地 SQL 分析更轻更近</h4>
+            <h4 class="font-semibold text-slate-800 mb-2">边学边练，形成真实反馈</h4>
             <p class="text-sm text-slate-500 leading-relaxed">
-              直接对 CSV、Parquet 和内存数据做查询，把你已有的 SQL 习惯延续到本地分析工作流里。
+              课程、Playground 和 AI 助手结合在一起，能把概念理解快速落到可运行的代码和练习上。
             </p>
           </div>
           <div class="flex flex-col items-start p-6 rounded-2xl bg-purple-50/50 border border-purple-100">
             <span class="text-3xl mb-4">⚡</span>
-            <h4 class="font-semibold text-slate-800 mb-2">组合使用效率更高</h4>
+            <h4 class="font-semibold text-slate-800 mb-2">主题可扩展，内容可持续沉淀</h4>
             <p class="text-sm text-slate-500 leading-relaxed">
-              用 Polars 做清洗与转换，用 DuckDB 做 SQL 分析，重点学会什么时候切换工具，而不是孤立记 API。
+              新主题和新路径可以通过目录配置逐步接入，平台不再被固定在某一组技术栈上。
             </p>
           </div>
         </div>
@@ -377,10 +433,10 @@ const colorTag: Record<string, string> = {
           <div class="max-w-2xl">
             <p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">准备开始</p>
             <h2 class="text-2xl font-bold text-slate-900 md:text-3xl">
-              从你最熟悉的技术栈出发，完成第一条迁移路径
+              从一个清晰起点出发，完成第一条学习路径
             </h2>
             <p class="mt-3 text-sm leading-relaxed text-slate-500 md:text-base">
-              不需要从零学起，直接沿着一条路径推进，把已有的 Pandas / SQL 经验迁移到更现代的数据分析工作流。
+              不需要从零散资料里摸索，直接沿着一条路径推进，把知识点、练习和复盘串起来。
             </p>
           </div>
           <div class="flex flex-wrap gap-3">
@@ -392,9 +448,9 @@ const colorTag: Record<string, string> = {
             </button>
             <button
               class="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
-              @click="hasLearningProgress ? continueLearning() : goToTrack('duckdb')"
+              @click="hasLearningProgress ? continueLearning() : router.push(learningPaths[1]?.slug ?? learningPaths[0]?.slug ?? '/learn')"
             >
-              {{ hasLearningProgress ? '继续学习' : '从 DuckDB 路径开始' }}
+              {{ hasLearningProgress ? '继续学习' : '从推荐路径开始' }}
             </button>
           </div>
         </div>

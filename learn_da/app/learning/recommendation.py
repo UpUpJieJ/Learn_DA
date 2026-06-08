@@ -86,6 +86,7 @@ class LessonMetadata(BaseModel):
 
     slug: str
     title: str
+    topic: str = "data-analysis"
     category: str
     difficulty: str
     order: int
@@ -181,41 +182,44 @@ class RecommendationService:
 
         for lesson in lessons:
             # 优先使用 frontmatter 中的 track，否则推断
-            track = lesson.get('track') or self._infer_track(lesson)
+            track = self._lesson_value(lesson, 'track') or self._infer_track(lesson)
 
             # 优先使用 frontmatter 中的 prerequisites，否则从 prev_lesson 推断
-            prerequisites = lesson.get('prerequisites', [])
-            if not prerequisites and lesson.get('prev_lesson'):
-                prerequisites = [lesson['prev_lesson']['slug']]
+            prerequisites = self._lesson_value(lesson, 'prerequisites', [])
+            prev_lesson = self._lesson_value(lesson, 'prev_lesson')
+            if not prerequisites and prev_lesson:
+                prerequisites = [self._lesson_value(prev_lesson, 'slug')]
 
             # 优先使用 frontmatter 中的 recommended_next，否则从 next_lesson 推断
-            recommended_next = lesson.get('recommended_next', [])
-            if not recommended_next and lesson.get('next_lesson'):
-                recommended_next = [lesson['next_lesson']['slug']]
+            recommended_next = self._lesson_value(lesson, 'recommended_next', [])
+            next_lesson = self._lesson_value(lesson, 'next_lesson')
+            if not recommended_next and next_lesson:
+                recommended_next = [self._lesson_value(next_lesson, 'slug')]
 
             # 优先使用 frontmatter 中的 skill_tags，否则使用 tags
-            skill_tags = lesson.get('skill_tags', [])
+            skill_tags = self._lesson_value(lesson, 'skill_tags', [])
             if not skill_tags:
-                skill_tags = lesson.get('tags', [])
+                skill_tags = self._lesson_value(lesson, 'tags', [])
 
             # 优先使用 frontmatter 中的 is_review_friendly，否则推断
-            is_review_friendly = lesson.get('is_review_friendly')
+            is_review_friendly = self._lesson_value(lesson, 'is_review_friendly')
             if is_review_friendly is None:
                 is_review_friendly = (
-                    lesson.get('difficulty') == 'beginner' or
-                    'basics' in lesson.get('slug', '').lower() or
-                    'foundations' in lesson.get('slug', '').lower()
+                    self._lesson_value(lesson, 'difficulty') == 'beginner' or
+                    'basics' in self._lesson_value(lesson, 'slug', '').lower() or
+                    'foundations' in self._lesson_value(lesson, 'slug', '').lower()
                 )
 
             # 优先使用 frontmatter 中的 is_branch_point
-            is_branch_point = lesson.get('is_branch_point', False)
+            is_branch_point = self._lesson_value(lesson, 'is_branch_point', False)
 
             metadata = LessonMetadata(
-                slug=lesson['slug'],
-                title=lesson['title'],
-                category=lesson['category'],
-                difficulty=lesson['difficulty'],
-                order=lesson.get('order', 0),
+                slug=self._lesson_value(lesson, 'slug'),
+                title=self._lesson_value(lesson, 'title'),
+                topic=self._lesson_value(lesson, 'topic', 'data-analysis'),
+                category=self._lesson_value(lesson, 'category'),
+                difficulty=self._lesson_value(lesson, 'difficulty'),
+                order=self._lesson_value(lesson, 'order', 0),
                 track=track,
                 prerequisites=prerequisites,
                 recommended_next=recommended_next,
@@ -224,15 +228,21 @@ class RecommendationService:
                 is_branch_point=is_branch_point,
             )
 
-            metadata_map[lesson['slug']] = metadata
+            metadata_map[metadata.slug] = metadata
 
         self._lesson_metadata_cache = metadata_map
         return metadata_map
 
+    @staticmethod
+    def _lesson_value(lesson: object, key: str, default=None):
+        if isinstance(lesson, dict):
+            return lesson.get(key, default)
+        return getattr(lesson, key, default)
+
     def _infer_track(self, lesson: dict) -> str:
         """从课程信息推断所属路径"""
-        category = lesson.get('category', '')
-        slug = lesson.get('slug', '')
+        category = self._lesson_value(lesson, 'category', '')
+        slug = self._lesson_value(lesson, 'slug', '')
 
         if category == 'combined':
             return 'combined_workflow'
@@ -384,6 +394,12 @@ class RecommendationService:
                                 reason_code="sequential_progress",
                                 priority=4,
                                 action_label="继续学习",
+                                context={
+                                    "from_lesson": current_meta.slug,
+                                    "track": next_meta.track,
+                                    "topic": next_meta.topic,
+                                    "category": next_meta.category,
+                                },
                             )
             else:
                 # 未完成当前课，不推荐新课程
@@ -411,6 +427,11 @@ class RecommendationService:
                     reason_code="sequential_progress",
                     priority=priority,
                     action_label="开始学习",
+                    context={
+                        "track": lesson_meta.track,
+                        "topic": lesson_meta.topic,
+                        "category": lesson_meta.category,
+                    },
                 )
 
         # 规则 3: 全部完成 - 兜底建议
@@ -653,7 +674,11 @@ class RecommendationService:
         # 从配置中获取分支选项
         branch_options = self.BRANCH_CONFIG.get(current_meta.slug, [])
         if not branch_options:
-            return []
+            return self._get_generic_branch_recommendations(
+                completed_lessons=completed_lessons,
+                current_meta=current_meta,
+                metadata_map=metadata_map,
+            )
 
         branch_recommendations = []
 
@@ -697,6 +722,49 @@ class RecommendationService:
         branch_recommendations.sort(key=lambda x: x.priority, reverse=True)
 
         return branch_recommendations
+
+    def _get_generic_branch_recommendations(
+        self,
+        completed_lessons: list[str],
+        current_meta: LessonMetadata,
+        metadata_map: dict[str, LessonMetadata],
+    ) -> list[LearningRecommendation]:
+        """从 recommended_next 生成不依赖特定技术栈的分支建议。"""
+        recommendations: list[LearningRecommendation] = []
+
+        for target_slug in current_meta.recommended_next:
+            if target_slug not in metadata_map or target_slug in completed_lessons:
+                continue
+
+            target_meta = metadata_map[target_slug]
+            prerequisites = target_meta.prerequisites
+            prereqs_met = all(slug in completed_lessons for slug in prerequisites)
+            recommendations.append(
+                LearningRecommendation(
+                    type="branch_path",
+                    target_slug=target_meta.slug,
+                    target_title=target_meta.title,
+                    reason=(
+                        f"你已完成《{current_meta.title}》，可以选择《{target_meta.title}》作为下一条学习分支。"
+                        if prereqs_met
+                        else f"《{target_meta.title}》是可选分支，但建议先确认相关前置知识。"
+                    ),
+                    reason_code="path_completed",
+                    priority=4 if prereqs_met else 3,
+                    action_label="进入这条分支",
+                    context={
+                        "branch_point": current_meta.slug,
+                        "track": target_meta.track,
+                        "topic": target_meta.topic,
+                        "category": target_meta.category,
+                    },
+                )
+            )
+
+        recommendations.sort(
+            key=lambda rec: (-rec.priority, metadata_map[rec.target_slug].order)
+        )
+        return recommendations
 
     async def _get_resume_recommendation(
         self,

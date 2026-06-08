@@ -64,7 +64,12 @@ const categoryLabel: Record<string, string> = {
     polars: "🐻‍❄️ Polars",
     duckdb: "🦆 DuckDB",
     combined: "⚡ 组合实战",
+    python: "🐍 Python",
 };
+
+function formatCategoryLabel(category: string): string {
+    return categoryLabel[category] ?? category;
+}
 
 // =====================================================
 // 数据加载
@@ -287,7 +292,7 @@ const recommendationCta = computed(() => {
         return {
             title: lesson.value.nextLesson.title,
             actionLabel: "继续学习",
-            reason: "按当前课程顺序继续推进，保持迁移学习节奏。",
+            reason: "按当前课程顺序继续推进，保持稳定学习节奏。",
             slug: lesson.value.nextLesson.slug,
         };
     }
@@ -515,8 +520,7 @@ function getRecommendationStyle(rec: any) {
                                 class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium"
                             >
                                 {{
-                                    categoryLabel[lesson.category] ??
-                                    lesson.category
+                                    formatCategoryLabel(lesson.category)
                                 }}
                             </span>
                             <span

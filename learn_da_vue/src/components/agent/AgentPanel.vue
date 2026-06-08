@@ -57,6 +57,9 @@ const hasCurrentError = computed(
 const currentLessonLabel = computed(
     () => agentContext.value.lessonTitle || agentContext.value.currentLesson || "当前课程",
 );
+const isDataMigrationContext = computed(() =>
+    ["polars", "duckdb", "combined"].includes(agentContext.value.lessonCategory ?? ""),
+);
 const contextBadges = computed(() => [
     {
         label: "当前课程",
@@ -78,7 +81,9 @@ const coachContextSummary = computed(() => {
     if (hasCurrentCode.value) {
         return "我会围绕你当前的代码、课程和运行结果来解释与引导。";
     }
-    return "你可以直接问当前课程的概念、迁移写法，或让我先出一道小练习。";
+    return isDataMigrationContext.value
+        ? "你可以直接问当前课程的概念、迁移写法，或让我先出一道小练习。"
+        : "你可以直接问当前课程的概念、练习思路，或让我先出一道小练习。";
 });
 const emptyStateSuggestions = computed(() => {
     if (hasCurrentError.value) {
@@ -91,12 +96,16 @@ const emptyStateSuggestions = computed(() => {
     if (hasCurrentCode.value) {
         return [
             "解释这段代码在当前课里的作用",
-            "告诉我这段写法和 Pandas / SQL 的差异",
+            isDataMigrationContext.value
+                ? "告诉我这段写法和 Pandas / SQL 的差异"
+                : "告诉我这段写法背后的关键概念",
             "基于这段代码出一道下一步练习",
         ];
     }
     return [
-        "这节课最关键的迁移心智是什么",
+        isDataMigrationContext.value
+            ? "这节课最关键的迁移心智是什么"
+            : "这节课最关键的学习目标是什么",
         "先给我一道热身练习",
         "如果我学完这一课，下一步该去哪",
     ];
@@ -108,7 +117,9 @@ const inputPlaceholder = computed(() => {
     if (hasCurrentCode.value) {
         return "例如：解释这段代码，或告诉我下一步怎么练";
     }
-    return "例如：这节课和 Pandas / SQL 的差异是什么？";
+    return isDataMigrationContext.value
+        ? "例如：这节课和 Pandas / SQL 的差异是什么？"
+        : "例如：这节课最重要的概念是什么？";
 });
 
 const quickActions = computed<QuickAction[]>(() => [
@@ -116,7 +127,9 @@ const quickActions = computed<QuickAction[]>(() => [
         key: "explain",
         label: "解释代码",
         disabled: !hasCurrentCode.value,
-        prompt: "请结合当前课程，解释我现在 Playground 里的代码，重点说明与 Pandas/SQL 写法的区别。",
+        prompt: isDataMigrationContext.value
+            ? "请结合当前课程，解释我现在 Playground 里的代码，重点说明与 Pandas/SQL 写法的区别。"
+            : "请结合当前课程，解释我现在 Playground 里的代码，重点说明关键概念和下一步练习方向。",
     },
     {
         key: "fix",
@@ -124,18 +137,22 @@ const quickActions = computed<QuickAction[]>(() => [
         disabled: !hasCurrentCode.value || !hasCurrentError.value,
         prompt: "请结合当前课程和最近一次执行错误，帮我修复当前代码。",
     },
-    {
-        key: "pandas2polars",
-        label: "迁移到 Polars",
-        disabled: false,
-        prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的迁移示例，说明关键 API 对应关系。",
-    },
-    {
-        key: "sql2duckdb",
-        label: "迁移到 DuckDB",
-        disabled: false,
-        prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法示例，说明关键差异。",
-    },
+    ...(isDataMigrationContext.value
+        ? [
+              {
+                  key: "pandas2polars" as const,
+                  label: "迁移到 Polars",
+                  disabled: false,
+                  prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的迁移示例，说明关键 API 对应关系。",
+              },
+              {
+                  key: "sql2duckdb" as const,
+                  label: "迁移到 DuckDB",
+                  disabled: false,
+                  prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法示例，说明关键差异。",
+              },
+          ]
+        : []),
     {
         key: "exercise",
         label: "出一道练习",
@@ -488,7 +505,7 @@ onUnmounted(() => {
                         </svg>
                     </div>
                     <div>
-                        <div class="text-sm font-medium text-slate-200">迁移学习教练</div>
+                        <div class="text-sm font-medium text-slate-200">学习教练</div>
                         <p class="text-[11px] text-slate-500">{{ currentLessonLabel }}</p>
                     </div>
                 </div>
@@ -532,7 +549,7 @@ onUnmounted(() => {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </div>
-                    <p class="text-sm text-slate-300 font-medium mb-1">我是你的迁移学习教练</p>
+                    <p class="text-sm text-slate-300 font-medium mb-1">我是你的学习教练</p>
                     <p class="text-xs text-slate-500 max-w-xs leading-relaxed">{{ coachContextSummary }}</p>
                     <div class="mt-4 flex flex-wrap justify-center gap-2">
                         <span
@@ -684,7 +701,7 @@ onUnmounted(() => {
                     </svg>
                 </div>
                 <div>
-                    <div class="text-sm font-medium text-slate-200">迁移学习教练</div>
+                    <div class="text-sm font-medium text-slate-200">学习教练</div>
                     <p class="text-[11px] text-slate-500">{{ currentLessonLabel }}</p>
                 </div>
             </div>
@@ -712,7 +729,7 @@ onUnmounted(() => {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                     </svg>
                 </div>
-                <p class="text-sm text-slate-300 font-medium mb-1">我是你的迁移学习教练</p>
+                <p class="text-sm text-slate-300 font-medium mb-1">我是你的学习教练</p>
                 <p class="text-xs text-slate-500 max-w-xs leading-relaxed">{{ coachContextSummary }}</p>
                 <div class="mt-4 flex flex-wrap justify-center gap-2">
                     <span

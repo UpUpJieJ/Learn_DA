@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import AnalyticsService
+from app.core.content_loader import load_catalog
 from app.core.database.database import get_db
 from app.utils.base_response import StdResp
 
@@ -32,6 +33,8 @@ def get_recommendation_service(db: AsyncSession = Depends(get_db)) -> Recommenda
 
 @router.get("/lessons", response_model=StdResp[list[LessonSummary]])
 async def list_lessons(
+    topic: str | None = None,
+    track: str | None = None,
     category: str | None = None,
     difficulty: str | None = None,
     keyword: str | None = None,
@@ -39,6 +42,8 @@ async def list_lessons(
 ):
     return StdResp.success(
         data=service.list_lessons(
+            topic=topic,
+            track=track,
             category=category,
             difficulty=difficulty,
             keyword=keyword,
@@ -51,6 +56,8 @@ async def list_lessons(
 
 @router.get("/lessons/all", response_model=StdResp[list[LessonSummary]])
 async def list_all_lessons(
+    topic: str | None = None,
+    track: str | None = None,
     category: str | None = None,
     difficulty: str | None = None,
     keyword: str | None = None,
@@ -58,6 +65,8 @@ async def list_all_lessons(
 ):
     return StdResp.success(
         data=service.list_lessons(
+            topic=topic,
+            track=track,
             category=category,
             difficulty=difficulty,
             keyword=keyword,
@@ -70,6 +79,11 @@ async def get_category_stats(
     service: LearningService = Depends(get_learning_service),
 ):
     return StdResp.success(data=service.get_category_stats())
+
+
+@router.get("/catalog")
+async def get_catalog():
+    return StdResp.success(data=load_catalog())
 
 
 @router.get("/lessons/{slug}", response_model=StdResp[LessonDetail])

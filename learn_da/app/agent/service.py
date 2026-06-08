@@ -141,16 +141,15 @@ class AgentService:
             )
         fallback_explanation = (
             "结论：\n"
-            "我暂时无法连接模型。这段代码会按顺序执行 Python 语句；如果包含 Polars 或 DuckDB API，"
-            "通常是在完成数据读取、转换、查询和输出。\n\n"
+            "我暂时无法连接模型。这段代码会按顺序执行 Python 语句，可以先结合当前课程判断每一行的输入、处理和输出。\n\n"
             "关键步骤：\n"
-            "1. 先看数据对象是如何创建或读取的。\n"
-            "2. 再看 select、filter、group_by、sql 等 API 如何改变结果。\n"
-            "3. 最后看 print、collect 或查询结果如何输出。\n\n"
+            "1. 先看变量、函数或数据对象是如何创建的。\n"
+            "2. 再看关键语句如何处理这些值。\n"
+            "3. 最后看 print、return 或其他输出如何体现运行结果。\n\n"
             "容易混淆：\n"
-            "Polars LazyFrame 需要 collect() 才会真正执行，DuckDB SQL 则通常通过 execute/sql 后取结果。\n\n"
+            "代码是逐行运行的，如果某个变量来自前面的步骤，需要确保创建过程也在当前 Playground 代码里。\n\n"
             "建议你试试：\n"
-            "把其中一个筛选条件或列名改掉，再观察输出或报错如何变化。"
+            "把其中一个输入值或函数参数改掉，再观察输出或报错如何变化。"
         )
         return ExplainCodeResponse(
             explanation=fallback_explanation,

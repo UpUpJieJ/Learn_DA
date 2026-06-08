@@ -4,6 +4,7 @@ import type {
   LessonDetail,
   LessonCategory,
   LessonDifficulty,
+  PlatformCatalog,
 } from '@/types/api'
 
 // =====================================================
@@ -11,6 +12,8 @@ import type {
 // =====================================================
 
 export interface LessonListParams {
+  topic?: string
+  track?: string
   category?: LessonCategory
   difficulty?: LessonDifficulty
   keyword?: string
@@ -32,6 +35,13 @@ export function fetchLessons(params?: LessonListParams) {
  */
 export function fetchLessonBySlug(slug: string) {
   return get<LessonDetail>(`/lessons/${slug}`)
+}
+
+/**
+ * 获取学习平台目录配置（主题、路径和平台文案）
+ */
+export function fetchCatalog() {
+  return get<PlatformCatalog>('/catalog')
 }
 
 /**

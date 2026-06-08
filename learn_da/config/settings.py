@@ -66,8 +66,7 @@ class Settings(BaseSettings):
     SANDBOX_CPU_QUOTA: int = 50000
     SANDBOX_LOCAL_ENABLED: bool = True
 
-    ENABLED_APP_MODULES: str = "learning,playground,analytics"
-
+    ENABLED_APP_MODULES: str = "learning,playground,agent,analytics"
 
     model_config = SettingsConfigDict(
         env_file=".env",

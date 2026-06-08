@@ -149,7 +149,12 @@ const topicLabels: Record<string, string> = {
   polars: "Polars",
   duckdb: "DuckDB",
   integration: "组合",
+  python: "Python",
 };
+
+function formatTopicLabel(topic: string): string {
+  return topicLabels[topic] || topic;
+}
 
 async function loadExamples() {
   isLoadingExamples.value = true;
@@ -557,7 +562,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
         <!-- 当前执行环境 -->
         <div
           class="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200"
-          title="当前仅支持 Python 执行，可在 Python 中使用 duckdb 查询 SQL"
+          title="当前运行环境支持 Python；部分数据分析课程也可以在 Python 中调用相关库。"
         >
           <span>Python</span>
         </div>
@@ -639,7 +644,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 class="mb-1"
               >
                 <div class="px-3 py-1.5 text-xs text-slate-500 bg-white/5">
-                  {{ topicLabels[topic] || topic }}
+                  {{ formatTopicLabel(String(topic)) }}
                 </div>
                 <button
                   v-for="ex in group"

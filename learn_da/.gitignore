@@ -38,6 +38,7 @@ logs/
 # Database
 *.sqlite
 *.sqlite3
+*.db
 
 # Distribution / packaging
 .Python

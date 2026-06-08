@@ -33,6 +33,11 @@ const categoryLabels: Record<string, string> = {
   polars: '🐻‍❄️ Polars',
   duckdb: '🦆 DuckDB',
   combined: '⚡ 组合',
+  python: '🐍 Python',
+}
+
+function formatCategoryLabel(category: string): string {
+  return categoryLabels[category] || category
 }
 
 const filteredLessons = computed(() => {
@@ -128,7 +133,7 @@ function goNext() {
             :class="selectedCategory === cat ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-slate-400'"
             @click="selectedCategory = cat"
           >
-            {{ categoryLabels[cat] || cat }}
+            {{ formatCategoryLabel(cat) }}
           </button>
         </div>
       </div>

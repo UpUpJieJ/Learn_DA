@@ -299,28 +299,32 @@ class AnalyticsRepository:
 
     async def get_category_progress(self, visitor_id: str) -> dict:
         """获取用户各分类的学习进度"""
-        from app.analytics.models import LearningRecord
+        from app.learning.repository import LearningRepository
+
+        lessons = LearningRepository().list_lessons()
+        slug_to_category = {lesson.slug: lesson.category for lesson in lessons}
+        category_completed = dict.fromkeys(
+            [lesson.category for lesson in lessons],
+            0,
+        )
+
         stmt = (
-            select(
-                LearningRecord.lesson_slug,
-                func.count().filter(LearningRecord.event_type == "lesson_complete").label("completed"),
-            )
+            select(LearningRecord.lesson_slug)
             .where(
                 LearningRecord.visitor_id == visitor_id,
+                LearningRecord.event_type == "lesson_complete",
+                LearningRecord.lesson_slug.isnot(None),
                 LearningRecord.is_deleted == False,  # noqa: E712
             )
             .group_by(LearningRecord.lesson_slug)
         )
         result = await self.db.execute(stmt)
-        rows = result.all()
+        completed_slugs = result.scalars().all()
 
-        # 简单按 slug 前缀分类
-        category_completed = {"polars": 0, "duckdb": 0, "combined": 0}
-        for row in rows:
-            if row.lesson_slug:
-                for cat in category_completed:
-                    if cat in row.lesson_slug:
-                        category_completed[cat] += row.completed or 0
+        for slug in completed_slugs:
+            category = slug_to_category.get(slug)
+            if category:
+                category_completed[category] = category_completed.get(category, 0) + 1
 
         return category_completed
 

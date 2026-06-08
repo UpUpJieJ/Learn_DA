@@ -72,6 +72,7 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             'id': frontmatter.get('id'),
             'slug': frontmatter.get('slug'),
             'title': frontmatter.get('title'),
+            'topic': frontmatter.get('topic', 'data-analysis'),
             'category': frontmatter.get('category'),
             'difficulty': frontmatter.get('difficulty'),
             'description': frontmatter.get('description', ''),
@@ -100,12 +101,68 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             if lesson.get(field) is None:
                 print(f"[ContentLoader] Warning: {file_path.name} 缺少必需字段 '{field}'")
                 return None
-        
+
         return lesson
-        
+
     except Exception as e:
         print(f"[ContentLoader] Error loading {file_path}: {e}")
         return None
+
+
+def load_catalog(content_dir: Path | None = None) -> dict[str, Any]:
+    """
+    Load the learning platform catalog.
+
+    The catalog is optional so existing content remains usable while the
+    platform moves from a fixed Polars/DuckDB site to configurable topics.
+    """
+    if content_dir is None:
+        content_dir = Path(__file__).parent.parent.parent / 'content'
+
+    catalog_file = content_dir / 'catalog.yml'
+    if not catalog_file.exists():
+        return {
+            "platform": {
+                "name": "Learn DA",
+                "title": "交互式学习平台",
+                "subtitle": "通过课程、练习和 AI 助手持续学习",
+            },
+            "topics": [
+                {
+                    "key": "data-analysis",
+                    "label": "数据分析",
+                    "description": "Polars、DuckDB 与现代数据分析工作流",
+                    "color": "blue",
+                }
+            ],
+            "tracks": [
+                {
+                    "key": "polars_basics",
+                    "topic": "data-analysis",
+                    "label": "Polars 基础",
+                    "description": "高性能 DataFrame 学习路径",
+                    "start_lesson": "polars-basics",
+                },
+                {
+                    "key": "duckdb_basics",
+                    "topic": "data-analysis",
+                    "label": "DuckDB 基础",
+                    "description": "本地 SQL 分析学习路径",
+                    "start_lesson": "duckdb-analytics",
+                },
+            ],
+        }
+
+    try:
+        catalog = yaml.safe_load(catalog_file.read_text(encoding='utf-8')) or {}
+    except yaml.YAMLError:
+        catalog = {}
+
+    return {
+        "platform": catalog.get("platform", {}),
+        "topics": catalog.get("topics", []),
+        "tracks": catalog.get("tracks", []),
+    }
 
 
 def load_example_from_file(file_path: Path) -> dict[str, Any] | None:
