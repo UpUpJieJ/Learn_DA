@@ -233,6 +233,37 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ---
 
+## 添加新的学习主题
+
+平台已支持通过内容配置扩展学习主题。新增主题通常只需要两步：
+
+1. 在 [`learn_da/content/catalog.yml`](learn_da/content/catalog.yml) 中添加 `topics` 和 `tracks`。
+2. 在 [`learn_da/content/lessons`](learn_da/content/lessons) 中新增 Markdown 课程，并填写 `topic`、`category`、`track`、`prerequisites`、`recommended_next`、`skill_tags` 等 frontmatter。
+
+最小课程示例：
+
+```yaml
+---
+id: 12
+slug: python-functions
+title: Python 函数入门
+topic: programming
+category: python
+track: python_basics
+difficulty: beginner
+tags: [python, function]
+prerequisites: []
+recommended_next: []
+skill_tags: [function, parameter, return_value]
+is_review_friendly: true
+is_branch_point: false
+---
+```
+
+新增课程后，`/api/v1/catalog` 会返回新的主题/路径，`/api/v1/lessons?topic=programming&track=python_basics` 可按主题和路径筛选课程，前端学习中心会优先使用 catalog 动态生成专题入口。
+
+---
+
 ## 测试
 
 ```bash

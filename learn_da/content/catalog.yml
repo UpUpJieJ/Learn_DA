@@ -9,6 +9,11 @@ topics:
     description: Polars、DuckDB 与现代数据分析工作流
     color: blue
 
+  - key: programming
+    label: 编程基础
+    description: Python 等通用编程主题，可作为更多学习路线的起点
+    color: emerald
+
 tracks:
   - key: polars_basics
     topic: data-analysis
@@ -33,3 +38,11 @@ tracks:
     start_lesson: polars-duckdb-workflow
     category: combined
     color: purple
+
+  - key: python_basics
+    topic: programming
+    label: Python 基础
+    description: 面向初学者的 Python 语法和思维入门
+    start_lesson: python-functions
+    category: python
+    color: emerald

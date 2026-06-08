@@ -37,9 +37,12 @@ tracks:
 def test_default_catalog_includes_existing_data_analysis_tracks():
     catalog = load_catalog()
 
-    assert catalog["topics"][0]["key"] == "data-analysis"
+    topic_keys = {topic["key"] for topic in catalog["topics"]}
+    assert "data-analysis" in topic_keys
     track_keys = {track["key"] for track in catalog["tracks"]}
     assert {"polars_basics", "duckdb_basics", "combined_workflow"}.issubset(track_keys)
+    assert "programming" in topic_keys
+    assert "python_basics" in track_keys
 
 
 def test_lesson_loader_preserves_general_topic_metadata(tmp_path: Path):
@@ -89,6 +92,22 @@ async def test_lessons_endpoint_filters_by_topic_and_track(client):
     assert body["data"]
     assert {lesson["topic"] for lesson in body["data"]} == {"data-analysis"}
     assert {lesson["track"] for lesson in body["data"]} == {"polars_basics"}
+
+
+@pytest.mark.unit
+async def test_lessons_endpoint_returns_new_programming_topic(client):
+    resp = await client.get(
+        "/api/v1/lessons",
+        params={"topic": "programming", "track": "python_basics"},
+    )
+    body = resp.json()
+
+    assert resp.status_code == 200
+    assert body["code"] == 200
+    assert body["data"]
+    assert {lesson["topic"] for lesson in body["data"]} == {"programming"}
+    assert {lesson["category"] for lesson in body["data"]} == {"python"}
+    assert {lesson["track"] for lesson in body["data"]} == {"python_basics"}
 
 
 @pytest.mark.unit
