@@ -181,41 +181,43 @@ class RecommendationService:
 
         for lesson in lessons:
             # 优先使用 frontmatter 中的 track，否则推断
-            track = lesson.get('track') or self._infer_track(lesson)
+            track = self._lesson_value(lesson, 'track') or self._infer_track(lesson)
 
             # 优先使用 frontmatter 中的 prerequisites，否则从 prev_lesson 推断
-            prerequisites = lesson.get('prerequisites', [])
-            if not prerequisites and lesson.get('prev_lesson'):
-                prerequisites = [lesson['prev_lesson']['slug']]
+            prerequisites = self._lesson_value(lesson, 'prerequisites', [])
+            prev_lesson = self._lesson_value(lesson, 'prev_lesson')
+            if not prerequisites and prev_lesson:
+                prerequisites = [self._lesson_value(prev_lesson, 'slug')]
 
             # 优先使用 frontmatter 中的 recommended_next，否则从 next_lesson 推断
-            recommended_next = lesson.get('recommended_next', [])
-            if not recommended_next and lesson.get('next_lesson'):
-                recommended_next = [lesson['next_lesson']['slug']]
+            recommended_next = self._lesson_value(lesson, 'recommended_next', [])
+            next_lesson = self._lesson_value(lesson, 'next_lesson')
+            if not recommended_next and next_lesson:
+                recommended_next = [self._lesson_value(next_lesson, 'slug')]
 
             # 优先使用 frontmatter 中的 skill_tags，否则使用 tags
-            skill_tags = lesson.get('skill_tags', [])
+            skill_tags = self._lesson_value(lesson, 'skill_tags', [])
             if not skill_tags:
-                skill_tags = lesson.get('tags', [])
+                skill_tags = self._lesson_value(lesson, 'tags', [])
 
             # 优先使用 frontmatter 中的 is_review_friendly，否则推断
-            is_review_friendly = lesson.get('is_review_friendly')
+            is_review_friendly = self._lesson_value(lesson, 'is_review_friendly')
             if is_review_friendly is None:
                 is_review_friendly = (
-                    lesson.get('difficulty') == 'beginner' or
-                    'basics' in lesson.get('slug', '').lower() or
-                    'foundations' in lesson.get('slug', '').lower()
+                    self._lesson_value(lesson, 'difficulty') == 'beginner' or
+                    'basics' in self._lesson_value(lesson, 'slug', '').lower() or
+                    'foundations' in self._lesson_value(lesson, 'slug', '').lower()
                 )
 
             # 优先使用 frontmatter 中的 is_branch_point
-            is_branch_point = lesson.get('is_branch_point', False)
+            is_branch_point = self._lesson_value(lesson, 'is_branch_point', False)
 
             metadata = LessonMetadata(
-                slug=lesson['slug'],
-                title=lesson['title'],
-                category=lesson['category'],
-                difficulty=lesson['difficulty'],
-                order=lesson.get('order', 0),
+                slug=self._lesson_value(lesson, 'slug'),
+                title=self._lesson_value(lesson, 'title'),
+                category=self._lesson_value(lesson, 'category'),
+                difficulty=self._lesson_value(lesson, 'difficulty'),
+                order=self._lesson_value(lesson, 'order', 0),
                 track=track,
                 prerequisites=prerequisites,
                 recommended_next=recommended_next,
@@ -224,15 +226,21 @@ class RecommendationService:
                 is_branch_point=is_branch_point,
             )
 
-            metadata_map[lesson['slug']] = metadata
+            metadata_map[metadata.slug] = metadata
 
         self._lesson_metadata_cache = metadata_map
         return metadata_map
 
+    @staticmethod
+    def _lesson_value(lesson: object, key: str, default=None):
+        if isinstance(lesson, dict):
+            return lesson.get(key, default)
+        return getattr(lesson, key, default)
+
     def _infer_track(self, lesson: dict) -> str:
         """从课程信息推断所属路径"""
-        category = lesson.get('category', '')
-        slug = lesson.get('slug', '')
+        category = self._lesson_value(lesson, 'category', '')
+        slug = self._lesson_value(lesson, 'slug', '')
 
         if category == 'combined':
             return 'combined_workflow'

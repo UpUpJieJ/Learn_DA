@@ -1,0 +1,35 @@
+platform:
+  name: Learn DA
+  title: 交互式学习平台
+  subtitle: 自由添加学习主题，边学边练，持续沉淀
+
+topics:
+  - key: data-analysis
+    label: 数据分析
+    description: Polars、DuckDB 与现代数据分析工作流
+    color: blue
+
+tracks:
+  - key: polars_basics
+    topic: data-analysis
+    label: Polars 基础
+    description: 高性能 DataFrame 入门路径
+    start_lesson: polars-basics
+    category: polars
+    color: blue
+
+  - key: duckdb_basics
+    topic: data-analysis
+    label: DuckDB 基础
+    description: 本地 SQL 分析入门路径
+    start_lesson: duckdb-analytics
+    category: duckdb
+    color: yellow
+
+  - key: combined_workflow
+    topic: data-analysis
+    label: 组合实战
+    description: Polars 与 DuckDB 的完整分析工作流
+    start_lesson: polars-duckdb-workflow
+    category: combined
+    color: purple

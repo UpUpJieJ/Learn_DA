@@ -13,18 +13,47 @@ export interface ApiResponse<T = unknown> {
 // =====================================================
 
 export type LessonDifficulty = "beginner" | "intermediate" | "advanced";
-export type LessonCategory = "polars" | "duckdb" | "combined";
+export type LessonCategory = string;
+
+export interface PlatformCatalog {
+    platform: {
+        name?: string;
+        title?: string;
+        subtitle?: string;
+    };
+    topics: CatalogTopic[];
+    tracks: CatalogTrack[];
+}
+
+export interface CatalogTopic {
+    key: string;
+    label: string;
+    description?: string;
+    color?: string;
+}
+
+export interface CatalogTrack {
+    key: string;
+    topic: string;
+    label: string;
+    description?: string;
+    startLesson?: string;
+    category?: string;
+    color?: string;
+}
 
 export interface LessonSummary {
     id: number;
     slug: string;
     title: string;
     description: string;
+    topic: string;
     category: LessonCategory;
     difficulty: LessonDifficulty;
     estimatedMinutes: number;
     order: number;
     tags: string[];
+    track: string;
 }
 
 export interface LessonDetail extends LessonSummary {
@@ -36,6 +65,11 @@ export interface LessonDetail extends LessonSummary {
     practiceObjective?: string;
     /** Phase 2: 完成标准（可选） */
     completionCriteria?: string[];
+    prerequisites?: string[];
+    recommendedNext?: string[];
+    skillTags?: string[];
+    isReviewFriendly?: boolean;
+    isBranchPoint?: boolean;
 }
 
 export interface LessonNav {

@@ -14,6 +14,8 @@ class LearningService:
 
     def list_lessons(
         self,
+        topic: str | None = None,
+        track: str | None = None,
         category: str | None = None,
         difficulty: str | None = None,
         keyword: str | None = None,
@@ -21,6 +23,8 @@ class LearningService:
         return [
             LessonSummary.model_validate(lesson)
             for lesson in self.repository.list_lessons(
+                topic=topic,
+                track=track,
                 category=category,
                 difficulty=difficulty,
                 keyword=keyword,

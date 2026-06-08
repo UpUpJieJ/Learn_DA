@@ -2,13 +2,14 @@
 import { ref, computed, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { CancelledError } from "@/api";
-import { fetchLessons, fetchCategoryStats } from "@/api/learning";
+import { fetchLessons, fetchCategoryStats, fetchCatalog } from "@/api/learning";
 import { getRecommendations } from "@/api/recommendation";
 import { getVisitorId } from "@/lib/visitorId";
 import type {
     LessonSummary,
     LessonCategory,
     LessonDifficulty,
+    PlatformCatalog,
     RecommendationResponse,
 } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
@@ -24,6 +25,7 @@ const localStateStore = useLocalStateStore();
 // =====================================================
 
 const lessons = ref<LessonSummary[]>([]);
+const catalog = ref<PlatformCatalog | null>(null);
 const isLoading = ref(false);
 const errorMsg = ref<string | null>(null);
 const recommendation = ref<RecommendationResponse | null>(null);
@@ -44,16 +46,32 @@ let latestLessonRequestId = 0;
 // 分类 / 难度配置
 // =====================================================
 
-const categories: {
+const fallbackCategories: {
     key: LessonCategory | "all";
     label: string;
 }[] = [
     { key: "all", label: "全部专题" },
     ...currentTrackKeys.map((key) => ({
         key,
-        label: learningTrackMeta[key].label,
+        label: learningTrackMeta[key]?.label ?? key,
     })),
 ];
+
+const categories = computed(() => {
+    const dynamicCategories =
+        catalog.value?.tracks
+            ?.filter((track) => track.category)
+            .map((track) => ({
+                key: track.category as LessonCategory,
+                label: track.label,
+            })) ?? [];
+
+    const source = dynamicCategories.length > 0 ? dynamicCategories : fallbackCategories.slice(1);
+    const unique = new Map<string, { key: LessonCategory | "all"; label: string }>();
+    unique.set("all", { key: "all", label: "全部专题" });
+    source.forEach((item) => unique.set(item.key, item));
+    return Array.from(unique.values());
+});
 
 const difficulties: {
     key: LessonDifficulty | "all";
@@ -78,12 +96,6 @@ const difficultyColor: Record<LessonDifficulty, string> = {
     advanced: "bg-purple-100 text-purple-700",
 };
 
-const categoryColor: Record<LessonCategory, string> = {
-    polars: "bg-blue-100 text-blue-700",
-    duckdb: "bg-yellow-100 text-yellow-700",
-    combined: "bg-purple-100 text-purple-700",
-};
-
 // =====================================================
 // 数据加载
 // =====================================================
@@ -92,10 +104,9 @@ function normalizeCategoryQuery(
     value: unknown,
 ): LessonCategory | "all" {
     const category = Array.isArray(value) ? value[0] : value;
-    return typeof category === "string" &&
-        currentTrackKeys.includes(category as LessonCategory)
-        ? (category as LessonCategory)
-        : "all";
+    if (typeof category !== "string") return "all";
+    const knownCategory = categories.value.some((item) => item.key === category);
+    return knownCategory ? (category as LessonCategory) : "all";
 }
 
 async function loadLessons(category: LessonCategory | "all" = activeCategory.value) {
@@ -107,11 +118,12 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
         const currentLesson = getRecommendationContextLesson({
             lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
         });
-        const [lessonsData, statsData, recommendationData] = await Promise.all([
+        const [lessonsData, statsData, catalogData, recommendationData] = await Promise.all([
             fetchLessons({
                 category: category === "all" ? undefined : category,
             }),
             fetchCategoryStats(),
+            fetchCatalog().catch(() => null),
             getRecommendations({
                 visitorId: getVisitorId(),
                 completedLessons: localStateStore.progress.completedLessons,
@@ -122,11 +134,10 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
         if (requestId !== latestLessonRequestId) return;
 
         lessons.value = lessonsData;
-        categoryCounts.value = {
-            polars: statsData.find((s) => s.category === "polars")?.count ?? 0,
-            duckdb: statsData.find((s) => s.category === "duckdb")?.count ?? 0,
-            combined: statsData.find((s) => s.category === "combined")?.count ?? 0,
-        };
+        if (catalogData) catalog.value = catalogData;
+        categoryCounts.value = Object.fromEntries(
+            statsData.map((s) => [s.category, s.count]),
+        );
         recommendation.value = recommendationData;
     } catch (err) {
         if (requestId !== latestLessonRequestId) return;
@@ -181,6 +192,20 @@ const completedCount = computed(
 // ---- 当前选中路径的元信息 ----
 const currentTrackInfo = computed(() => {
     if (activeCategory.value === "all") return null;
+    const catalogTrack = catalog.value?.tracks.find(
+        (track) => track.category === activeCategory.value,
+    );
+    if (catalogTrack) {
+        const legacy = learningTrackMeta[activeCategory.value];
+        return {
+            label: catalogTrack.label,
+            description: catalogTrack.description ?? legacy?.description ?? "",
+            targetAudience: legacy?.targetAudience ?? "想系统学习该主题的学习者",
+            learningOutcome: legacy?.learningOutcome ?? `能完成 ${catalogTrack.label} 的核心学习任务`,
+            recommendedStart: legacy?.recommendedStart ?? "建议从本路径第一课开始",
+            color: (catalogTrack.color ?? legacy?.color ?? "blue") as "blue" | "yellow" | "purple",
+        };
+    }
     return learningTrackMeta[activeCategory.value] ?? null;
 });
 
@@ -239,11 +264,15 @@ const groupedLessons = computed<
         groups[l.category]!.push(l);
     });
 
-    return currentTrackKeys
+    const orderedCategories = categories.value
+        .map((category) => category.key)
+        .filter((key): key is LessonCategory => key !== "all");
+
+    return orderedCategories
         .filter((c) => (groups[c]?.length ?? 0) > 0)
         .map((c) => ({
             category: c,
-            label: categories.find((cat) => cat.key === c)?.label ?? c,
+            label: categories.value.find((cat) => cat.key === c)?.label ?? c,
             items: groups[c] ?? [],
         }));
 });
