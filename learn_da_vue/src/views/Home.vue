@@ -54,7 +54,6 @@ const legacyPaths = learningTracks.map((track) => ({
   tags: track.tags,
   color: track.color as PathColor,
   slug: track.route,
-  lessonCount: track.lessonCount,
 }))
 
 const topicLabelByKey = computed(() => {
@@ -126,9 +125,8 @@ const stats = computed(() => {
       { label: '代码运行', value: homeStats.value.totalCodeRuns > 0 ? `${homeStats.value.totalCodeRuns}` : '—' },
     ]
   }
-  const fallbackLessonCount = legacyPaths.reduce((total, path) => total + path.lessonCount, 0)
   return [
-    { label: '课程总数', value: `${fallbackLessonCount}` },
+    { label: '课程总数', value: '-' },
     { label: '学习路径', value: `${learningPaths.value.length}` },
     { label: '今日活跃', value: '—' },
     { label: '代码运行', value: '—' },
@@ -368,7 +366,7 @@ const colorTag: Record<string, string> = {
           <div class="mt-auto pt-4 border-t border-black/5">
             <p class="text-xs text-blue-600/70 mb-2">💡 {{ path.recommendedStart }}</p>
             <div class="flex items-center justify-between">
-              <span class="text-xs text-slate-400">{{ path.lessonCount }} 节课程</span>
+              <span class="text-xs text-slate-400">{{ path.lessonCount ? `${path.lessonCount} 节课程` : '课程数加载中' }}</span>
               <span
                 class="flex items-center gap-1 text-sm font-medium text-slate-500 group-hover:text-blue-600 transition-colors"
               >

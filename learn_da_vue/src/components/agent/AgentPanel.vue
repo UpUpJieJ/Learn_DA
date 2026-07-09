@@ -57,7 +57,7 @@ const hasCurrentError = computed(
 const currentLessonLabel = computed(
     () => agentContext.value.lessonTitle || agentContext.value.currentLesson || "当前课程",
 );
-const isDataMigrationContext = computed(() =>
+const supportsMigrationAnalogy = computed(() =>
     ["polars", "duckdb", "combined"].includes(agentContext.value.lessonCategory ?? ""),
 );
 const contextBadges = computed(() => [
@@ -81,8 +81,8 @@ const coachContextSummary = computed(() => {
     if (hasCurrentCode.value) {
         return "我会围绕你当前的代码、课程和运行结果来解释与引导。";
     }
-    return isDataMigrationContext.value
-        ? "你可以直接问当前课程的概念、迁移写法，或让我先出一道小练习。"
+    return supportsMigrationAnalogy.value
+        ? "你可以直接问当前课程的概念、与 Pandas/SQL 的写法对照，或让我先出一道小练习。"
         : "你可以直接问当前课程的概念、练习思路，或让我先出一道小练习。";
 });
 const emptyStateSuggestions = computed(() => {
@@ -96,15 +96,15 @@ const emptyStateSuggestions = computed(() => {
     if (hasCurrentCode.value) {
         return [
             "解释这段代码在当前课里的作用",
-            isDataMigrationContext.value
-                ? "告诉我这段写法和 Pandas / SQL 的差异"
+            supportsMigrationAnalogy.value
+                ? "告诉我这段写法和 Pandas / SQL 的对照"
                 : "告诉我这段写法背后的关键概念",
             "基于这段代码出一道下一步练习",
         ];
     }
     return [
-        isDataMigrationContext.value
-            ? "这节课最关键的迁移心智是什么"
+        supportsMigrationAnalogy.value
+            ? "这节课和 Pandas / SQL 的写法对照是什么"
             : "这节课最关键的学习目标是什么",
         "先给我一道热身练习",
         "如果我学完这一课，下一步该去哪",
@@ -117,8 +117,8 @@ const inputPlaceholder = computed(() => {
     if (hasCurrentCode.value) {
         return "例如：解释这段代码，或告诉我下一步怎么练";
     }
-    return isDataMigrationContext.value
-        ? "例如：这节课和 Pandas / SQL 的差异是什么？"
+    return supportsMigrationAnalogy.value
+        ? "例如：这节课和 Pandas / SQL 的写法对照是什么？"
         : "例如：这节课最重要的概念是什么？";
 });
 
@@ -127,8 +127,8 @@ const quickActions = computed<QuickAction[]>(() => [
         key: "explain",
         label: "解释代码",
         disabled: !hasCurrentCode.value,
-        prompt: isDataMigrationContext.value
-            ? "请结合当前课程，解释我现在 Playground 里的代码，重点说明与 Pandas/SQL 写法的区别。"
+        prompt: supportsMigrationAnalogy.value
+            ? "请结合当前课程，解释我现在 Playground 里的代码，并给出与 Pandas/SQL 写法的对照说明。"
             : "请结合当前课程，解释我现在 Playground 里的代码，重点说明关键概念和下一步练习方向。",
     },
     {
@@ -137,19 +137,19 @@ const quickActions = computed<QuickAction[]>(() => [
         disabled: !hasCurrentCode.value || !hasCurrentError.value,
         prompt: "请结合当前课程和最近一次执行错误，帮我修复当前代码。",
     },
-    ...(isDataMigrationContext.value
+    ...(supportsMigrationAnalogy.value
         ? [
               {
                   key: "pandas2polars" as const,
-                  label: "迁移到 Polars",
+                  label: "Pandas 对照",
                   disabled: false,
-                  prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的迁移示例，说明关键 API 对应关系。",
+                  prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的写法对照示例，说明关键 API 对应关系。",
               },
               {
                   key: "sql2duckdb" as const,
-                  label: "迁移到 DuckDB",
+                  label: "SQL 对照",
                   disabled: false,
-                  prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法示例，说明关键差异。",
+                  prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法对照示例，说明关键差异。",
               },
           ]
         : []),
