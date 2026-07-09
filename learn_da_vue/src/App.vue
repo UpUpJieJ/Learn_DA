@@ -30,7 +30,7 @@ const isPlayground = computed(() => route.path.startsWith("/playground"));
                     <KeepAlive :include="['Learning', 'Playground']">
                         <component
                             :is="Component"
-                            :key="route.fullPath"
+                            :key="route.path"
                             :class="
                                 isPlayground ? 'h-full min-h-0' : 'flex-1'
                             "

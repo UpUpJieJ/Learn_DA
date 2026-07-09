@@ -51,6 +51,8 @@ const fallbackCategories: {
     label: string;
 }[] = [
     { key: "all", label: "全部专题" },
+    // currentTrackKeys 需与 content/catalog.yml 的 track.category 保持一致，
+    // 含 polars/duckdb/combined/python，确保 catalog 未就绪时也能正确识别合法分类。
     ...currentTrackKeys.map((key) => ({
         key,
         label: learningTrackMeta[key]?.label ?? key,
@@ -296,6 +298,21 @@ watch(
         void loadLessons(nextCategory);
     },
     { immediate: true },
+);
+
+// catalog 异步加载完成后，分类列表才完整。此时需重新校验一次 URL 中的 category：
+// 否则刷新进入 ?category=python 时，若 catalog 未就绪导致 normalizeCategoryQuery 误判，
+// activeCategory 会停在错误值且再无机会纠正（route.query.category 未变，上面的 watch 不触发）。
+watch(
+    () => catalog.value,
+    (newCatalog, oldCatalog) => {
+        if (!newCatalog || oldCatalog) return; // 仅在 catalog 首次就绪时校验一次
+        const corrected = normalizeCategoryQuery(route.query.category);
+        if (corrected !== activeCategory.value) {
+            activeCategory.value = corrected;
+            void loadLessons(corrected);
+        }
+    },
 );
 
 watch(
