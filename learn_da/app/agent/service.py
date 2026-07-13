@@ -1,11 +1,18 @@
 from openai import AsyncOpenAI
 
+from app.learning.recommendation import RecommendationService
+from app.learning.repository import LearningRepository
 from app.sandbox import SandboxService
 from app.sandbox.schemas import SandboxExecutionResult
 from config.settings import settings
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
-from .prompts import build_chat_messages, build_explain_messages, build_fix_messages
+from .prompts import (
+    build_chat_messages,
+    build_explain_messages,
+    build_fix_messages,
+    build_recommendation_guidance_messages,
+)
 from .results import parse_structured_result
 from .routing import AgentRouter
 from .schemas import (
@@ -17,6 +24,8 @@ from .schemas import (
     ExplainCodeResponse,
     FixCodeRequest,
     FixCodeResponse,
+    RecommendationGuidanceRequest,
+    RecommendationGuidanceResponse,
     ToolName,
 )
 from .tools import get_agent_tool
@@ -28,11 +37,13 @@ class AgentService:
         sandbox_service: SandboxService | None = None,
         knowledge_retriever: KnowledgeRetriever | None = None,
         router: AgentRouter | None = None,
+        recommendation_service: RecommendationService | None = None,
     ) -> None:
         self.model = settings.effective_llm_model
         self.sandbox_service = sandbox_service or SandboxService()
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
+        self.recommendation_service = recommendation_service
 
     def extract_user_message(self, payload: AgentChatRequest) -> str:
         if payload.message:
@@ -87,7 +98,9 @@ class AgentService:
         )
         content = await self._ask_llm(
             self._inject_knowledge(
-                build_fix_messages(payload.code, payload.error_message, payload.context),
+                build_fix_messages(
+                    payload.code, payload.error_message, payload.context
+                ),
                 knowledge_block,
             )
         )
@@ -155,7 +168,50 @@ class AgentService:
             explanation=fallback_explanation,
             model=self.model,
             used_fallback=True,
-            structured_result=parse_structured_result("explain_code", fallback_explanation),
+            structured_result=parse_structured_result(
+                "explain_code", fallback_explanation
+            ),
+        )
+
+    async def recommendation_guidance(
+        self,
+        payload: RecommendationGuidanceRequest,
+    ) -> RecommendationGuidanceResponse:
+        if self.recommendation_service is None:
+            self.recommendation_service = RecommendationService(
+                repository=LearningRepository()
+            )
+
+        response = await self.recommendation_service.get_recommendation(
+            visitor_id=payload.visitor_id,
+            completed_lessons=payload.completed_lessons,
+            current_lesson_slug=payload.current_lesson,
+        )
+        recommendation = response.primary
+        content = await self._ask_llm(
+            build_recommendation_guidance_messages(recommendation)
+        )
+        if content and content.strip():
+            explanation, exercise = self._split_guidance_content(content)
+            return RecommendationGuidanceResponse(
+                recommendation=recommendation,
+                explanation=(
+                    explanation
+                    or self._fallback_recommendation_explanation(recommendation)
+                ),
+                exercise_prompt=(
+                    exercise or self._fallback_recommendation_exercise(recommendation)
+                ),
+                model=self.model,
+                used_fallback=False,
+            )
+
+        return RecommendationGuidanceResponse(
+            recommendation=recommendation,
+            explanation=self._fallback_recommendation_explanation(recommendation),
+            exercise_prompt=self._fallback_recommendation_exercise(recommendation),
+            model=self.model,
+            used_fallback=True,
         )
 
     async def _ask_llm(self, messages: list[dict[str, str]]) -> str | None:
@@ -253,3 +309,39 @@ class AgentService:
         if end == -1:
             return None
         return content[body_start + 1 : end].strip()
+
+    @staticmethod
+    def _split_guidance_content(content: str) -> tuple[str, str | None]:
+        explanation_label = "解释建议："
+        exercise_label = "下一步练习："
+        normalized = content.strip()
+
+        if exercise_label not in normalized:
+            return normalized.removeprefix(explanation_label).strip(), None
+
+        explanation, exercise = normalized.split(exercise_label, 1)
+        return (
+            explanation.removeprefix(explanation_label).strip(),
+            exercise.strip() or None,
+        )
+
+    @staticmethod
+    def _fallback_recommendation_explanation(recommendation) -> str:
+        if recommendation is None:
+            return (
+                "当前没有明确推荐。你可以继续当前课程，或从课程列表中选择"
+                "一个最想巩固的主题。"
+            )
+        return (
+            f"建议你学习《{recommendation.target_title}》。"
+            f"规则依据是：{recommendation.reason}"
+        )
+
+    @staticmethod
+    def _fallback_recommendation_exercise(recommendation) -> str:
+        if recommendation is None:
+            return "选择当前课程中的一个示例，修改一个输入值并解释输出变化。"
+        return (
+            f"打开《{recommendation.target_title}》，选择一个示例修改输入或条件，"
+            "先预测结果，再运行代码验证。"
+        )

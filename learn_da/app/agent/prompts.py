@@ -15,6 +15,30 @@ SYSTEM_PROMPT = (
 )
 
 
+def build_recommendation_guidance_messages(recommendation) -> list[dict[str, str]]:
+    if recommendation is None:
+        user_content = (
+            "当前没有明确推荐。请按以下格式回复：\n"
+            "解释建议：说明为什么现在适合自由浏览或继续当前课程。\n\n"
+            "下一步练习：给一个 5 到 10 分钟的小练习。"
+        )
+    else:
+        user_content = (
+            "请解释这条学习建议，并给一个小练习。\n\n"
+            f"建议类型：{recommendation.type}\n"
+            f"目标课程：{recommendation.target_title}\n"
+            f"规则理由：{recommendation.reason}\n"
+            f"优先级：{recommendation.priority}\n\n"
+            "必须按以下格式回复：\n"
+            "解释建议：用 2 到 4 句话说明为什么推荐它。\n\n"
+            "下一步练习：给一个 5 到 10 分钟的小练习，不要直接给答案。"
+        )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+
 def compact_history(
     history: list[AgentChatMessage],
     max_turns: int,

@@ -7,6 +7,7 @@ import type {
   AgentStructuredResult,
   AgentToolName,
   ChatMessage,
+  RecommendationGuidanceResponse,
 } from '@/types/api'
 
 // =====================================================
@@ -130,4 +131,12 @@ export interface ExplainCodeResponse {
  */
 export async function explainCode(payload: ExplainCodeRequest): Promise<ExplainCodeResponse> {
   return post<ExplainCodeResponse>('/agent/explain', payload)
+}
+
+export async function getRecommendationGuidance(payload: {
+  visitorId: string
+  completedLessons: string[]
+  currentLesson?: string
+}): Promise<RecommendationGuidanceResponse> {
+  return post<RecommendationGuidanceResponse>('/agent/recommendation-guidance', payload)
 }

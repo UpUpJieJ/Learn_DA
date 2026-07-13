@@ -373,3 +373,12 @@ export interface RecommendationResponse {
     primary: LearningRecommendation | null;
     alternatives: LearningRecommendation[];
 }
+
+/** Agent 对当前规则建议的解释与练习引导 */
+export interface RecommendationGuidanceResponse {
+    recommendation: LearningRecommendation | null;
+    explanation: string;
+    exercisePrompt?: string | null;
+    model: string;
+    usedFallback: boolean;
+}

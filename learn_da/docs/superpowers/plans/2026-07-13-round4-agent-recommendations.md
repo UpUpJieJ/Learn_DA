@@ -38,7 +38,7 @@ This round does not:
 - Modify: `learn_da/app/agent/schemas.py`
 - Test: `learn_da/tests/unit/test_agent_recommendation_guidance.py`
 
-- [ ] **Step 1: Write the failing schema serialization test**
+- [x] **Step 1: Write the failing schema serialization test**
 
 ```python
 from app.agent.schemas import RecommendationGuidanceRequest
@@ -58,13 +58,13 @@ def test_recommendation_guidance_request_accepts_camel_case_context():
     assert req.current_lesson == "polars-expressions"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_request_accepts_camel_case_context -q`
 
 Expected: FAIL because `RecommendationGuidanceRequest` does not exist.
 
-- [ ] **Step 3: Add the minimal schemas**
+- [x] **Step 3: Add the minimal schemas**
 
 ```python
 from pydantic import Field
@@ -86,7 +86,7 @@ class RecommendationGuidanceResponse(BaseResponseModel):
     used_fallback: bool = False
 ```
 
-- [ ] **Step 4: Run the schema test**
+- [x] **Step 4: Run the schema test**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_request_accepts_camel_case_context -q`
 
@@ -98,7 +98,7 @@ Expected: PASS.
 - Modify: `learn_da/app/agent/prompts.py`
 - Test: `learn_da/tests/unit/test_agent_recommendation_guidance.py`
 
-- [ ] **Step 1: Write the failing prompt test**
+- [x] **Step 1: Write the failing prompt test**
 
 ```python
 from app.agent.prompts import build_recommendation_guidance_messages
@@ -124,13 +124,13 @@ def test_recommendation_guidance_prompt_includes_reason_and_exercise_format():
     assert "下一步练习：" in content
 ```
 
-- [ ] **Step 2: Run the prompt test to verify it fails**
+- [x] **Step 2: Run the prompt test to verify it fails**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_prompt_includes_reason_and_exercise_format -q`
 
 Expected: FAIL because the prompt builder does not exist.
 
-- [ ] **Step 3: Add the prompt builder**
+- [x] **Step 3: Add the prompt builder**
 
 ```python
 def build_recommendation_guidance_messages(recommendation) -> list[dict[str, str]]:
@@ -157,7 +157,7 @@ def build_recommendation_guidance_messages(recommendation) -> list[dict[str, str
     ]
 ```
 
-- [ ] **Step 4: Run the prompt test**
+- [x] **Step 4: Run the prompt test**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_prompt_includes_reason_and_exercise_format -q`
 
@@ -169,7 +169,7 @@ Expected: PASS.
 - Modify: `learn_da/app/agent/service.py`
 - Test: `learn_da/tests/unit/test_agent_recommendation_guidance.py`
 
-- [ ] **Step 1: Write the failing service fallback test**
+- [x] **Step 1: Write the failing service fallback test**
 
 ```python
 import pytest
@@ -219,13 +219,13 @@ async def test_recommendation_guidance_falls_back_without_llm(monkeypatch):
     assert result.exercise_prompt
 ```
 
-- [ ] **Step 2: Run the service test to verify it fails**
+- [x] **Step 2: Run the service test to verify it fails**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_falls_back_without_llm -q`
 
 Expected: FAIL because `AgentService` does not accept `recommendation_service` and has no `recommendation_guidance` method.
 
-- [ ] **Step 3: Add service dependency and method**
+- [x] **Step 3: Add service dependency and method**
 
 Add a `recommendation_service` optional dependency to `AgentService.__init__`, defaulting to `RecommendationService(repository=LearningRepository())` only when used by the new method. Add:
 
@@ -257,7 +257,7 @@ async def recommendation_guidance(self, payload: RecommendationGuidanceRequest):
     )
 ```
 
-- [ ] **Step 4: Run the service test**
+- [x] **Step 4: Run the service test**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_falls_back_without_llm -q`
 
@@ -269,7 +269,7 @@ Expected: PASS.
 - Modify: `learn_da/app/agent/router.py`
 - Test: `learn_da/tests/unit/test_agent_recommendation_guidance.py`
 
-- [ ] **Step 1: Write the failing endpoint test**
+- [x] **Step 1: Write the failing endpoint test**
 
 ```python
 @pytest.mark.unit
@@ -290,13 +290,13 @@ async def test_recommendation_guidance_endpoint_returns_rule_recommendation(clie
     assert "usedFallback" in body["data"]
 ```
 
-- [ ] **Step 2: Run the endpoint test to verify it fails**
+- [x] **Step 2: Run the endpoint test to verify it fails**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_recommendation_guidance.py::test_recommendation_guidance_endpoint_returns_rule_recommendation -q`
 
 Expected: FAIL with 404.
 
-- [ ] **Step 3: Add the endpoint**
+- [x] **Step 3: Add the endpoint**
 
 ```python
 @router.post("/recommendation-guidance", response_model=StdResp[RecommendationGuidanceResponse])
@@ -309,7 +309,7 @@ async def recommendation_guidance(
     return StdResp.success(data=await service.recommendation_guidance(payload))
 ```
 
-- [ ] **Step 4: Run endpoint and full agent tests**
+- [x] **Step 4: Run endpoint and full agent tests**
 
 Run: `.\.venv\Scripts\python.exe -m pytest tests/unit/test_agent_service.py tests/unit/test_agent_recommendation_guidance.py -q`
 
@@ -321,7 +321,7 @@ Expected: all tests pass.
 - Modify: `learn_da_vue/src/api/agent.ts`
 - Modify: `learn_da_vue/src/components/agent/AgentPanel.vue`
 
-- [ ] **Step 1: Add API wrapper**
+- [x] **Step 1: Add API wrapper**
 
 Add:
 
@@ -335,7 +335,7 @@ export async function getRecommendationGuidance(payload: {
 }
 ```
 
-- [ ] **Step 2: Add response type**
+- [x] **Step 2: Add response type**
 
 Add to `learn_da_vue/src/types/api.ts`:
 
@@ -349,11 +349,11 @@ export interface RecommendationGuidanceResponse {
 }
 ```
 
-- [ ] **Step 3: Add quick action to Agent panel**
+- [x] **Step 3: Add quick action to Agent panel**
 
 Add a quick action labeled `解释推荐` that calls the new API using the current visitor id, completed lessons, and current lesson slug. Render the returned `explanation` as an assistant message and append `exercisePrompt` when present.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run: `npm run build` from `learn_da_vue`.
 
@@ -364,19 +364,19 @@ Expected: build passes.
 **Files:**
 - No new files.
 
-- [ ] **Step 1: Run backend tests**
+- [x] **Step 1: Run backend tests**
 
 Run: `.\.venv\Scripts\python.exe -m pytest -q --basetemp=.pytest_cache\tmp-run`
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run frontend build**
+- [x] **Step 2: Run frontend build**
 
 Run: `npm run build`
 
 Expected: build passes.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add learn_da/app/agent learn_da/tests/unit/test_agent_recommendation_guidance.py learn_da_vue/src

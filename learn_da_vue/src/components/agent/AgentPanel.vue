@@ -2,11 +2,18 @@
 import { ref, computed, nextTick, watch, onUnmounted } from "vue";
 import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
-import { streamChatMessage, buildChatHistory, explainCode, fixCode } from "@/api/agent";
+import {
+    streamChatMessage,
+    buildChatHistory,
+    explainCode,
+    fixCode,
+    getRecommendationGuidance,
+} from "@/api/agent";
 import { renderMarkdown } from "@/lib/markdown";
+import { getVisitorId } from "@/lib/visitorId";
 import type { ChatMessage, AgentContext } from "@/types/api";
 
-type QuickActionKey = "explain" | "fix" | "exercise" | "next" | "pandas2polars" | "sql2duckdb";
+type QuickActionKey = "explain" | "fix" | "exercise" | "next" | "guidance" | "pandas2polars" | "sql2duckdb";
 
 interface QuickAction {
     key: QuickActionKey;
@@ -165,6 +172,12 @@ const quickActions = computed<QuickAction[]>(() => [
         disabled: false,
         prompt: "请根据当前课程、代码和运行结果，告诉我下一步应该学习或尝试什么。",
     },
+    {
+        key: "guidance",
+        label: "解释推荐",
+        disabled: false,
+        prompt: "请解释当前学习推荐，并给我一个可以马上开始的小练习。",
+    },
 ]);
 
 function formatAgentErrorMessage(message?: string) {
@@ -308,6 +321,48 @@ async function sendQuickAction(action: QuickAction) {
     if (action.disabled || isLoading.value) return;
     if (["exercise", "next", "pandas2polars", "sql2duckdb"].includes(action.key)) {
         await sendMessage(action.prompt);
+        return;
+    }
+
+    if (action.key === "guidance") {
+        const userMsg: ChatMessage = {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: action.prompt,
+            timestamp: Date.now(),
+        };
+        const assistantMsg: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: "",
+            timestamp: Date.now(),
+            isStreaming: true,
+        };
+
+        messages.value.push(userMsg, assistantMsg);
+        isLoading.value = true;
+        await scrollToBottom();
+
+        try {
+            const response = await getRecommendationGuidance({
+                visitorId: getVisitorId(),
+                completedLessons: [...localStateStore.progress.completedLessons],
+                currentLesson:
+                    agentContext.value.currentLesson ||
+                    localStateStore.progress.lastVisitedSlug ||
+                    undefined,
+            });
+            assistantMsg.content = response.exercisePrompt
+                ? `${response.explanation}\n\n下一步练习：\n${response.exercisePrompt}`
+                : response.explanation;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "请求失败";
+            assistantMsg.content = formatAgentErrorMessage(message);
+        } finally {
+            assistantMsg.isStreaming = false;
+            isLoading.value = false;
+            await scrollToBottom();
+        }
         return;
     }
 

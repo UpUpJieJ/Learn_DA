@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.learning.schemas import LearningRecommendation
 from app.utils.base_response import BaseResponseModel
 
 
@@ -72,6 +73,23 @@ class AgentChatData(BaseResponseModel):
     used_fallback: bool = False
     route: "AgentRouteInfo | None" = None
     structured_result: "AgentStructuredResult | None" = None
+
+
+class RecommendationGuidanceRequest(BaseResponseModel):
+    visitor_id: str = Field(..., alias="visitorId")
+    completed_lessons: list[str] = Field(
+        default_factory=list,
+        alias="completedLessons",
+    )
+    current_lesson: str | None = Field(None, alias="currentLesson")
+
+
+class RecommendationGuidanceResponse(BaseResponseModel):
+    recommendation: LearningRecommendation | None = None
+    explanation: str
+    exercise_prompt: str | None = None
+    model: str
+    used_fallback: bool = False
 
 
 class AgentRouteInfo(BaseResponseModel):
