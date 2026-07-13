@@ -174,8 +174,13 @@ def test_agent_fallbacks_are_general_learning_friendly():
 
 
 @pytest.mark.unit
-async def test_explain_code_fallback_is_general_learning_friendly():
+async def test_explain_code_fallback_is_general_learning_friendly(monkeypatch):
     service = AgentService(knowledge_retriever=FakeKnowledgeRetriever([]))
+
+    async def fake_ask_llm(messages):
+        return None
+
+    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
 
     result = await service.explain_code(ExplainCodeRequest(code="print('ok')"))
 

@@ -54,6 +54,7 @@ const legacyPaths = learningTracks.map((track) => ({
   tags: track.tags,
   color: track.color as PathColor,
   slug: track.route,
+  lessonCount: 0,
 }))
 
 const topicLabelByKey = computed(() => {

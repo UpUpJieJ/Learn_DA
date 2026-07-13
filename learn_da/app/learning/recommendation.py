@@ -8,6 +8,7 @@ Phase 3: 下一步学习建议服务
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
+from config.settings import settings
 
 if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
@@ -165,6 +166,13 @@ class RecommendationService:
     ):
         self.repository = repository
         self.analytics_service = analytics_service
+        self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
+        self.AI_HELPS_THRESHOLD = settings.RECOMMENDATION_AI_HELPS_THRESHOLD
+        self.SNAPSHOTS_THRESHOLD = settings.RECOMMENDATION_SNAPSHOTS_THRESHOLD
+        self.REVIEW_COOLDOWN_SECONDS = settings.RECOMMENDATION_REVIEW_COOLDOWN_SECONDS
+        self.resume_absence_threshold_days = (
+            settings.RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS
+        )
         self._lesson_metadata_cache: dict[str, LessonMetadata] | None = None
         self._review_cooldowns: dict[str, str] = {}  # {visitor_id+lesson_slug: ISO timestamp}
 
@@ -329,6 +337,7 @@ class RecommendationService:
             visitor_id=visitor_id,
             completed_lessons=completed_lessons,
             metadata_map=metadata_map,
+            absence_threshold_days=self.resume_absence_threshold_days,
         )
 
         if resume_rec:
