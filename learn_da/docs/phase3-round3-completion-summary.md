@@ -118,7 +118,7 @@
 
 **触发条件**：
 - `analytics_service` 可用
-- 距上次学习 `>= 3 天`（`absence_threshold_days`，基于 `lastActiveDate`）
+- 距上次学习达到配置阈值（默认 `3` 天，`RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS`，基于 `lastActiveDate`）
 
 **候选选择 - 恢复成本模型**：
 
@@ -223,16 +223,16 @@ resume_cost = base_engagement*0.5 + recency*0.3 + difficulty*0.2
 | 局限 | 说明 | 影响 |
 |---|---|---|
 | 回补冷却存内存 | 服务重启重置 | 可接受，最多多触发一次 |
-| 回流阈值硬编码 3 天 | `absence_threshold_days` 不可配 | 短期可接受，后续可提为配置项 |
+| 推荐阈值仍需基于真实数据调参 | 回补、冷却、回流阈值已可配置，但默认值还未经过真实用户数据校准 | 后续可结合埋点数据调整 |
 | 分支建议 `BRANCH_CONFIG` 仅覆盖 polars 分支点 | Python 路径无分支点配置 | 通用兜底已覆盖，体验略降但不失效 |
 | 回补/回流依赖 `analytics_service` | 无 analytics 时直接返回 None | 降级合理，但无埋点环境这两类建议不可用 |
 
-### 7.2 Round 4 方向（Agent 主导建议）
+### 7.2 Round 4 落地边界
 
-- Agent 解释推荐理由（自然语言，非模板）
-- Agent 根据用户当前代码/错误生成个性化下一练习
-- Agent 在多分支场景下结合用户偏好给单一推荐（而非列表）
-- 建议效果埋点与回流率统计
+- 已实现 Agent 对当前规则建议的自然语言解释。
+- 已实现与目标课程相关的 5 到 10 分钟小练习。
+- 已保留无 LLM 配置时的确定性 fallback。
+- 未引入 LLM 排序、长期偏好画像或新的分析表；规则服务仍是推荐来源。
 
 ---
 
@@ -250,10 +250,12 @@ resume_cost = base_engagement*0.5 + recency*0.3 + difficulty*0.2
 - ✅ `getRecommendationStyle` 覆盖全部四种类型，Dashboard/Learning/LessonDetail 三页一致
 - ✅ 回补=橙色警示、分支=紫色高亮、回流=绿色温馨、顺学=蓝色默认，视觉区分清晰
 
-### 8.3 未覆盖
+### 8.3 自动化测试补充
 
-- ❌ 无针对 Round 3 新增建议的自动化测试（`tests/` 下无 recommendation 相关用例）
-- ❌ 未在真实 analytics 数据下端到端验证回补/回流的实际触发效果
+- ✅ `tests/unit/test_recommendation_phase3.py` 覆盖回补阈值与冷却、配置化阈值、分支优先级、回流成本模型，以及基于 analytics 事件的接口触发。
+- ✅ `tests/unit/test_recommendation_generalization.py` 覆盖非 Polars/DuckDB 主题下的顺学建议和通用分支兜底。
+- ✅ API 集成测试使用真实 SQLAlchemy 模型与测试数据库，覆盖 analytics 写入 -> RecommendationService -> `/api/v1/recommendations` 响应的回补、回流链路。
+- ⚠️ 浏览器视觉 E2E 尚未纳入自动化；该项属于后续回归质量建设，不阻塞 Phase 3 功能收口。
 
 ---
 
@@ -267,7 +269,7 @@ resume_cost = base_engagement*0.5 + recency*0.3 + difficulty*0.2
 | Task 3.2 分支建议（配置驱动 + 通用兜底） | ✅ 完成 | 100% |
 | Task 3.3 回流建议（恢复成本模型 + 模板选择） | ✅ 完成 | 100% |
 | 前端三页样式适配 | ✅ 完成 | 100% |
-| 自动化测试 | ❌ 未做 | 0% |
+| 自动化测试 | ✅ 已补充 | 核心路径覆盖 |
 
 ### 9.2 核心价值
 
@@ -282,12 +284,12 @@ resume_cost = base_engagement*0.5 + recency*0.3 + difficulty*0.2
 
 ### 9.3 遗留待办
 
-- [ ] 补充 recommendation 服务的单元测试（回补阈值/冷却、分支配置、回流成本模型）
-- [ ] 将 `absence_threshold_days` 等阈值提为可配置项
-- [ ] 真实数据下端到端验证回补/回流触发效果
-- [ ] 启动 Round 4：Agent 主导建议
+- [x] 补充 recommendation 服务的单元测试（回补阈值/冷却、分支配置、回流成本模型）
+- [x] 将 `absence_threshold_days` 等阈值提为可配置项
+- [x] 使用真实数据库模型和 API 链路验证回补/回流触发效果
+- [x] 执行 Round 4：Agent 引导建议
 
 ---
 
-**文档版本**: v1.0（事后补齐，对齐 main 当前实现）
-**最后更新**: 2026-07-09
+**文档版本**: v1.1（Phase 3 收口）
+**最后更新**: 2026-07-14

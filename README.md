@@ -184,6 +184,11 @@ docker compose -f docker-compose.prod.yml up -d --build
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — | 备用 LLM 配置 |
 | `REDIS_ENABLED` | `false` | 是否启用 Redis |
 | `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
+| `RECOMMENDATION_CODE_RUNS_THRESHOLD` | `5` | 触发回补建议的代码运行次数阈值 |
+| `RECOMMENDATION_AI_HELPS_THRESHOLD` | `3` | 触发回补建议的 AI 求助次数阈值 |
+| `RECOMMENDATION_SNAPSHOTS_THRESHOLD` | `4` | 触发回补建议的代码快照数量阈值 |
+| `RECOMMENDATION_REVIEW_COOLDOWN_SECONDS` | `86400` | 同一用户同一课程重复触发回补建议的冷却时间 |
+| `RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS` | `3` | 触发回流建议的未学习天数阈值 |
 | `SANDBOX_DOCKER_ENABLED` | `false` | 是否启用 Docker 沙箱执行 |
 | `SANDBOX_LOCAL_ENABLED` | `true` | 是否允许开发环境本地执行 |
 | `SANDBOX_USE_MOCK_WHEN_DISABLED` | `true` | Docker 与本地执行都关闭时是否返回模拟结果 |
@@ -265,6 +270,9 @@ is_branch_point: false
 ---
 
 ## 测试
+
+Phase 3 学习建议系统已经完成收口，整体设计、交付物与验证结果见
+[`learn_da/docs/phase3-completion-summary.md`](learn_da/docs/phase3-completion-summary.md)。
 
 ```bash
 cd learn_da

@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- Phase 3 已于 2026-07-14 完成整体收口；统一结论见 [`phase3-completion-summary.md`](phase3-completion-summary.md)。
 - Phase 3 Round 1 已完成：建立学习建议服务、建议数据结构和课程元数据。
 - Phase 3 Round 2 已完成：把默认顺学建议接入 Dashboard、Learning、LessonDetail。
 - Phase 3 Round 3 已完成：补齐回补、分支、回流三类建议，并已补充核心自动化测试。
@@ -12,12 +13,13 @@
 
 ## 下一步
 
-Round 4 已收口。下一步应根据新的产品目标建立独立计划，并在开始实施时更新本页。
+Phase 3 不再新增任务。下一阶段应根据新的产品目标建立独立计划，并在开始实施时更新本页。
 
 ## 文档地图
 
 | 文档 | 用途 |
 |---|---|
+| [`phase3-completion-summary.md`](phase3-completion-summary.md) | Phase 3 整体收口：目标、架构、交付物、验证与边界 |
 | [`phase3-round1-completion-summary.md`](phase3-round1-completion-summary.md) | Round 1 完整总结：建议骨架与元数据 |
 | [`phase3-round1-changes.md`](phase3-round1-changes.md) | Round 1 文件级改动清单 |
 | [`phase3-round2-completion-summary.md`](phase3-round2-completion-summary.md) | Round 2 完整总结：默认顺学建议接入页面 |
