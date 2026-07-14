@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Any, Optional
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     SANDBOX_CPU_QUOTA: int = 50000
     SANDBOX_LOCAL_ENABLED: bool = True
 
+    RUNNER_URL: str = "http://127.0.0.1:8080"
+    RUNNER_TOKEN: str = ""
+    RUNNER_TIMEOUT_SECONDS: float = 7.0
+    SESSION_SECRET: str = "development-only-change-me"
+    SESSION_COOKIE_NAME: str = "learn_da_session"
+    SNAPSHOT_MAX_PER_SESSION: int = 100
+    SNAPSHOT_MAX_GLOBAL: int = 10_000
+    SNAPSHOT_PAGE_SIZE_DEFAULT: int = 20
+    SNAPSHOT_PAGE_SIZE_MAX: int = 50
+    TRUSTED_PROXY_IPS: str = ""
+    OPENAPI_ENABLED: bool = False
+
     ENABLED_APP_MODULES: str = "learning,playground,agent,analytics"
 
     model_config = SettingsConfigDict(
@@ -122,6 +134,20 @@ class Settings(BaseSettings):
         if value == "":
             return None
         return value
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.APP_ENV != "production":
+            return self
+        if self.SANDBOX_LOCAL_ENABLED:
+            raise ValueError("SANDBOX_LOCAL_ENABLED must be false in production")
+        if not self.RUNNER_URL.strip():
+            raise ValueError("RUNNER_URL is required in production")
+        if len(self.RUNNER_TOKEN) < 32:
+            raise ValueError("RUNNER_TOKEN must contain at least 32 characters")
+        if len(self.SESSION_SECRET) < 32:
+            raise ValueError("SESSION_SECRET must contain at least 32 characters")
+        return self
 
 
 @lru_cache()

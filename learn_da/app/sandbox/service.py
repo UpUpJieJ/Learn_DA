@@ -8,7 +8,7 @@ from config.settings import settings
 from .docker_runner import DockerSandboxRunner
 from .local_runner import LocalSubprocessRunner
 from .safety_check import validate_code
-from .schemas import SandboxExecutionResult
+from .schemas import ExecutionStatus, SandboxExecutionResult
 
 
 class SandboxService:
@@ -40,7 +40,7 @@ class SandboxService:
         started_at = time.perf_counter()
         preview = code.strip().splitlines()[:6]
         return SandboxExecutionResult(
-            status="mocked",
+            status=ExecutionStatus.SUCCESS,
             stdout="Mock sandbox result\n" + "\n".join(preview),
             stderr="",
             execution_time=int((time.perf_counter() - started_at) * 1000),
