@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.learning.schemas import LearningRecommendation
+from app.sandbox.schemas import ExecutionStatus
 from app.utils.base_response import BaseResponseModel
 
 
@@ -123,11 +125,14 @@ class FixCodeRequest(BaseModel):
 
 class AgentRunVerification(BaseResponseModel):
     verified: bool
-    status: str
+    request_id: UUID
+    execution_id: UUID
+    status: ExecutionStatus
     stdout: str = ""
     stderr: str = ""
-    execution_time: int
-    used_sandbox: str
+    error_type: str | None = None
+    duration_ms: int = Field(ge=0)
+    output_truncated: bool = False
 
 
 class FixCodeResponse(BaseResponseModel):

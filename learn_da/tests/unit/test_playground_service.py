@@ -1,6 +1,13 @@
+from uuid import UUID
+
 from app.playground.schemas import ExecuteCodeRequest
 from app.playground.service import PlaygroundService
 from app.sandbox.schemas import SandboxExecutionResult
+
+
+REQUEST_ID = UUID("00000000-0000-0000-0000-000000000001")
+RESULT_REQUEST_ID = UUID("00000000-0000-0000-0000-000000000002")
+EXECUTION_ID = UUID("00000000-0000-0000-0000-000000000003")
 
 
 class CapturingSandbox:
@@ -57,6 +64,37 @@ def test_execute_marks_error_results_as_error_type():
 
     assert result.result_type == "error"
     assert result.dataframe is None
+
+
+def test_execute_forwards_stable_execution_contract_fields():
+    sandbox = CapturingSandbox(
+        SandboxExecutionResult(
+            request_id=RESULT_REQUEST_ID,
+            execution_id=EXECUTION_ID,
+            status="error",
+            stdout="",
+            stderr="NameError: name 'df' is not defined",
+            error_type="name_error",
+            duration_ms=37,
+            output_truncated=True,
+        )
+    )
+    service = PlaygroundService(sandbox_service=sandbox)
+
+    result = service.execute(
+        ExecuteCodeRequest(
+            request_id=REQUEST_ID,
+            code="print(df)",
+            source="agent_suggested",
+        )
+    )
+
+    assert result.request_id == REQUEST_ID
+    assert result.execution_id == EXECUTION_ID
+    assert result.source == "agent_suggested"
+    assert result.error_type == "name_error"
+    assert result.duration_ms == 37
+    assert result.output_truncated is True
 
 
 def test_execute_appends_dataframe_probe_to_user_code():

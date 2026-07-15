@@ -1,9 +1,11 @@
+from uuid import uuid4
+
 from openai import AsyncOpenAI
 
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
 from app.sandbox import SandboxService
-from app.sandbox.schemas import SandboxExecutionResult
+from app.sandbox.schemas import ExecutionStatus, SandboxExecutionResult
 from config.settings import settings
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
@@ -275,11 +277,14 @@ class AgentService:
         except Exception as exc:
             return AgentRunVerification(
                 verified=False,
-                status="error",
+                request_id=uuid4(),
+                execution_id=uuid4(),
+                status=ExecutionStatus.ERROR,
                 stdout="",
                 stderr=str(exc),
-                execution_time=0,
-                used_sandbox="none",
+                error_type="sandbox_error",
+                duration_ms=0,
+                output_truncated=False,
             )
 
         return self._verification_from_result(result)
@@ -290,11 +295,14 @@ class AgentService:
     ) -> AgentRunVerification:
         return AgentRunVerification(
             verified=result.status == "success",
+            request_id=result.request_id,
+            execution_id=result.execution_id,
             status=result.status,
             stdout=result.stdout,
             stderr=result.stderr,
-            execution_time=result.execution_time,
-            used_sandbox=result.used_sandbox,
+            error_type=result.error_type,
+            duration_ms=result.duration_ms,
+            output_truncated=result.output_truncated,
         )
 
     def _extract_code_block(self, content: str) -> str | None:

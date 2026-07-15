@@ -26,11 +26,15 @@ class PlaygroundService:
         cleaned_stdout, dataframe = self._extract_dataframe_result(result.stdout)
         result_type = self._resolve_result_type(result.status, dataframe)
         return ExecuteCodeResponse(
+            request_id=payload.request_id,
+            execution_id=result.execution_id,
+            source=payload.source,
             status=result.status,
             stdout=cleaned_stdout,
             stderr=result.stderr,
-            execution_time=result.execution_time,
-            used_sandbox=result.used_sandbox,
+            error_type=result.error_type,
+            duration_ms=result.duration_ms,
+            output_truncated=result.output_truncated,
             result_type=result_type,
             dataframe=dataframe,
         )
