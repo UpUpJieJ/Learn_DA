@@ -146,6 +146,9 @@ async def test_home_stats_uses_loaded_lesson_count(client):
 
 @pytest.mark.unit
 async def test_category_progress_uses_lesson_metadata_for_all_categories(client, db_session):
+    from app.core import get_anonymous_visitor_id
+    from main import app
+
     visitor_id = "catalog-progress-user"
     db_session.add_all(
         [
@@ -159,10 +162,13 @@ async def test_category_progress_uses_lesson_metadata_for_all_categories(client,
     )
     await db_session.flush()
 
-    resp = await client.get(
-        "/api/v1/analytics/category-progress",
-        params={"visitorId": visitor_id},
-    )
+    app.dependency_overrides[get_anonymous_visitor_id] = lambda: visitor_id
+    try:
+        resp = await client.get(
+            "/api/v1/analytics/category-progress",
+        )
+    finally:
+        app.dependency_overrides.clear()
     body = resp.json()
 
     assert resp.status_code == 200

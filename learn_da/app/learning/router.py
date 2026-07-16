@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import AnalyticsService
+from app.core import get_anonymous_visitor_id
 from app.core.content_loader import load_catalog
 from app.core.database.database import get_db
 from app.utils.base_response import StdResp
@@ -115,7 +116,7 @@ async def get_example(
 
 @router.get("/recommendations", response_model=StdResp[RecommendationResponse])
 async def get_recommendations(
-    visitor_id: str,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     completed_lessons: str = "",  # 逗号分隔的 slug 列表
     current_lesson: str | None = None,
     service: RecommendationService = Depends(get_recommendation_service),
@@ -124,7 +125,7 @@ async def get_recommendations(
     获取用户的下一步学习建议
 
     Args:
-        visitor_id: 访客 ID
+        visitor_id: 从 session cookie 获取
         completed_lessons: 已完成课程列表（逗号分隔）
         current_lesson: 当前正在学习的课程 slug（可选）
     """

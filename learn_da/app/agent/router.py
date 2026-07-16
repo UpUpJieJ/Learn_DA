@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import AnalyticsService
+from app.core import get_anonymous_visitor_id
 from app.core.database.database import get_db
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
@@ -80,6 +81,9 @@ async def explain_code(
 async def recommendation_guidance(
     request: Request,
     payload: RecommendationGuidanceRequest,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     service: AgentService = Depends(get_recommendation_guidance_service),
 ):
-    return StdResp.success(data=await service.recommendation_guidance(payload))
+    return StdResp.success(
+        data=await service.recommendation_guidance(payload, visitor_id=visitor_id)
+    )

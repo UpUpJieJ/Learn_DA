@@ -47,13 +47,11 @@ class EmptyRecommendationService:
 def test_recommendation_guidance_request_accepts_camel_case_context():
     req = RecommendationGuidanceRequest.model_validate(
         {
-            "visitorId": "visitor-1",
             "completedLessons": ["polars-basics"],
             "currentLesson": "polars-expressions",
         }
     )
 
-    assert req.visitor_id == "visitor-1"
     assert req.completed_lessons == ["polars-basics"]
     assert req.current_lesson == "polars-expressions"
 
@@ -88,10 +86,10 @@ async def test_recommendation_guidance_falls_back_without_llm(monkeypatch):
 
     result = await service.recommendation_guidance(
         RecommendationGuidanceRequest(
-            visitorId="visitor-1",
             completedLessons=["polars-basics"],
             currentLesson="polars-expressions",
-        )
+        ),
+        visitor_id="visitor-1",
     )
 
     assert result.used_fallback is True
@@ -113,7 +111,8 @@ async def test_recommendation_guidance_splits_llm_response(monkeypatch):
     monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
 
     result = await service.recommendation_guidance(
-        RecommendationGuidanceRequest(visitorId="visitor-1")
+        RecommendationGuidanceRequest(),
+        visitor_id="visitor-1",
     )
 
     assert result.used_fallback is False
@@ -131,7 +130,8 @@ async def test_recommendation_guidance_fallback_handles_no_recommendation(monkey
     monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
 
     result = await service.recommendation_guidance(
-        RecommendationGuidanceRequest(visitorId="visitor-1")
+        RecommendationGuidanceRequest(),
+        visitor_id="visitor-1",
     )
 
     assert result.used_fallback is True
@@ -142,14 +142,20 @@ async def test_recommendation_guidance_fallback_handles_no_recommendation(monkey
 
 @pytest.mark.unit
 async def test_recommendation_guidance_endpoint_returns_rule_recommendation(client):
-    response = await client.post(
-        "/api/v1/agent/recommendation-guidance",
-        json={
-            "visitorId": "guidance-user",
-            "completedLessons": ["polars-basics"],
-            "currentLesson": "polars-expressions",
-        },
-    )
+    from app.core import get_anonymous_visitor_id
+    from main import app
+
+    app.dependency_overrides[get_anonymous_visitor_id] = lambda: "guidance-user"
+    try:
+        response = await client.post(
+            "/api/v1/agent/recommendation-guidance",
+            json={
+                "completedLessons": ["polars-basics"],
+                "currentLesson": "polars-expressions",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
     assert response.status_code == 200
     body = response.json()
     assert body["code"] == 200

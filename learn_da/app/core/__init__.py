@@ -18,6 +18,8 @@ from .exceptions.base_exceptions import (
 
 from app.core.exceptions.exception_handler import setup_exception_handlers
 
+from .session import get_anonymous_visitor_id
+
 __all__ = [
     'get_db',
     'AsyncSessionLocal',
@@ -25,5 +27,6 @@ __all__ = [
     'Base',
     'ValidationException',
     'BusinessException',
-    'setup_exception_handlers'
+    'setup_exception_handlers',
+    'get_anonymous_visitor_id',
 ]

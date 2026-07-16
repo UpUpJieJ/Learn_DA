@@ -78,7 +78,6 @@ class AgentChatData(BaseResponseModel):
 
 
 class RecommendationGuidanceRequest(BaseResponseModel):
-    visitor_id: str = Field(..., alias="visitorId")
     completed_lessons: list[str] = Field(
         default_factory=list,
         alias="completedLessons",

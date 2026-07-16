@@ -5,7 +5,7 @@ Phase 2 & 3 & 4 & 5: 学习行为事件采集 + 学习流优化 + 首页统计 +
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import get_db
+from app.core import get_db, get_anonymous_visitor_id
 from app.learning.repository import LearningRepository
 from app.utils.base_response import StdResp
 
@@ -27,28 +27,30 @@ router = APIRouter(tags=["analytics"])
 @router.post("/analytics/track", response_model=StdResp[EventTrackResponse])
 async def track_event(
     req: EventTrackRequest,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """记录学习行为事件"""
     service = AnalyticsService(db)
-    result = await service.track_event(req)
+    result = await service.track_event(req, visitor_id)
     return StdResp.success(data=result)
 
 
 @router.post("/analytics/snapshot", response_model=StdResp[CodeSnapshotResponse])
 async def save_snapshot(
     req: CodeSnapshotRequest,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """保存代码快照"""
     service = AnalyticsService(db)
-    result = await service.save_snapshot(req)
+    result = await service.save_snapshot(req, visitor_id)
     return StdResp.success(data=result)
 
 
 @router.get("/analytics/snapshots", response_model=StdResp[list[CodeSnapshotItem]])
 async def list_snapshots(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     lesson_slug: str | None = Query(None, alias="lessonSlug"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -63,7 +65,7 @@ async def list_snapshots(
 
 @router.get("/analytics/learning-progress")
 async def get_learning_progress(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户学习进度（已完成课程列表 + 各课程统计）"""
@@ -74,7 +76,7 @@ async def get_learning_progress(
 
 @router.get("/analytics/recommended-lessons", deprecated=True)
 async def get_recommended_lessons(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -149,7 +151,7 @@ async def get_home_stats(
 
 @router.get("/analytics/user-profile")
 async def get_user_profile(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户画像（累计学习时长、连续天数、能力雷达图分数）"""
@@ -160,7 +162,7 @@ async def get_user_profile(
 
 @router.get("/analytics/user-lesson-stats")
 async def get_user_lesson_stats(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户课程维度统计"""
@@ -182,7 +184,7 @@ async def get_daily_trend(
 
 @router.get("/analytics/category-progress")
 async def get_category_progress(
-    visitor_id: str = Query(..., alias="visitorId"),
+    visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
     """获取用户各分类学习进度"""

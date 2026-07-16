@@ -21,32 +21,32 @@ class AnalyticsService:
         self.db = db
         self.repo = AnalyticsRepository(db)
 
-    async def track_event(self, req: EventTrackRequest) -> EventTrackResponse:
+    async def track_event(self, req: EventTrackRequest, visitor_id: str) -> EventTrackResponse:
         """记录学习行为事件，同时更新用户画像和每日统计"""
         await self.repo.create_record(
-            visitor_id=req.visitor_id,
+            visitor_id=visitor_id,
             event_type=req.event_type,
             lesson_slug=req.lesson_slug,
             duration_seconds=req.duration_seconds,
         )
         await self.repo.update_profile_stats(
-            visitor_id=req.visitor_id,
+            visitor_id=visitor_id,
             event_type=req.event_type,
             duration_seconds=req.duration_seconds,
         )
         await self.repo.upsert_daily_stats(
             event_type=req.event_type,
-            visitor_id=req.visitor_id,
+            visitor_id=visitor_id,
             duration_seconds=req.duration_seconds,
         )
-        await self.repo.increment_active_users(req.visitor_id)
+        await self.repo.increment_active_users(visitor_id)
         await self.db.commit()
         return EventTrackResponse(recorded=True)
 
-    async def save_snapshot(self, req: CodeSnapshotRequest) -> CodeSnapshotResponse:
+    async def save_snapshot(self, req: CodeSnapshotRequest, visitor_id: str) -> CodeSnapshotResponse:
         """保存代码快照"""
         snapshot = await self.repo.create_snapshot(
-            visitor_id=req.visitor_id,
+            visitor_id=visitor_id,
             code=req.code,
             lesson_slug=req.lesson_slug,
             language=req.language,

@@ -281,6 +281,7 @@ async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engi
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+    from app.core import get_anonymous_visitor_id
     from app.core.database.database import get_db
     from main import app
 
@@ -294,8 +295,10 @@ async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engi
     async def override_get_db():
         yield session
 
-    app.dependency_overrides[get_db] = override_get_db
     visitor_id = "analytics-review-user"
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_anonymous_visitor_id] = lambda: visitor_id
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -305,7 +308,6 @@ async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engi
                 resp = await api_client.post(
                     "/api/v1/analytics/track",
                     json={
-                        "visitorId": visitor_id,
                         "eventType": "code_run",
                         "lessonSlug": "polars-expressions",
                     },
@@ -315,7 +317,6 @@ async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engi
             resp = await api_client.get(
                 "/api/v1/recommendations",
                 params={
-                    "visitor_id": visitor_id,
                     "completed_lessons": "polars-basics",
                     "current_lesson": "polars-expressions",
                 },
@@ -355,13 +356,20 @@ async def test_recommendations_endpoint_uses_real_analytics_for_resume(client, d
     )
     await db_session.flush()
 
-    resp = await client.get(
-        "/api/v1/recommendations",
-        params={
-            "visitor_id": visitor_id,
-            "completed_lessons": "polars-basics",
-        },
-    )
+    from app.core import get_anonymous_visitor_id
+    from main import app
+
+    visitor_id = "analytics-resume-user"
+    app.dependency_overrides[get_anonymous_visitor_id] = lambda: visitor_id
+    try:
+        resp = await client.get(
+            "/api/v1/recommendations",
+            params={
+                "completed_lessons": "polars-basics",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
     body = resp.json()
 
     assert resp.status_code == 200

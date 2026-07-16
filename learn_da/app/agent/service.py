@@ -173,6 +173,7 @@ class AgentService:
     async def recommendation_guidance(
         self,
         payload: RecommendationGuidanceRequest,
+        visitor_id: str,
     ) -> RecommendationGuidanceResponse:
         if self.recommendation_service is None:
             self.recommendation_service = RecommendationService(
@@ -180,7 +181,7 @@ class AgentService:
             )
 
         response = await self.recommendation_service.get_recommendation(
-            visitor_id=payload.visitor_id,
+            visitor_id=visitor_id,
             completed_lessons=payload.completed_lessons,
             current_lesson_slug=payload.current_lesson,
         )

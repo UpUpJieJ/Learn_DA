@@ -6,6 +6,8 @@ from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.core import get_db, setup_exception_handlers
 from app.middleware import setup_access_log_middleware, setup_cors_middleware
 from app.middleware.security import setup_security_middleware
@@ -73,6 +75,17 @@ setup_exception_handlers(app)
 setup_cors_middleware(app)
 setup_security_middleware(app)
 setup_access_log_middleware(app)
+
+# Signed anonymous session (HttpOnly cookie)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET,
+    session_cookie=settings.SESSION_COOKIE_NAME,
+    https_only=settings.APP_ENV == "production",
+    same_site="lax",
+    max_age=31_536_000,  # 1 year
+)
+
 if settings.RATE_LIMIT_ENABLED:
     setup_limiter_middleware(app)
 
