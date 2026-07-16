@@ -67,14 +67,18 @@ export async function streamChatMessage(
 }
 
 /**
- * 从消息列表中提取对话历史（排除 system 消息）
+ * 从消息列表中提取对话历史（排除 system 消息和当前用户消息）
+ * 最多保留 20 条消息
  */
 export function buildChatHistory(
   messages: ChatMessage[],
+  currentMessageId?: string,
 ): Pick<ChatMessage, 'role' | 'content'>[] {
-  return messages
+  const filtered = messages
     .filter((m) => m.role !== 'system')
+    .filter((m) => m.id !== currentMessageId)
     .map(({ role, content }) => ({ role, content }))
+  return filtered.slice(-20)
 }
 
 // =====================================================

@@ -64,7 +64,7 @@ class AgentChatPayload(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str | None = Field(default=None, min_length=1, max_length=4000)
     payload: AgentChatPayload | None = None
-    history: list[AgentChatMessage] = Field(default_factory=list, max_length=6)
+    history: list[AgentChatMessage] = Field(default_factory=list, max_length=20)
     context: AgentContext | None = None
 
 

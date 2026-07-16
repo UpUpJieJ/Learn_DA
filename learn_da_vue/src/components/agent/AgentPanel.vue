@@ -266,7 +266,7 @@ async function sendMessage(text?: string) {
     isLoading.value = true;
     await scrollToBottom();
 
-    const history = buildChatHistory(messages.value.filter(m => !m.isStreaming));
+    const history = buildChatHistory(messages.value.filter(m => !m.isStreaming), userMsg.id);
     abortController = new AbortController();
 
     try {
