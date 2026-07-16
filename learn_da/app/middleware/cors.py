@@ -49,6 +49,13 @@ def setup_cors_middleware(app) -> None:
 
     cors_settings = CORSSettings()
 
+    # Reject the invalid combination: allow-all origins + credentials
+    if cors_settings.ALLOW_ALL_ORIGINS and cors_settings.ALLOW_CREDENTIALS:
+        raise ValueError(
+            "CORS misconfiguration: ALLOW_ALL_ORIGINS=true and "
+            "ALLOW_CREDENTIALS=true are mutually exclusive."
+        )
+
     origins_to_allow = ["*"] if cors_settings.ALLOW_ALL_ORIGINS else cors_settings.ALLOW_ORIGINS
 
     app.add_middleware(

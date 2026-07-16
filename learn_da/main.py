@@ -51,7 +51,17 @@ async def lifespan(app: FastAPI):
     log.info(f"{settings.APP_NAME} 已关闭")
 
 
-app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+_is_prod = settings.APP_ENV == "production"
+_docs_url = "/docs" if not _is_prod or settings.OPENAPI_ENABLED else None
+_openapi_url = "/openapi.json" if not _is_prod or settings.OPENAPI_ENABLED else None
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    lifespan=lifespan,
+    docs_url=_docs_url,
+    openapi_url=_openapi_url,
+    redoc_url=None,
+)
 
 
 def custom_openapi():

@@ -1,39 +1,65 @@
-from fastapi import Request, FastAPI
+"""
+Environment-aware security headers middleware.
+
+Production:
+- Content-Security-Policy (strict)
+- Strict-Transport-Security
+- Permissions-Policy
+- X-Content-Type-Options
+- Referrer-Policy
+
+Development:
+- Same X-Content-Type-Options and Referrer-Policy (safe defaults)
+- No HSTS or strict CSP (to avoid dev-server issues)
+"""
+
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from config.settings import settings
+
+# ── Production CSP ────────────────────────────────────────
+
+_PRODUCTION_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "font-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'"
+)
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """
-    添加安全相关的 HTTP 响应头的中间件
-    """
+    """Add security-related HTTP response headers."""
 
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
 
-        # 防止点击劫持
-        response.headers["X-Frame-Options"] = "DENY"
-
-        # 启用浏览器的 XSS 过滤
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-
-        # 防止浏览器猜测内容类型
+        # Always safe
         response.headers["X-Content-Type-Options"] = "nosniff"
-
-        # 严格传输安全 (HSTS) - 生产环境建议开启
-        # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-
-        # 引用策略
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
-        # 内容安全策略 (CSP) - 根据需求调整
-        # response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; object-src 'none';"
+        if settings.APP_ENV == "production":
+            response.headers["Content-Security-Policy"] = _PRODUCTION_CSP
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            response.headers["Permissions-Policy"] = (
+                "camera=(), microphone=(), geolocation=()"
+            )
+
+        # X-XSS-Protection is deprecated — intentionally omitted.
+        # X-Frame-Options replaced by CSP frame-ancestors in production.
 
         return response
 
 
-def setup_security_middleware(app: FastAPI):
-    """
-    将安全中间件添加到 FastAPI 应用程序中
-    """
+def setup_security_middleware(app):
+    """Register the security headers middleware."""
     app.add_middleware(SecurityHeadersMiddleware)

@@ -7,15 +7,27 @@
 
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from fastapi import Request
 from starlette.responses import JSONResponse
 
+from app.core.client_ip import get_client_ip
 from app.utils.rate_limit_config import RateLimitExceptionHandlers
 from app.utils import log
+from config.settings import settings
+
+
+def _trusted_key_func(request: Request) -> str:
+    """SlowAPI key function that respects TRUSTED_PROXY_IPS."""
+    trusted = {
+        ip.strip()
+        for ip in settings.TRUSTED_PROXY_IPS.split(",")
+        if ip.strip()
+    }
+    return get_client_ip(request, trusted)
+
+
 # 创建全局共享的 limiter 实例
-# 所有路由模块都应该从这里导入 limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=_trusted_key_func)
 
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

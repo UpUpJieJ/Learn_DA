@@ -14,6 +14,7 @@ from typing import Callable, Dict, Tuple, Any, Optional
 import time
 import redis.asyncio as redis
 
+from app.core.client_ip import get_client_ip
 from app.core.redis import get_async_redis_client
 from config.settings import settings
 from app.utils import log
@@ -183,24 +184,12 @@ class RateLimitMiddleware:
         await self.app(scope, receive, send_wrapper)
 
     def _get_client_ip(self, request: Request) -> str:
-        """
-        从请求中提取客户端 IP 地址
-
-        Args:
-            request: HTTP请求对象
-
-        Returns:
-            str: 客户端 IP 地址
-        """
-        # 尝试从头部获取真实IP（适用于反向代理设置）
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # X-Forwarded-For可能包含多个IP，取第一个
-            client_ip = forwarded_for.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else "unknown"
-
-        return client_ip
+        trusted = {
+            ip.strip()
+            for ip in settings.TRUSTED_PROXY_IPS.split(",")
+            if ip.strip()
+        }
+        return get_client_ip(request, trusted)
 
     def _parse_rate_limit(self, rate_limit: str) -> Tuple[int, str]:
         """
