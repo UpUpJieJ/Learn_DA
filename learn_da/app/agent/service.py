@@ -42,7 +42,7 @@ class AgentService:
         recommendation_service: RecommendationService | None = None,
     ) -> None:
         self.model = settings.effective_llm_model
-        self.sandbox_service = sandbox_service or SandboxService()
+        self.sandbox_service = sandbox_service
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
         self.recommendation_service = recommendation_service
@@ -113,7 +113,7 @@ class AgentService:
                 explanation=content,
                 model=self.model,
                 used_fallback=False,
-                verification=self._verify_fixed_code(fixed_code),
+                verification=await self._verify_fixed_code(fixed_code),
                 structured_result=parse_structured_result("fix_code", content),
             )
         fallback_explanation = (
@@ -271,9 +271,9 @@ class AgentService:
     def _fallback_chat_content(self, tool_name: ToolName) -> str:
         return get_agent_tool(tool_name).fallback_content
 
-    def _verify_fixed_code(self, code: str) -> AgentRunVerification:
+    async def _verify_fixed_code(self, code: str) -> AgentRunVerification:
         try:
-            result = self.sandbox_service.execute(code)
+            result = await self.sandbox_service.execute(code)
         except Exception as exc:
             return AgentRunVerification(
                 verified=False,

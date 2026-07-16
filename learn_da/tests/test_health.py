@@ -4,7 +4,6 @@
 
 import pytest
 
-from app.sandbox.service import SandboxService
 from config.settings import settings
 
 
@@ -88,22 +87,11 @@ async def test_lessons_endpoint_filters_by_keyword(client):
 
 
 @pytest.mark.unit
-async def test_playground_execute_normalizes_mock_fallback(client, monkeypatch):
-    monkeypatch.setattr(settings, "SANDBOX_DOCKER_ENABLED", False)
-    monkeypatch.setattr(settings, "SANDBOX_LOCAL_ENABLED", False)
-    resp = await client.post(
-        "/api/v1/playground/execute",
-        json={"code": "import polars as pl\nprint('ok')"},
-    )
-    body = resp.json()
+async def test_liveness_returns_200(client):
+    resp = await client.get("/live")
     assert resp.status_code == 200
-    assert body["code"] == 200
-    assert body["data"]["status"] == "success"
-    assert "usedSandbox" not in body["data"]
-
-    result = SandboxService().execute("print('ok')")
-    assert result.status == "success"
-    assert result.used_sandbox == "mock"
+    body = resp.json()
+    assert body["data"]["status"] == "ok"
 
 
 @pytest.mark.unit

@@ -17,12 +17,16 @@ DATAFRAME_PREVIEW_LIMIT = 50
 
 
 class PlaygroundService:
-    def __init__(self, sandbox_service: SandboxService | None = None):
-        self.sandbox_service = sandbox_service or SandboxService()
+    def __init__(self, sandbox_service: SandboxService):
+        self.sandbox_service = sandbox_service
 
-    def execute(self, payload: ExecuteCodeRequest) -> ExecuteCodeResponse:
+    async def execute(self, payload: ExecuteCodeRequest) -> ExecuteCodeResponse:
         code = validate_playground_code(payload.code)
-        result = self.sandbox_service.execute(self._with_dataframe_probe(code))
+        result = await self.sandbox_service.execute(
+            self._with_dataframe_probe(code),
+            request_id=payload.request_id,
+            source=payload.source,
+        )
         cleaned_stdout, dataframe = self._extract_dataframe_result(result.stdout)
         result_type = self._resolve_result_type(result.status, dataframe)
         return ExecuteCodeResponse(

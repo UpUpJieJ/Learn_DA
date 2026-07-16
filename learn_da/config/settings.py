@@ -64,14 +64,6 @@ class Settings(BaseSettings):
     RECOMMENDATION_REVIEW_COOLDOWN_SECONDS: int = 86400
     RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS: int = 3
 
-    SANDBOX_DOCKER_ENABLED: bool = False
-    SANDBOX_DOCKER_IMAGE: str = "polars-duckdb-sandbox:latest"
-    SANDBOX_DOCKER_HOST: Optional[str] = None
-    SANDBOX_TIMEOUT_SECONDS: int = 5
-    SANDBOX_MEMORY_LIMIT_MB: int = 256
-    SANDBOX_CPU_QUOTA: int = 50000
-    SANDBOX_LOCAL_ENABLED: bool = True
-
     RUNNER_URL: str = "http://127.0.0.1:8080"
     RUNNER_TOKEN: str = ""
     RUNNER_TIMEOUT_SECONDS: float = 7.0
@@ -139,8 +131,6 @@ class Settings(BaseSettings):
     def validate_production_security(self) -> "Settings":
         if self.APP_ENV != "production":
             return self
-        if self.SANDBOX_LOCAL_ENABLED:
-            raise ValueError("SANDBOX_LOCAL_ENABLED must be false in production")
         if not self.RUNNER_URL.strip():
             raise ValueError("RUNNER_URL is required in production")
         if len(self.RUNNER_TOKEN) < 32:

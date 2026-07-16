@@ -54,11 +54,18 @@ async def db_session(test_engine):
 async def client(db_session):
     from main import app
     from app.core.database.database import get_db
+    from unittest.mock import AsyncMock
+    from app.sandbox.client import RunnerClient
 
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+
+    # Inject a mock RunnerClient so tests don't need a real Runner.
+    mock_client = AsyncMock(spec=RunnerClient)
+    mock_client.is_ready = AsyncMock(return_value=True)
+    app.state.runner_client = mock_client
 
     async with AsyncClient(
         transport=ASGITransport(app=app),

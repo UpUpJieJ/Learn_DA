@@ -11,7 +11,6 @@ def production_settings(**overrides):
         "RUNNER_URL": "http://runner:8080",
         "RUNNER_TOKEN": "r" * 32,
         "SESSION_SECRET": "s" * 32,
-        "SANDBOX_LOCAL_ENABLED": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -41,9 +40,6 @@ def test_production_requires_runner_and_session_secrets(overrides, message):
         production_settings(**overrides)
 
 
-def test_production_rejects_local_execution():
-    with pytest.raises(
-        ValidationError,
-        match="SANDBOX_LOCAL_ENABLED must be false in production",
-    ):
-        production_settings(SANDBOX_LOCAL_ENABLED=True)
+def test_api_settings_expose_no_local_execution_switches():
+    assert "SANDBOX_LOCAL_ENABLED" not in Settings.model_fields
+    assert "SANDBOX_DOCKER_ENABLED" not in Settings.model_fields

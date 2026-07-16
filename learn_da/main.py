@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.openapi.utils import get_openapi
 from sqlalchemy import text
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db, setup_exception_handlers
 from app.middleware import setup_access_log_middleware, setup_cors_middleware
 from app.middleware.security import setup_security_middleware
+from app.sandbox import RunnerClient
 from app.utils import auto_register_routers, log
 from app.utils.base_response import StdResp
 from app.utils.limiter import setup_limiter_middleware
@@ -17,6 +19,11 @@ from config.settings import settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info(f"{settings.APP_NAME} 启动中")
+
+    # Runner client — lives for the entire application lifetime.
+    http_client = httpx.AsyncClient()
+    app.state.runner_client = RunnerClient(http_client)
+
     try:
         if settings.REDIS_ENABLED:
             from app.core.redis import AsyncRedisClient
@@ -28,6 +35,8 @@ async def lifespan(app: FastAPI):
         log.error(f"应用启动初始化失败: {exc}")
 
     yield
+
+    await app.state.runner_client.close()
 
     if settings.REDIS_ENABLED:
         from app.core.redis import redis_pool_manager
@@ -55,7 +64,7 @@ def custom_openapi():
     )
 
     app.openapi_schema = openapi_schema
-    return app.openapi_schema
+    return openapi_schema
 
 
 setattr(app, "openapi", custom_openapi)
@@ -87,8 +96,62 @@ async def read_root():
     )
 
 
+@app.get("/live")
+async def liveness():
+    """Process liveness — does not check external dependencies."""
+    return StdResp.success(data={"status": "ok"})
+
+
+@app.get("/ready")
+async def readiness(
+    db: AsyncSession = Depends(get_db),
+):
+    """Readiness — checks database and Runner."""
+    checks: dict[str, str] = {}
+
+    # Database
+    try:
+        await db.execute(text("SELECT 1"))
+        checks["database"] = "healthy"
+    except Exception as exc:
+        checks["database"] = f"unhealthy: {exc}"
+
+    # Runner
+    runner_client: RunnerClient | None = getattr(app.state, "runner_client", None)
+    if runner_client and await runner_client.is_ready():
+        checks["runner"] = "healthy"
+    else:
+        checks["runner"] = "unhealthy"
+
+    # Redis (optional)
+    if settings.REDIS_ENABLED:
+        try:
+            from app.core.redis import AsyncRedisClient
+
+            redis_client = AsyncRedisClient()
+            await redis_client.ping()
+            checks["redis"] = "healthy"
+        except Exception as exc:
+            checks["redis"] = f"unhealthy: {exc}"
+    else:
+        checks["redis"] = "disabled"
+
+    all_ok = all(v == "healthy" or v == "disabled" for v in checks.values())
+
+    if not all_ok:
+        return StdResp.error(
+            msg="Readiness check failed",
+            code=503,
+            data=checks,
+        ).to_response()
+
+    return StdResp.success(data=checks, msg="All services ready")
+
+
+# Deprecated: kept for deployment compatibility; delegates to readiness.
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
+    """Deprecated — use /live and /ready instead."""
     try:
         await db.execute(text("SELECT 1"))
         db_status = "healthy"

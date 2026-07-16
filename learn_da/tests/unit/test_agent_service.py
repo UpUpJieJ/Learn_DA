@@ -38,7 +38,7 @@ class FakeSandboxService:
         self.result = result
         self.executed_code = None
 
-    def execute(self, code: str):
+    async def execute(self, code: str, **kwargs):
         self.executed_code = code
         return self.result
 

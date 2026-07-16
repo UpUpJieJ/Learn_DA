@@ -5,6 +5,7 @@ from app.analytics.service import AnalyticsService
 from app.core.database.database import get_db
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
+from app.sandbox import SandboxService
 from app.utils.base_response import StdResp
 from app.utils.limiter import limiter
 from config.settings import settings
@@ -24,18 +25,22 @@ from .service import AgentService
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
-def get_agent_service() -> AgentService:
-    return AgentService()
+def get_agent_service(request: Request) -> AgentService:
+    runner_client = request.app.state.runner_client
+    return AgentService(sandbox_service=SandboxService(runner_client=runner_client))
 
 
 def get_recommendation_guidance_service(
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AgentService:
+    runner_client = request.app.state.runner_client
     return AgentService(
+        sandbox_service=SandboxService(runner_client=runner_client),
         recommendation_service=RecommendationService(
             repository=LearningRepository(),
             analytics_service=AnalyticsService(db),
-        )
+        ),
     )
 
 

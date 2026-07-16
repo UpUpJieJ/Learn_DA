@@ -1,30 +1,25 @@
-import time
+import logging
+
+from app.sandbox.client import RunnerClient, RunnerUnavailableError
+from app.sandbox.safety_check import validate_code
+from app.sandbox.schemas import ExecutionStatus, SandboxExecutionResult
 
 from fastapi import status
-
 from app.core.exceptions.base_exceptions import BusinessException
-from config.settings import settings
 
-from .docker_runner import DockerSandboxRunner
-from .local_runner import LocalSubprocessRunner
-from .safety_check import validate_code
-from .schemas import ExecutionStatus, SandboxExecutionResult
+log = logging.getLogger(__name__)
 
 
 class SandboxService:
-    def __init__(self, runner=None):
-        self.runner = runner
+    """Delegate every execution to the external Runner via RunnerClient."""
 
-    def _get_runner(self):
-        if self.runner is not None:
-            return self.runner
-        if settings.SANDBOX_DOCKER_ENABLED:
-            return DockerSandboxRunner()
-        if settings.SANDBOX_LOCAL_ENABLED:
-            return LocalSubprocessRunner()
-        return None
+    def __init__(self, runner_client: RunnerClient):
+        self._client = runner_client
 
-    def execute(self, code: str) -> SandboxExecutionResult:
+    async def execute(self, code: str, *, request_id=None, source: str = "playground") -> SandboxExecutionResult:
+        from uuid import uuid4
+        from app.sandbox.schemas import RunnerExecutionRequest
+
         safety_result = validate_code(code)
         if not safety_result.is_safe:
             raise BusinessException(
@@ -32,17 +27,24 @@ class SandboxService:
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        runner = self._get_runner()
-        if runner is not None:
-            return runner.execute(code, timeout=settings.SANDBOX_TIMEOUT_SECONDS)
-
-        # Fallback mock mode
-        started_at = time.perf_counter()
-        preview = code.strip().splitlines()[:6]
-        return SandboxExecutionResult(
-            status=ExecutionStatus.SUCCESS,
-            stdout="Mock sandbox result\n" + "\n".join(preview),
-            stderr="",
-            execution_time=int((time.perf_counter() - started_at) * 1000),
-            used_sandbox="mock",
+        payload = RunnerExecutionRequest(
+            request_id=request_id or uuid4(),
+            code=code,
+            source=source,
         )
+        result = await self._client.execute(payload)
+
+        # Structured audit log (Spec §3.3 / §5.1).
+        log.info(
+            "execution_audit",
+            extra={
+                "request_id": str(result.request_id),
+                "execution_id": str(result.execution_id),
+                "source": source,
+                "status": result.status,
+                "error_type": result.error_type,
+                "duration_ms": result.duration_ms,
+                "output_truncated": result.output_truncated,
+            },
+        )
+        return result
