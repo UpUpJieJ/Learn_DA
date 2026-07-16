@@ -5,7 +5,6 @@ import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
-import { getVisitorId } from "@/lib/visitorId";
 import type { DataFrameCell, ExampleSummary, LessonDetail, CodeSnapshotItem } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
@@ -234,7 +233,8 @@ const restoreMessage = ref("");
 async function loadSnapshots() {
   isLoadingSnapshots.value = true;
   try {
-    snapshots.value = await fetchCodeSnapshots(getVisitorId(), props.slug);
+    const page = await fetchCodeSnapshots(props.slug);
+    snapshots.value = page.items;
   } catch (err) {
     console.error("加载快照失败:", err);
   } finally {
@@ -435,7 +435,6 @@ async function confirmSave() {
   saveStatus.value = "saving";
   try {
     await saveCodeSnapshot({
-      visitorId: getVisitorId(),
       lessonSlug: props.slug || undefined,
       code: playgroundStore.code,
       language: playgroundStore.language,
@@ -509,7 +508,6 @@ function stopAutoSave() {
 async function runCode() {
   // 上报代码运行事件
   trackEvent({
-    visitorId: getVisitorId(),
     eventType: "code_run",
     lessonSlug: props.slug || undefined,
   }).catch(() => {});

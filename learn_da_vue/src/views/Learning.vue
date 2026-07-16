@@ -4,7 +4,6 @@ import { useRouter, useRoute } from "vue-router";
 import { CancelledError } from "@/api";
 import { fetchLessons, fetchCategoryStats, fetchCatalog } from "@/api/learning";
 import { getRecommendations } from "@/api/recommendation";
-import { getVisitorId } from "@/lib/visitorId";
 import type {
     LessonSummary,
     LessonCategory,
@@ -127,7 +126,6 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
             fetchCategoryStats(),
             fetchCatalog().catch(() => null),
             getRecommendations({
-                visitorId: getVisitorId(),
                 completedLessons: localStateStore.progress.completedLessons,
                 currentLesson,
             }).catch(() => null),

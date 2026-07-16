@@ -4,7 +4,7 @@ import type {
     EventTrackResponse,
     CodeSnapshotRequest,
     CodeSnapshotResponse,
-    CodeSnapshotItem,
+    CodeSnapshotPage,
     HomeStats,
     UserProfile,
     UserLessonStats,
@@ -27,11 +27,12 @@ export function saveCodeSnapshot(data: CodeSnapshotRequest) {
     return post<CodeSnapshotResponse>("/analytics/snapshot", data);
 }
 
-/** 获取代码快照列表 */
-export function fetchCodeSnapshots(visitorId: string, lessonSlug?: string) {
-    return get<CodeSnapshotItem[]>("/analytics/snapshots", {
-        visitorId,
+/** 获取代码快照列表（分页） */
+export function fetchCodeSnapshots(lessonSlug?: string, page: number = 1, pageSize: number = 20) {
+    return get<CodeSnapshotPage>("/analytics/snapshots", {
         ...(lessonSlug ? { lessonSlug } : {}),
+        page,
+        page_size: pageSize,
     });
 }
 
@@ -49,13 +50,13 @@ export function fetchHomeStats() {
 // =====================================================
 
 /** 获取用户画像 */
-export function fetchUserProfile(visitorId: string) {
-    return get<UserProfile>("/analytics/user-profile", { visitorId });
+export function fetchUserProfile() {
+    return get<UserProfile>("/analytics/user-profile");
 }
 
 /** 获取用户课程统计 */
-export function fetchUserLessonStats(visitorId: string) {
-    return get<UserLessonStats>("/analytics/user-lesson-stats", { visitorId });
+export function fetchUserLessonStats() {
+    return get<UserLessonStats>("/analytics/user-lesson-stats");
 }
 
 /** 获取每日趋势 */
@@ -64,13 +65,11 @@ export function fetchDailyTrend(days: number = 30) {
 }
 
 /** 获取推荐课程 */
-export function fetchRecommendedLessons(visitorId: string) {
-    return get<RecommendedLessonsResponse>("/analytics/recommended-lessons", {
-        visitorId,
-    });
+export function fetchRecommendedLessons() {
+    return get<RecommendedLessonsResponse>("/analytics/recommended-lessons");
 }
 
 /** 获取分类进度 */
-export function fetchCategoryProgress(visitorId: string) {
-    return get<CategoryProgress>("/analytics/category-progress", { visitorId });
+export function fetchCategoryProgress() {
+    return get<CategoryProgress>("/analytics/category-progress");
 }

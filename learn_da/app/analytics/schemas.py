@@ -44,3 +44,11 @@ class CodeSnapshotItem(BaseResponseModel):
     version: int
     description: Optional[str] = None
     created_time: str
+
+
+class CodeSnapshotPage(BaseResponseModel):
+    """代码快照分页响应"""
+    items: list[CodeSnapshotItem]
+    total: int
+    page: int
+    page_size: int

@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
 import { getRecommendations } from "@/api/recommendation";
-import { getVisitorId } from "@/lib/visitorId";
 import type { LessonDetail, LessonDifficulty, RecommendationResponse } from "@/types/api";
 import { useLocalStateStore } from "@/stores/localState";
 import { usePlaygroundStore } from "@/stores/playground";
@@ -87,7 +86,6 @@ async function loadLesson(slug: string) {
         const [lessonData, recommendationData] = await Promise.all([
             fetchLessonBySlug(slug),
             getRecommendations({
-                visitorId: getVisitorId(),
                 completedLessons: localStateStore.progress.completedLessons,
                 currentLesson: slug,
             }).catch(() => null),
@@ -99,7 +97,6 @@ async function loadLesson(slug: string) {
 
         // 上报课程开始学习事件
         trackEvent({
-            visitorId: getVisitorId(),
             eventType: "lesson_start",
             lessonSlug: slug,
         }).catch(() => {});
@@ -118,7 +115,6 @@ async function loadLesson(slug: string) {
 
 async function refreshRecommendation(slug: string) {
     recommendation.value = await getRecommendations({
-        visitorId: getVisitorId(),
         completedLessons: localStateStore.progress.completedLessons,
         currentLesson: slug,
     }).catch(() => null);
@@ -197,7 +193,6 @@ function toggleCompleted() {
         showCompletionAnim.value = true;
         setTimeout(() => (showCompletionAnim.value = false), 2000);
         trackEvent({
-            visitorId: getVisitorId(),
             eventType: "lesson_complete",
             lessonSlug,
         }).catch(() => {});
@@ -224,14 +219,12 @@ async function saveLessonSnapshot() {
 
     try {
         await saveCodeSnapshot({
-            visitorId: getVisitorId(),
             lessonSlug: lesson.value.slug,
             code: lesson.value.codeExample,
             language: "python",
             description: `课程示例起点：${lesson.value.title}`,
         });
         trackEvent({
-            visitorId: getVisitorId(),
             eventType: "code_save",
             lessonSlug: lesson.value.slug,
         }).catch(() => {});

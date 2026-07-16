@@ -251,7 +251,6 @@ export type EventType =
 
 /** 事件上报请求 */
 export interface EventTrackRequest {
-    visitorId: string;
     eventType: EventType;
     lessonSlug?: string;
     durationSeconds?: number;
@@ -264,7 +263,6 @@ export interface EventTrackResponse {
 
 /** 代码快照请求 */
 export interface CodeSnapshotRequest {
-    visitorId: string;
     lessonSlug?: string;
     code: string;
     language?: string;
@@ -286,6 +284,14 @@ export interface CodeSnapshotItem {
     version: number;
     description?: string;
     createdTime: string;
+}
+
+/** 代码快照分页响应 */
+export interface CodeSnapshotPage {
+    items: CodeSnapshotItem[];
+    total: number;
+    page: number;
+    pageSize: number;
 }
 
 /** 首页统计数据 */

@@ -9,6 +9,7 @@ from app.learning.repository import LearningRepository
 from .repository import AnalyticsRepository
 from .schemas import (
     CodeSnapshotItem,
+    CodeSnapshotPage,
     CodeSnapshotRequest,
     CodeSnapshotResponse,
     EventTrackRequest,
@@ -44,7 +45,7 @@ class AnalyticsService:
         return EventTrackResponse(recorded=True)
 
     async def save_snapshot(self, req: CodeSnapshotRequest, visitor_id: str) -> CodeSnapshotResponse:
-        """保存代码快照"""
+        """Save a code snapshot and enforce retention limits."""
         snapshot = await self.repo.create_snapshot(
             visitor_id=visitor_id,
             code=req.code,
@@ -52,15 +53,23 @@ class AnalyticsService:
             language=req.language,
             description=req.description,
         )
+        # Enforce retention: 100 per session, 10 000 global
+        await self.repo.prune_snapshots(visitor_id, per_session_limit=100, global_limit=10_000)
         await self.db.commit()
         return CodeSnapshotResponse(snapshot_id=snapshot.id, version=snapshot.version)
 
     async def list_snapshots(
-        self, visitor_id: str, lesson_slug: str | None = None
-    ) -> list[CodeSnapshotItem]:
-        """获取代码快照列表"""
-        snapshots = await self.repo.list_snapshots(visitor_id, lesson_slug)
-        return [
+        self,
+        visitor_id: str,
+        lesson_slug: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> CodeSnapshotPage:
+        """Return paginated snapshots (newest-first)."""
+        snapshots, total = await self.repo.list_snapshots(
+            visitor_id, lesson_slug, page=page, page_size=page_size,
+        )
+        items = [
             CodeSnapshotItem(
                 id=s.id,
                 lesson_slug=s.lesson_slug,
@@ -72,6 +81,12 @@ class AnalyticsService:
             )
             for s in snapshots
         ]
+        return CodeSnapshotPage(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
 
     # ── 首页统计 ─────────────────────────────────────────
 

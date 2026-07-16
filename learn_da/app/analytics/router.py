@@ -2,15 +2,18 @@
 Phase 2 & 3 & 4 & 5: 学习行为事件采集 + 学习流优化 + 首页统计 + Dashboard API
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db, get_anonymous_visitor_id
 from app.learning.repository import LearningRepository
 from app.utils.base_response import StdResp
+from app.utils.limiter import limiter
+from config.settings import settings
 
 from .schemas import (
     CodeSnapshotItem,
+    CodeSnapshotPage,
     CodeSnapshotRequest,
     CodeSnapshotResponse,
     EventTrackRequest,
@@ -25,7 +28,9 @@ router = APIRouter(tags=["analytics"])
 
 
 @router.post("/analytics/track", response_model=StdResp[EventTrackResponse])
+@limiter.limit(settings.RATE_LIMIT_ANALYTICS_WRITE)
 async def track_event(
+    request: Request,
     req: EventTrackRequest,
     visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
@@ -37,7 +42,9 @@ async def track_event(
 
 
 @router.post("/analytics/snapshot", response_model=StdResp[CodeSnapshotResponse])
+@limiter.limit(settings.RATE_LIMIT_SNAPSHOT_SAVE)
 async def save_snapshot(
+    request: Request,
     req: CodeSnapshotRequest,
     visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
@@ -48,15 +55,21 @@ async def save_snapshot(
     return StdResp.success(data=result)
 
 
-@router.get("/analytics/snapshots", response_model=StdResp[list[CodeSnapshotItem]])
+@router.get("/analytics/snapshots", response_model=StdResp[CodeSnapshotPage])
+@limiter.limit(settings.RATE_LIMIT_ANALYTICS_READ)
 async def list_snapshots(
+    request: Request,
     visitor_id: str = Depends(get_anonymous_visitor_id),
     lesson_slug: str | None = Query(None, alias="lessonSlug"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取代码快照列表"""
+    """获取代码快照列表（分页）"""
     service = AnalyticsService(db)
-    result = await service.list_snapshots(visitor_id, lesson_slug)
+    result = await service.list_snapshots(
+        visitor_id, lesson_slug, page=page, page_size=page_size,
+    )
     return StdResp.success(data=result)
 
 

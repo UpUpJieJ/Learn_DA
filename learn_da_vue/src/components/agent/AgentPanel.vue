@@ -10,7 +10,6 @@ import {
     getRecommendationGuidance,
 } from "@/api/agent";
 import { renderMarkdown } from "@/lib/markdown";
-import { getVisitorId } from "@/lib/visitorId";
 import type { ChatMessage, AgentContext } from "@/types/api";
 
 type QuickActionKey = "explain" | "fix" | "exercise" | "next" | "guidance" | "pandas2polars" | "sql2duckdb";
@@ -345,7 +344,6 @@ async function sendQuickAction(action: QuickAction) {
 
         try {
             const response = await getRecommendationGuidance({
-                visitorId: getVisitorId(),
                 completedLessons: [...localStateStore.progress.completedLessons],
                 currentLesson:
                     agentContext.value.currentLesson ||

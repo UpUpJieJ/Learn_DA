@@ -4,7 +4,7 @@ Phase 2: 学习行为数据访问层
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import CodeSnapshot, DailyStats, LearningRecord, UserProfile
@@ -191,20 +191,80 @@ class AnalyticsRepository:
         self,
         visitor_id: str,
         lesson_slug: str | None = None,
-    ) -> list[CodeSnapshot]:
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[CodeSnapshot], int]:
+        """Return paginated snapshots (newest-first) and total count."""
+        base_where = [
+            CodeSnapshot.visitor_id == visitor_id,
+            CodeSnapshot.is_deleted == False,  # noqa: E712
+        ]
+        if lesson_slug:
+            base_where.append(CodeSnapshot.lesson_slug == lesson_slug)
+
+        # Total count
+        count_stmt = select(func.count()).select_from(CodeSnapshot).where(*base_where)
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        # Paginated rows
+        offset = (page - 1) * page_size
         stmt = (
             select(CodeSnapshot)
+            .where(*base_where)
+            .order_by(CodeSnapshot.created_time.desc(), CodeSnapshot.id.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        result = await self.db.execute(stmt)
+        rows = list(result.scalars().all())
+        return rows, total
+
+    async def prune_snapshots(
+        self,
+        visitor_id: str,
+        per_session_limit: int = 100,
+        global_limit: int = 10_000,
+    ) -> None:
+        """Soft-delete snapshots exceeding retention limits in a single transaction."""
+        # Per-session: keep newest `per_session_limit` for this visitor
+        keep_subq = (
+            select(CodeSnapshot.id)
             .where(
                 CodeSnapshot.visitor_id == visitor_id,
                 CodeSnapshot.is_deleted == False,  # noqa: E712
             )
-            .order_by(CodeSnapshot.created_time.desc())
+            .order_by(CodeSnapshot.created_time.desc(), CodeSnapshot.id.desc())
+            .limit(per_session_limit)
+            .subquery()
         )
-        if lesson_slug:
-            stmt = stmt.where(CodeSnapshot.lesson_slug == lesson_slug)
+        prune_stmt = (
+            update(CodeSnapshot)
+            .where(
+                CodeSnapshot.visitor_id == visitor_id,
+                CodeSnapshot.is_deleted == False,  # noqa: E712
+                CodeSnapshot.id.notin_(select(keep_subq.c.id)),
+            )
+            .values(is_deleted=True)
+        )
+        await self.db.execute(prune_stmt)
 
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        # Global: keep newest `global_limit` across all visitors
+        global_keep_subq = (
+            select(CodeSnapshot.id)
+            .where(CodeSnapshot.is_deleted == False)  # noqa: E712
+            .order_by(CodeSnapshot.created_time.desc(), CodeSnapshot.id.desc())
+            .limit(global_limit)
+            .subquery()
+        )
+        global_prune_stmt = (
+            update(CodeSnapshot)
+            .where(
+                CodeSnapshot.is_deleted == False,  # noqa: E712
+                CodeSnapshot.id.notin_(select(global_keep_subq.c.id)),
+            )
+            .values(is_deleted=True)
+        )
+        await self.db.execute(global_prune_stmt)
 
     # ── 首页统计查询 ─────────────────────────────────────
 

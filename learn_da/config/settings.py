@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_DEFAULT: str = "60/minute"
     RATE_LIMIT_AGENT_CHAT: str = "20/minute"
     RATE_LIMIT_PLAYGROUND_EXECUTE: str = "10/minute"
+    RATE_LIMIT_ANALYTICS_WRITE: str = "30/minute"
+    RATE_LIMIT_SNAPSHOT_SAVE: str = "10/minute"
+    RATE_LIMIT_ANALYTICS_READ: str = "60/minute"
 
     REDIS_ENABLED: bool = False
     REDIS_HOST: str = "localhost"

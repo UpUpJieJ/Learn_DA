@@ -1,3 +1,1 @@
-from .router import router
-
-__all__ = ["router"]
+# Empty — routers are loaded via auto_register_routers.

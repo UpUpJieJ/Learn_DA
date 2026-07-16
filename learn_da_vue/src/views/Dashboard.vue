@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useLocalStateStore } from "@/stores/localState";
-import { getVisitorId } from "@/lib/visitorId";
 import { getRecommendationContextLesson } from "@/lib/recommendation";
 import {
   fetchUserProfile,
@@ -47,7 +46,6 @@ echarts.use([
 
 const router = useRouter();
 const localStateStore = useLocalStateStore();
-const visitorId = getVisitorId();
 
 // =====================================================
 // 状态
@@ -82,13 +80,12 @@ async function loadAllData() {
       lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
     });
     const results = await Promise.all([
-      fetchUserProfile(visitorId).catch(() => null),
-      fetchUserLessonStats(visitorId).catch(() => null),
+      fetchUserProfile().catch(() => null),
+      fetchUserLessonStats().catch(() => null),
       fetchDailyTrend(30).catch(() => null),
-      fetchRecommendedLessons(visitorId).catch(() => null),
-      fetchCategoryProgress(visitorId).catch(() => null),
+      fetchRecommendedLessons().catch(() => null),
+      fetchCategoryProgress().catch(() => null),
       getRecommendations({
-        visitorId,
         completedLessons: localStateStore.progress.completedLessons,
         currentLesson,
       }).catch(() => null),
