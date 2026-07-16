@@ -84,9 +84,13 @@ export interface LessonNav {
 export interface ExecuteRequest {
     code: string;
     language?: "python" | "sql";
+    requestId?: string;
+    source?: ExecutionSource;
 }
 
-export type ExecuteStatus = "success" | "error" | "timeout" | "mocked";
+export type ExecutionSource = "playground" | "agent_suggested";
+
+export type ExecuteStatus = "success" | "error" | "timeout" | "rejected" | "unavailable";
 export type ExecuteResultType = "text" | "dataframe" | "error";
 
 export type DataFrameCell = string | number | boolean | null;
@@ -103,9 +107,14 @@ export interface ExecuteResponse {
     stdout: string;
     stderr: string;
     executionTime: number;
-    usedSandbox: string;
+    usedSandbox?: string;
     resultType: ExecuteResultType;
     dataframe: DataFrameResult | null;
+    requestId?: string;
+    executionId?: string;
+    source?: ExecutionSource;
+    errorType?: string | null;
+    outputTruncated?: boolean;
 }
 
 // =====================================================

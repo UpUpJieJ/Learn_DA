@@ -1,5 +1,4 @@
 import pytest
-from uuid import UUID
 
 from app.agent.prompts import (
     SYSTEM_PROMPT,
@@ -20,27 +19,11 @@ from app.agent.knowledge import (
 from app.agent.schemas import (
     AgentChatRequest,
     AgentContext,
-    AgentRunVerification,
     ExplainCodeRequest,
     FixCodeRequest,
     FixCodeResponse,
 )
 from app.agent.service import AgentService
-from app.sandbox.schemas import SandboxExecutionResult
-
-
-VERIFICATION_REQUEST_ID = UUID("00000000-0000-0000-0000-000000000004")
-VERIFICATION_EXECUTION_ID = UUID("00000000-0000-0000-0000-000000000005")
-
-
-class FakeSandboxService:
-    def __init__(self, result):
-        self.result = result
-        self.executed_code = None
-
-    async def execute(self, code: str, **kwargs):
-        self.executed_code = code
-        return self.result
 
 
 class FakeKnowledgeRetriever:
@@ -64,40 +47,19 @@ class FakeRouter:
 
 
 def test_fix_code_response_serializes_optional_verification():
+    """verification is always None now (user confirms via playground)."""
     response = FixCodeResponse(
         fixed_code="print('ok')",
         explanation="修复完成",
         model="test-model",
         used_fallback=False,
-        verification=AgentRunVerification(
-            verified=True,
-            request_id=VERIFICATION_REQUEST_ID,
-            execution_id=VERIFICATION_EXECUTION_ID,
-            status="success",
-            stdout="ok\n",
-            stderr="",
-            error_type=None,
-            duration_ms=12,
-            output_truncated=False,
-        ),
+        verification=None,
     )
 
     body = response.model_dump(mode="json", by_alias=True)
 
     assert body["fixedCode"] == "print('ok')"
-    assert body["verification"]["verified"] is True
-    assert body["verification"] == {
-        "verified": True,
-        "requestId": str(VERIFICATION_REQUEST_ID),
-        "executionId": str(VERIFICATION_EXECUTION_ID),
-        "status": "success",
-        "stdout": "ok\n",
-        "stderr": "",
-        "errorType": None,
-        "durationMs": 12,
-        "outputTruncated": False,
-    }
-    assert "usedSandbox" not in body["verification"]
+    assert body["verification"] is None
 
 
 def test_context_block_includes_lesson_output_and_error():
@@ -406,18 +368,6 @@ async def test_chat_uses_injected_router_decision(monkeypatch):
 @pytest.mark.unit
 async def test_fix_code_response_includes_structured_result(monkeypatch):
     service = AgentService(
-        sandbox_service=FakeSandboxService(
-            SandboxExecutionResult(
-                request_id=VERIFICATION_REQUEST_ID,
-                execution_id=VERIFICATION_EXECUTION_ID,
-                status="success",
-                stdout="ok\n",
-                stderr="",
-                error_type=None,
-                duration_ms=7,
-                output_truncated=True,
-            )
-        ),
         knowledge_retriever=FakeKnowledgeRetriever([]),
     )
 
@@ -462,63 +412,37 @@ async def test_explain_code_response_includes_structured_result(monkeypatch):
 
 
 @pytest.mark.unit
-async def test_fix_code_verifies_llm_code_block(monkeypatch):
+async def test_fix_code_never_executes_code(monkeypatch):
+    """Agent fix must never execute code — user must confirm via playground."""
+    from unittest.mock import AsyncMock
+
+    exploding_sandbox = AsyncMock()
+    exploding_sandbox.execute = AsyncMock(side_effect=AssertionError("sandbox must not be called"))
+
     service = AgentService(
-        sandbox_service=FakeSandboxService(
-            SandboxExecutionResult(
-                request_id=VERIFICATION_REQUEST_ID,
-                execution_id=VERIFICATION_EXECUTION_ID,
-                status="success",
-                stdout="ok\n",
-                stderr="",
-                error_type=None,
-                duration_ms=7,
-                output_truncated=True,
-            )
-        )
+        knowledge_retriever=FakeKnowledgeRetriever([]),
     )
 
     async def fake_ask_llm(messages):
-        return "原因：变量未定义。\n```python\nprint('ok')\n```"
+        return "修复代码：\n```python\nprint('ok')\n```"
 
     monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
 
     result = await service.fix_code(
-        FixCodeRequest(
-            code="print(df)",
-            errorMessage="NameError: name 'df' is not defined",
-        )
+        FixCodeRequest(code="print(df)", errorMessage="NameError")
     )
 
     assert result.fixed_code == "print('ok')"
-    assert result.used_fallback is False
-    assert result.verification is not None
-    assert result.verification.verified is True
-    assert result.verification.request_id == VERIFICATION_REQUEST_ID
-    assert result.verification.execution_id == VERIFICATION_EXECUTION_ID
-    assert result.verification.status == "success"
-    assert result.verification.stdout == "ok\n"
-    assert result.verification.error_type is None
-    assert result.verification.duration_ms == 7
-    assert result.verification.output_truncated is True
-    assert service.sandbox_service.executed_code == "print('ok')"
+    assert result.verification is None
+    # sandbox_service should not even exist as an attribute
+    assert not hasattr(service, "sandbox_service")
 
 
 @pytest.mark.unit
 async def test_fix_code_marks_verification_false_when_sandbox_errors(monkeypatch):
+    """Legacy test: verification is always None now (user confirms via playground)."""
     service = AgentService(
-        sandbox_service=FakeSandboxService(
-            SandboxExecutionResult(
-                request_id=VERIFICATION_REQUEST_ID,
-                execution_id=VERIFICATION_EXECUTION_ID,
-                status="error",
-                stdout="",
-                stderr="NameError: still broken",
-                error_type="name_error",
-                duration_ms=5,
-                output_truncated=False,
-            )
-        )
+        knowledge_retriever=FakeKnowledgeRetriever([]),
     )
 
     async def fake_ask_llm(messages):
@@ -534,8 +458,4 @@ async def test_fix_code_marks_verification_false_when_sandbox_errors(monkeypatch
     )
 
     assert result.used_fallback is False
-    assert result.verification is not None
-    assert result.verification.verified is False
-    assert result.verification.status == "error"
-    assert result.verification.error_type == "name_error"
-    assert "still broken" in result.verification.stderr
+    assert result.verification is None

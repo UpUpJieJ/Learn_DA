@@ -4,8 +4,6 @@ from openai import AsyncOpenAI
 
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
-from app.sandbox import SandboxService
-from app.sandbox.schemas import ExecutionStatus, SandboxExecutionResult
 from config.settings import settings
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
@@ -36,13 +34,11 @@ from .tools import get_agent_tool
 class AgentService:
     def __init__(
         self,
-        sandbox_service: SandboxService | None = None,
         knowledge_retriever: KnowledgeRetriever | None = None,
         router: AgentRouter | None = None,
         recommendation_service: RecommendationService | None = None,
     ) -> None:
         self.model = settings.effective_llm_model
-        self.sandbox_service = sandbox_service
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
         self.recommendation_service = recommendation_service
@@ -113,7 +109,6 @@ class AgentService:
                 explanation=content,
                 model=self.model,
                 used_fallback=False,
-                verification=await self._verify_fixed_code(fixed_code),
                 structured_result=parse_structured_result("fix_code", content),
             )
         fallback_explanation = (
@@ -270,40 +265,6 @@ class AgentService:
 
     def _fallback_chat_content(self, tool_name: ToolName) -> str:
         return get_agent_tool(tool_name).fallback_content
-
-    async def _verify_fixed_code(self, code: str) -> AgentRunVerification:
-        try:
-            result = await self.sandbox_service.execute(code)
-        except Exception as exc:
-            return AgentRunVerification(
-                verified=False,
-                request_id=uuid4(),
-                execution_id=uuid4(),
-                status=ExecutionStatus.ERROR,
-                stdout="",
-                stderr=str(exc),
-                error_type="sandbox_error",
-                duration_ms=0,
-                output_truncated=False,
-            )
-
-        return self._verification_from_result(result)
-
-    def _verification_from_result(
-        self,
-        result: SandboxExecutionResult,
-    ) -> AgentRunVerification:
-        return AgentRunVerification(
-            verified=result.status == "success",
-            request_id=result.request_id,
-            execution_id=result.execution_id,
-            status=result.status,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            error_type=result.error_type,
-            duration_ms=result.duration_ms,
-            output_truncated=result.output_truncated,
-        )
 
     def _extract_code_block(self, content: str) -> str | None:
         marker = "```"

@@ -458,7 +458,7 @@ async function copyCode(code: string, blockId: string) {
 }
 
 function injectToPlayground(code: string) {
-    playgroundStore.setCode(code);
+    playgroundStore.loadAgentSuggestion(code);
 }
 
 function renderMessageContent(content: string): string {

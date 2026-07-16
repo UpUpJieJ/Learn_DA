@@ -295,8 +295,10 @@ const statusText = computed(() => {
   if (!playgroundStore.lastResponse) return "就绪";
   const s = playgroundStore.lastResponse.status;
   if (s === "success") return `${playgroundStore.executionTime}ms`;
-  if (s === "timeout") return "超时";
-  return "出错";
+  if (s === "timeout") return "运行超时";
+  if (s === "rejected") return "该代码未获准运行";
+  if (s === "unavailable") return "执行服务暂时不可用";
+  return "代码运行出错";
 });
 
 const statusClass = computed(() => {
@@ -305,6 +307,7 @@ const statusClass = computed(() => {
   const s = playgroundStore.lastResponse.status;
   if (s === "success") return "bg-emerald-500";
   if (s === "timeout") return "bg-yellow-500";
+  if (s === "rejected" || s === "unavailable") return "bg-orange-500";
   return "bg-red-500";
 });
 
@@ -587,6 +590,8 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 ? 'text-emerald-400'
                 : playgroundStore.lastResponse?.status === 'error'
                 ? 'text-red-400'
+                : playgroundStore.lastResponse?.status === 'rejected' || playgroundStore.lastResponse?.status === 'unavailable'
+                ? 'text-orange-400'
                 : 'text-slate-500'
             "
           >

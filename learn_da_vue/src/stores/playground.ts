@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { executeCode, formatCode } from "@/api/playground";
-import type { ExecuteResponse } from "@/types/api";
+import type { ExecuteResponse, ExecutionSource } from "@/types/api";
 
 // =====================================================
 // 执行历史记录条目
@@ -29,6 +29,7 @@ export const usePlaygroundStore = defineStore("playground", () => {
     const isExecuting = ref(false);
     const lastResponse = ref<ExecuteResponse | null>(null);
     const executionError = ref<string | null>(null);
+    const nextExecutionSource = ref<ExecutionSource>("playground");
 
     // ---- 执行历史 ----
     const history = ref<ExecutionRecord[]>([]);
@@ -72,11 +73,26 @@ export const usePlaygroundStore = defineStore("playground", () => {
         isExecuting.value = true;
         executionError.value = null;
 
+        const source = nextExecutionSource.value;
+        nextExecutionSource.value = "playground"; // reset after use
+
         try {
             const response = await executeCode({
                 code: code.value,
                 language: language.value,
+                requestId: crypto.randomUUID(),
+                source,
             });
+
+            // Don't store rejected/unavailable responses as successes
+            if (response.status === "rejected" || response.status === "unavailable") {
+                lastResponse.value = response;
+                executionError.value =
+                    response.status === "rejected"
+                        ? "该代码未获准运行"
+                        : "执行服务暂时不可用";
+                return response;
+            }
 
             lastResponse.value = response;
             addToHistory(code.value, response);
@@ -91,7 +107,6 @@ export const usePlaygroundStore = defineStore("playground", () => {
                 stdout: "",
                 stderr: message,
                 executionTime: 0,
-                usedSandbox: "none",
                 resultType: "error",
                 dataframe: null,
             };
@@ -149,6 +164,11 @@ export const usePlaygroundStore = defineStore("playground", () => {
         code.value = newCode;
     }
 
+    function loadAgentSuggestion(agentCode: string) {
+        code.value = agentCode;
+        nextExecutionSource.value = "agent_suggested";
+    }
+
     function setLanguage(lang: "python" | "sql") {
         language.value = lang;
     }
@@ -203,5 +223,7 @@ export const usePlaygroundStore = defineStore("playground", () => {
         clearHistory,
         setCode,
         setLanguage,
+        loadAgentSuggestion,
+        nextExecutionSource,
     };
 });

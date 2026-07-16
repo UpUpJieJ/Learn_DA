@@ -13,6 +13,8 @@ export function executeCode(payload: ExecuteRequest) {
     return post<ExecuteResponse>("/playground/execute", {
         code: payload.code,
         language: payload.language ?? "python",
+        requestId: payload.requestId,
+        source: payload.source,
     });
 }
 
