@@ -58,10 +58,10 @@ describe("playground store – source propagation", () => {
         await store.runCode();
 
         expect(mockedExecuteCode).toHaveBeenCalledOnce();
-        const payload = mockedExecuteCode.mock.calls[0][0];
-        expect(payload.source).toBe("agent_suggested");
-        expect(payload.requestId).toBeDefined();
-        expect(typeof payload.requestId).toBe("string");
+        const payload = mockedExecuteCode.mock.calls[0]?.[0];
+        expect(payload?.source).toBe("agent_suggested");
+        expect(payload?.requestId).toBeDefined();
+        expect(typeof payload?.requestId).toBe("string");
     });
 
     it("resets source to playground after agent_suggested execution", async () => {
@@ -74,8 +74,8 @@ describe("playground store – source propagation", () => {
         // Next run should be source=playground
         await store.runCode();
 
-        const secondPayload = mockedExecuteCode.mock.calls[1][0];
-        expect(secondPayload.source).toBe("playground");
+        const secondPayload = mockedExecuteCode.mock.calls[1]?.[0];
+        expect(secondPayload?.source).toBe("playground");
     });
 
     it("sends source=playground for normal runs", async () => {
@@ -85,8 +85,8 @@ describe("playground store – source propagation", () => {
         store.setCode("print('hello')");
         await store.runCode();
 
-        const payload = mockedExecuteCode.mock.calls[0][0];
-        expect(payload.source).toBe("playground");
+        const payload = mockedExecuteCode.mock.calls[0]?.[0];
+        expect(payload?.source).toBe("playground");
     });
 
     it("does not store rejected responses in history", async () => {
@@ -118,6 +118,6 @@ describe("playground store – source propagation", () => {
         await store.runCode();
 
         expect(store.history).toHaveLength(1);
-        expect(store.history[0].code).toBe("print('ok')");
+        expect(store.history[0]?.code).toBe("print('ok')");
     });
 });
