@@ -40,7 +40,7 @@ class LearningRecord(BaseModel):
     status = Column(
         String(20),
         nullable=True,
-        comment="执行结果: success / error / timeout / rejected（仅 code_run 类事件）",
+        comment="执行结果: success / error / timeout / rejected / unavailable（仅 code_run 类事件）",
     )
     metadata_json = Column(Text, nullable=True, comment="可选扩展元数据 JSON")
 

@@ -52,7 +52,12 @@ class LearnerStateService:
     async def record_attempt(
         self, visitor_id: str, lesson_slug: str, status: str
     ) -> None:
-        """记录代码尝试（success/error/timeout/rejected）"""
+        """记录代码尝试。
+
+        ``status`` 由前端原样透传执行结果（success/error/timeout/rejected/
+        unavailable）。这里只按 success 与否二分计数，明细留在
+        ``learning_records.status`` 里供后续按错误类型聚合。
+        """
         progress = await self._get_or_create(visitor_id, lesson_slug)
         now = datetime.now(timezone.utc)
         progress.attempt_count = (progress.attempt_count or 0) + 1

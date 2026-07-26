@@ -39,7 +39,7 @@ class EventTrackRequest(BaseModel):
     )
     status: Optional[str] = Field(
         None,
-        description="执行结果: success / error / timeout / rejected（仅 code_run）",
+        description="执行结果: success / error / timeout / rejected / unavailable（仅 code_run）",
     )
 
 

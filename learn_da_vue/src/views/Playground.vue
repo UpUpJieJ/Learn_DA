@@ -511,14 +511,19 @@ async function runCode() {
   const response = await playgroundStore.runCode();
   activeResultTab.value = response?.resultType === "dataframe" ? "dataframe" : "output";
 
-  // 阶段 1：执行完成后上报 code_run 事件，附带真实执行状态
-  // 不再在点击执行时提前记录，避免把成功运行误计为失败
-  const execStatus = playgroundStore.lastResponse?.status ?? "success";
+  // store 在「正在执行」或「代码为空」时直接返回 undefined，即根本没有发生执行。
+  // 此时不能上报 code_run，否则会凭空多出一次“成功运行”，污染 attempt 计数和
+  // 推荐的 CODE_RUNS_THRESHOLD 判断。
+  if (!response) return;
+
+  // 阶段 1：执行完成后如实上报执行状态。这里不再把 timeout / rejected /
+  // unavailable 压成 error —— 压掉之后 learning_records.status 只剩两种取值，
+  // 「错误类型可聚合」就无从谈起。
   trackEvent({
     eventType: "code_run",
     lessonSlug: props.slug || undefined,
     eventId: crypto.randomUUID(),
-    status: execStatus === "success" ? "success" : "error",
+    status: response.status,
   }).catch(() => {});
 }
 

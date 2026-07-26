@@ -244,8 +244,12 @@ export type EventType =
     | "ai_help"
     | "lesson_start";
 
-/** 代码执行结果状态（仅 code_run 事件） */
-export type CodeRunStatus = "success" | "error" | "timeout" | "rejected";
+/**
+ * 代码执行结果状态（仅 code_run 事件）。
+ * 与 ExecuteStatus 保持同一组取值：上报时原样透传，不做归并，
+ * 否则错误类型在服务端无法聚合。
+ */
+export type CodeRunStatus = ExecuteStatus;
 
 /** 事件上报请求 */
 export interface EventTrackRequest {
@@ -254,7 +258,7 @@ export interface EventTrackRequest {
     durationSeconds?: number;
     /** 幂等键（前端生成 UUID），相同 eventId 重放不重复写入 */
     eventId?: string;
-    /** 执行结果（仅 code_run）：success / error / timeout / rejected */
+    /** 执行结果（仅 code_run）：success / error / timeout / rejected / unavailable */
     status?: CodeRunStatus;
 }
 

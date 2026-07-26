@@ -132,6 +132,66 @@ async def test_track_event_drives_progress_projection(test_engine):
 
 
 @pytest.mark.anyio
+async def test_code_run_status_is_persisted_verbatim(test_engine):
+    """错误类型必须可聚合：timeout / rejected 不能被归并成 error 后再落库。"""
+    from sqlalchemy import select
+
+    from app.analytics.models import LearningRecord
+
+    visitor_id = "visitor-status-fidelity"
+    session = await _client_with_session(test_engine, visitor_id)
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as api_client:
+            for idx, status in enumerate(
+                ("success", "error", "timeout", "rejected", "unavailable")
+            ):
+                resp = await api_client.post(
+                    "/api/v1/analytics/track",
+                    json={
+                        "eventType": "code_run",
+                        "lessonSlug": "polars-basics",
+                        "eventId": f"e2e-status-{idx}",
+                        "status": status,
+                    },
+                )
+                assert resp.status_code == 200, resp.text
+
+            rows = (
+                await session.execute(
+                    select(LearningRecord.status).where(
+                        LearningRecord.visitor_id == visitor_id,
+                        LearningRecord.event_type == "code_run",
+                        LearningRecord.is_deleted == False,  # noqa: E712
+                    )
+                )
+            ).scalars()
+            assert sorted(rows) == [
+                "error",
+                "rejected",
+                "success",
+                "timeout",
+                "unavailable",
+            ]
+
+            # 投影侧仍按 success 与否二分计数
+            data = (await api_client.get("/api/v1/learner-state/progress")).json()[
+                "data"
+            ]
+            detail = next(
+                d for d in data["lessonDetails"] if d["lessonSlug"] == "polars-basics"
+            )
+            assert detail["attemptCount"] == 5
+            assert detail["successCount"] == 1
+            assert detail["errorCount"] == 4
+    finally:
+        app.dependency_overrides.clear()
+        await session.close()
+
+
+@pytest.mark.anyio
 async def test_replayed_event_does_not_change_projection(test_engine):
     """相同 event_id 重放不改变投影（前端离线重试队列依赖这一点）。"""
     visitor_id = "visitor-progress-replay"

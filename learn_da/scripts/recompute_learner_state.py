@@ -73,7 +73,7 @@ def _derive_state(records: list[LearningRecord]) -> dict:
             if status == "success":
                 success_count += 1
             else:
-                # error / timeout / rejected 都计入失败侧
+                # error / timeout / rejected / unavailable 都计入失败侧
                 error_count += 1
 
     return {
