@@ -25,7 +25,9 @@ def get_learning_service() -> LearningService:
     return LearningService(repository=LearningRepository())
 
 
-def get_recommendation_service(db: AsyncSession = Depends(get_db)) -> RecommendationService:
+def get_recommendation_service(
+    db: AsyncSession = Depends(get_db),
+) -> RecommendationService:
     return RecommendationService(
         repository=LearningRepository(),
         analytics_service=AnalyticsService(db),
@@ -54,6 +56,7 @@ async def list_lessons(
 
 # NOTE: /lessons/all and /lessons/categories MUST be defined BEFORE /lessons/{slug}
 # to prevent "all"/"categories" being matched as a slug.
+
 
 @router.get("/lessons/all", response_model=StdResp[list[LessonSummary]])
 async def list_all_lessons(
@@ -113,6 +116,7 @@ async def get_example(
 # =====================================================
 # Phase 3: 学习建议接口
 # =====================================================
+
 
 @router.get("/recommendations", response_model=StdResp[RecommendationResponse])
 async def get_recommendations(

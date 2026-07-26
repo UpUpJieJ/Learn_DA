@@ -71,7 +71,9 @@ class KnowledgeRetriever:
         self.embedding_config = embedding_config or EmbeddingConfig.from_settings()
         self.embedding_client = embedding_client
         if self.embedding_client is None and self.embedding_config.enabled:
-            self.embedding_client = OpenAICompatibleEmbeddingClient(self.embedding_config)
+            self.embedding_client = OpenAICompatibleEmbeddingClient(
+                self.embedding_config
+            )
         self._chunk_embeddings: list[list[float]] | None = None
 
     async def search(
@@ -200,7 +202,9 @@ class KnowledgeRetriever:
             score=score,
         )
 
-    def _cosine_similarity(self, left: Sequence[float], right: Sequence[float]) -> float:
+    def _cosine_similarity(
+        self, left: Sequence[float], right: Sequence[float]
+    ) -> float:
         dot = sum(a * b for a, b in zip(left, right))
         left_norm = math.sqrt(sum(a * a for a in left))
         right_norm = math.sqrt(sum(b * b for b in right))

@@ -275,7 +275,6 @@ async def test_resume_recommendation_selects_lowest_resume_cost():
     assert result.primary.context["resume_cost"] < 50
 
 
-
 @pytest.mark.unit
 async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engine):
     from httpx import ASGITransport, AsyncClient
@@ -334,7 +333,9 @@ async def test_recommendations_endpoint_uses_tracked_events_for_review(test_engi
 
 
 @pytest.mark.unit
-async def test_recommendations_endpoint_uses_real_analytics_for_resume(client, db_session):
+async def test_recommendations_endpoint_uses_real_analytics_for_resume(
+    client, db_session
+):
     visitor_id = "analytics-resume-user"
     today = datetime.now(timezone.utc).date()
     db_session.add(

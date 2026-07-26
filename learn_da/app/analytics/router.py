@@ -68,7 +68,10 @@ async def list_snapshots(
     """获取代码快照列表（分页）"""
     service = AnalyticsService(db)
     result = await service.list_snapshots(
-        visitor_id, lesson_slug, page=page, page_size=page_size,
+        visitor_id,
+        lesson_slug,
+        page=page,
+        page_size=page_size,
     )
     return StdResp.success(data=result)
 
@@ -139,11 +142,13 @@ async def get_recommended_lessons(
             "tags": first.tags,
         }
 
-    return StdResp.success(data={
-        "recommended": recommended,
-        "completedCount": len(completed_slugs),
-        "totalCount": len(all_lessons),
-    })
+    return StdResp.success(
+        data={
+            "recommended": recommended,
+            "completedCount": len(completed_slugs),
+            "totalCount": len(all_lessons),
+        }
+    )
 
 
 # ── Phase 4: 首页统计 ───────────────────────────────────

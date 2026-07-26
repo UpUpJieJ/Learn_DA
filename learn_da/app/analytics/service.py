@@ -22,7 +22,9 @@ class AnalyticsService:
         self.db = db
         self.repo = AnalyticsRepository(db)
 
-    async def track_event(self, req: EventTrackRequest, visitor_id: str) -> EventTrackResponse:
+    async def track_event(
+        self, req: EventTrackRequest, visitor_id: str
+    ) -> EventTrackResponse:
         """记录学习行为事件，同时更新用户画像和每日统计"""
         await self.repo.create_record(
             visitor_id=visitor_id,
@@ -44,7 +46,9 @@ class AnalyticsService:
         await self.db.commit()
         return EventTrackResponse(recorded=True)
 
-    async def save_snapshot(self, req: CodeSnapshotRequest, visitor_id: str) -> CodeSnapshotResponse:
+    async def save_snapshot(
+        self, req: CodeSnapshotRequest, visitor_id: str
+    ) -> CodeSnapshotResponse:
         """Save a code snapshot and enforce retention limits."""
         snapshot = await self.repo.create_snapshot(
             visitor_id=visitor_id,
@@ -54,7 +58,9 @@ class AnalyticsService:
             description=req.description,
         )
         # Enforce retention: 100 per session, 10 000 global
-        await self.repo.prune_snapshots(visitor_id, per_session_limit=100, global_limit=10_000)
+        await self.repo.prune_snapshots(
+            visitor_id, per_session_limit=100, global_limit=10_000
+        )
         await self.db.commit()
         return CodeSnapshotResponse(snapshot_id=snapshot.id, version=snapshot.version)
 
@@ -67,7 +73,10 @@ class AnalyticsService:
     ) -> CodeSnapshotPage:
         """Return paginated snapshots (newest-first)."""
         snapshots, total = await self.repo.list_snapshots(
-            visitor_id, lesson_slug, page=page, page_size=page_size,
+            visitor_id,
+            lesson_slug,
+            page=page,
+            page_size=page_size,
         )
         items = [
             CodeSnapshotItem(
@@ -77,7 +86,11 @@ class AnalyticsService:
                 language=s.language,
                 version=s.version,
                 description=s.description,
-                created_time=s.created_time.strftime("%Y-%m-%d %H:%M:%S") if s.created_time else "",
+                created_time=(
+                    s.created_time.strftime("%Y-%m-%d %H:%M:%S")
+                    if s.created_time
+                    else ""
+                ),
             )
             for s in snapshots
         ]
@@ -158,7 +171,9 @@ class AnalyticsService:
         """获取用户在特定课程的学习统计（用于回补建议）"""
         return await self.repo.get_lesson_specific_stats(visitor_id, lesson_slug)
 
-    async def get_lesson_snapshots_count(self, visitor_id: str, lesson_slug: str) -> int:
+    async def get_lesson_snapshots_count(
+        self, visitor_id: str, lesson_slug: str
+    ) -> int:
         """获取用户在特定课程的代码快照数量（用于回补建议）"""
         return await self.repo.get_lesson_snapshots_count(visitor_id, lesson_slug)
 

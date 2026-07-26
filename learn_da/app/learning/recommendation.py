@@ -20,25 +20,26 @@ if TYPE_CHECKING:
 # =====================================================
 
 RecommendationType = Literal[
-    "next_lesson",      # 顺学建议：继续下一课
-    "review_lesson",    # 回补建议：回看前置课
-    "branch_path",      # 分支建议：切换学习路径
-    "resume_session",   # 回流建议：恢复中断的学习
+    "next_lesson",  # 顺学建议：继续下一课
+    "review_lesson",  # 回补建议：回看前置课
+    "branch_path",  # 分支建议：切换学习路径
+    "resume_session",  # 回流建议：恢复中断的学习
 ]
 
 RecommendationReasonCode = Literal[
-    "sequential_progress",      # 顺序推进
-    "prerequisite_weak",        # 前置知识薄弱
-    "stuck_on_practice",        # 练习卡住
-    "path_completed",           # 路径完成
-    "long_absence",             # 长时间未学习
-    "incomplete_practice",      # 未完成的练习
+    "sequential_progress",  # 顺序推进
+    "prerequisite_weak",  # 前置知识薄弱
+    "stuck_on_practice",  # 练习卡住
+    "path_completed",  # 路径完成
+    "long_absence",  # 长时间未学习
+    "incomplete_practice",  # 未完成的练习
 ]
 
 
 # =====================================================
 # 建议结果数据结构
 # =====================================================
+
 
 class LearningRecommendation(BaseModel):
     """下一步学习建议"""
@@ -82,6 +83,7 @@ class RecommendationResponse(BaseModel):
 # 课程元数据扩展
 # =====================================================
 
+
 class LessonMetadata(BaseModel):
     """课程元数据（用于建议规则）"""
 
@@ -115,6 +117,7 @@ class LessonMetadata(BaseModel):
 # =====================================================
 # 建议规则服务
 # =====================================================
+
 
 class RecommendationService:
     """学习建议服务"""
@@ -174,7 +177,9 @@ class RecommendationService:
             settings.RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS
         )
         self._lesson_metadata_cache: dict[str, LessonMetadata] | None = None
-        self._review_cooldowns: dict[str, str] = {}  # {visitor_id+lesson_slug: ISO timestamp}
+        self._review_cooldowns: dict[str, str] = (
+            {}
+        )  # {visitor_id+lesson_slug: ISO timestamp}
 
     def _get_lesson_metadata(self) -> dict[str, LessonMetadata]:
         """获取课程元数据（带缓存）"""
@@ -190,44 +195,44 @@ class RecommendationService:
 
         for lesson in lessons:
             # 优先使用 frontmatter 中的 track，否则推断
-            track = self._lesson_value(lesson, 'track') or self._infer_track(lesson)
+            track = self._lesson_value(lesson, "track") or self._infer_track(lesson)
 
             # 优先使用 frontmatter 中的 prerequisites，否则从 prev_lesson 推断
-            prerequisites = self._lesson_value(lesson, 'prerequisites', [])
-            prev_lesson = self._lesson_value(lesson, 'prev_lesson')
+            prerequisites = self._lesson_value(lesson, "prerequisites", [])
+            prev_lesson = self._lesson_value(lesson, "prev_lesson")
             if not prerequisites and prev_lesson:
-                prerequisites = [self._lesson_value(prev_lesson, 'slug')]
+                prerequisites = [self._lesson_value(prev_lesson, "slug")]
 
             # 优先使用 frontmatter 中的 recommended_next，否则从 next_lesson 推断
-            recommended_next = self._lesson_value(lesson, 'recommended_next', [])
-            next_lesson = self._lesson_value(lesson, 'next_lesson')
+            recommended_next = self._lesson_value(lesson, "recommended_next", [])
+            next_lesson = self._lesson_value(lesson, "next_lesson")
             if not recommended_next and next_lesson:
-                recommended_next = [self._lesson_value(next_lesson, 'slug')]
+                recommended_next = [self._lesson_value(next_lesson, "slug")]
 
             # 优先使用 frontmatter 中的 skill_tags，否则使用 tags
-            skill_tags = self._lesson_value(lesson, 'skill_tags', [])
+            skill_tags = self._lesson_value(lesson, "skill_tags", [])
             if not skill_tags:
-                skill_tags = self._lesson_value(lesson, 'tags', [])
+                skill_tags = self._lesson_value(lesson, "tags", [])
 
             # 优先使用 frontmatter 中的 is_review_friendly，否则推断
-            is_review_friendly = self._lesson_value(lesson, 'is_review_friendly')
+            is_review_friendly = self._lesson_value(lesson, "is_review_friendly")
             if is_review_friendly is None:
                 is_review_friendly = (
-                    self._lesson_value(lesson, 'difficulty') == 'beginner' or
-                    'basics' in self._lesson_value(lesson, 'slug', '').lower() or
-                    'foundations' in self._lesson_value(lesson, 'slug', '').lower()
+                    self._lesson_value(lesson, "difficulty") == "beginner"
+                    or "basics" in self._lesson_value(lesson, "slug", "").lower()
+                    or "foundations" in self._lesson_value(lesson, "slug", "").lower()
                 )
 
             # 优先使用 frontmatter 中的 is_branch_point
-            is_branch_point = self._lesson_value(lesson, 'is_branch_point', False)
+            is_branch_point = self._lesson_value(lesson, "is_branch_point", False)
 
             metadata = LessonMetadata(
-                slug=self._lesson_value(lesson, 'slug'),
-                title=self._lesson_value(lesson, 'title'),
-                topic=self._lesson_value(lesson, 'topic', 'data-analysis'),
-                category=self._lesson_value(lesson, 'category'),
-                difficulty=self._lesson_value(lesson, 'difficulty'),
-                order=self._lesson_value(lesson, 'order', 0),
+                slug=self._lesson_value(lesson, "slug"),
+                title=self._lesson_value(lesson, "title"),
+                topic=self._lesson_value(lesson, "topic", "data-analysis"),
+                category=self._lesson_value(lesson, "category"),
+                difficulty=self._lesson_value(lesson, "difficulty"),
+                order=self._lesson_value(lesson, "order", 0),
                 track=track,
                 prerequisites=prerequisites,
                 recommended_next=recommended_next,
@@ -249,21 +254,21 @@ class RecommendationService:
 
     def _infer_track(self, lesson: dict) -> str:
         """从课程信息推断所属路径"""
-        category = self._lesson_value(lesson, 'category', '')
-        slug = self._lesson_value(lesson, 'slug', '')
+        category = self._lesson_value(lesson, "category", "")
+        slug = self._lesson_value(lesson, "slug", "")
 
-        if category == 'combined':
-            return 'combined_workflow'
-        elif category == 'polars':
-            if 'lazy' in slug or 'pipeline' in slug:
-                return 'polars_advanced'
-            return 'polars_basics'
-        elif category == 'duckdb':
-            if 'window' in slug or 'cte' in slug:
-                return 'duckdb_advanced'
-            return 'duckdb_basics'
+        if category == "combined":
+            return "combined_workflow"
+        elif category == "polars":
+            if "lazy" in slug or "pipeline" in slug:
+                return "polars_advanced"
+            return "polars_basics"
+        elif category == "duckdb":
+            if "window" in slug or "cte" in slug:
+                return "duckdb_advanced"
+            return "duckdb_basics"
 
-        return 'unknown'
+        return "unknown"
 
     async def get_recommendation(
         self,
@@ -393,7 +398,10 @@ class RecommendationService:
                 # 已完成，推荐后继
                 if current_meta.recommended_next:
                     for next_slug in current_meta.recommended_next:
-                        if next_slug in metadata_map and next_slug not in completed_lessons:
+                        if (
+                            next_slug in metadata_map
+                            and next_slug not in completed_lessons
+                        ):
                             next_meta = metadata_map[next_slug]
                             return LearningRecommendation(
                                 type="next_lesson",
@@ -419,7 +427,9 @@ class RecommendationService:
         for lesson_meta in all_lessons:
             if lesson_meta.slug not in completed_lessons:
                 # 判断是否是第一课
-                is_first_lesson = lesson_meta.order == min(m.order for m in metadata_map.values())
+                is_first_lesson = lesson_meta.order == min(
+                    m.order for m in metadata_map.values()
+                )
 
                 if is_first_lesson:
                     reason = "推荐从第一课开始学习"
@@ -445,10 +455,7 @@ class RecommendationService:
 
         # 规则 3: 全部完成 - 兜底建议
         # 找到第一个 beginner + is_review_friendly 的课程作为重学推荐
-        review_candidates = [
-            m for m in metadata_map.values()
-            if m.is_review_friendly
-        ]
+        review_candidates = [m for m in metadata_map.values() if m.is_review_friendly]
         review_candidates.sort(key=lambda x: x.order)
 
         if review_candidates:
@@ -519,8 +526,11 @@ class RecommendationService:
         cooldown_key = f"{visitor_id}::{current_lesson_slug}"
         if cooldown_key in self._review_cooldowns:
             from datetime import datetime, timezone
+
             try:
-                last_trigger = datetime.fromisoformat(self._review_cooldowns[cooldown_key])
+                last_trigger = datetime.fromisoformat(
+                    self._review_cooldowns[cooldown_key]
+                )
                 if last_trigger.tzinfo is None:
                     last_trigger = last_trigger.replace(tzinfo=timezone.utc)
                 elapsed = (datetime.now(timezone.utc) - last_trigger).total_seconds()
@@ -551,19 +561,24 @@ class RecommendationService:
             reason_template = f"你在这节课尝试了 {code_runs} 次代码运行，建议回顾 {{review_lesson}} 巩固基础"
         elif not completed and ai_helps >= self.AI_HELPS_THRESHOLD:
             needs_review = True
-            reason_template = f"你请求了 {ai_helps} 次 AI 帮助，{{review_lesson}} 的内容可能需要复习"
+            reason_template = (
+                f"你请求了 {ai_helps} 次 AI 帮助，{{review_lesson}} 的内容可能需要复习"
+            )
         elif not completed and snapshots_count >= self.SNAPSHOTS_THRESHOLD:
             needs_review = True
             reason_template = f"你保存了 {snapshots_count} 个代码快照但未完成，建议先回顾 {{review_lesson}}"
         elif not completed and self._check_long_stall(stats, snapshots_count):
             needs_review = True
-            reason_template = f"你在这节课停留了较长时间，建议先回顾 {{review_lesson}} 打好基础再继续"
+            reason_template = (
+                f"你在这节课停留了较长时间，建议先回顾 {{review_lesson}} 打好基础再继续"
+            )
 
         if not needs_review:
             return None
 
         # 记录冷却时间
         from datetime import datetime, timezone
+
         self._review_cooldowns[cooldown_key] = datetime.now(timezone.utc).isoformat()
 
         # 选择回补课程
@@ -708,7 +723,11 @@ class RecommendationService:
             prerequisites = option.get("prerequisites", [])
             all_prereqs_met = all(p in completed_lessons for p in prerequisites)
 
-            reason = option["high_priority_reason"] if all_prereqs_met else option["low_priority_reason"]
+            reason = (
+                option["high_priority_reason"]
+                if all_prereqs_met
+                else option["low_priority_reason"]
+            )
             priority = 4 if all_prereqs_met else 3
 
             branch_recommendations.append(
@@ -804,8 +823,11 @@ class RecommendationService:
 
         # 计算距离上次学习的天数
         from datetime import datetime, timezone
+
         try:
-            last_active = datetime.strptime(profile["lastActiveDate"], "%Y-%m-%d").date()
+            last_active = datetime.strptime(
+                profile["lastActiveDate"], "%Y-%m-%d"
+            ).date()
             today = datetime.now(timezone.utc).date()
             days_since_last_active = (today - last_active).days
         except (ValueError, TypeError):
@@ -816,8 +838,10 @@ class RecommendationService:
             return None
 
         # 获取有活动但未完成的课程
-        incomplete_lessons = await self.analytics_service.get_incomplete_lessons_with_activity(
-            visitor_id, completed_lessons
+        incomplete_lessons = (
+            await self.analytics_service.get_incomplete_lessons_with_activity(
+                visitor_id, completed_lessons
+            )
         )
 
         if not incomplete_lessons:
@@ -879,7 +903,9 @@ class RecommendationService:
                     last_activity = lesson_data["last_activity_time"]
                     if last_activity.tzinfo is None:
                         last_activity = last_activity.replace(tzinfo=timezone.utc)
-                    days_since_activity = (datetime.now(timezone.utc) - last_activity).days
+                    days_since_activity = (
+                        datetime.now(timezone.utc) - last_activity
+                    ).days
                     recency_score = min(100, days_since_activity * 10)
                 except Exception:
                     recency_score = 50  # 默认中等分数
@@ -897,15 +923,21 @@ class RecommendationService:
                 + difficulty_penalty * 0.2
             )
 
-            candidates.append({
-                "lesson_slug": lesson_slug,
-                "lesson_meta": lesson_meta,
-                "resume_cost": resume_cost,
-                "code_runs": lesson_data["code_runs"],
-                "ai_helps": lesson_data["ai_helps"],
-                "snapshots_count": lesson_data["snapshots_count"],
-                "days_since_activity": days_since_activity if lesson_data["last_activity_time"] else None,
-            })
+            candidates.append(
+                {
+                    "lesson_slug": lesson_slug,
+                    "lesson_meta": lesson_meta,
+                    "resume_cost": resume_cost,
+                    "code_runs": lesson_data["code_runs"],
+                    "ai_helps": lesson_data["ai_helps"],
+                    "snapshots_count": lesson_data["snapshots_count"],
+                    "days_since_activity": (
+                        days_since_activity
+                        if lesson_data["last_activity_time"]
+                        else None
+                    ),
+                }
+            )
 
         if not candidates:
             return None
@@ -934,7 +966,10 @@ class RecommendationService:
         elif best_candidate["ai_helps"] >= 2:
             # 强调 AI 助手的模板
             reason_template = reason_templates[7]
-        elif best_candidate["days_since_activity"] and best_candidate["days_since_activity"] <= 7:
+        elif (
+            best_candidate["days_since_activity"]
+            and best_candidate["days_since_activity"] <= 7
+        ):
             # 强调时间新鲜的模板
             reason_template = reason_templates[1]
         else:

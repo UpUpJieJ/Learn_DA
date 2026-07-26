@@ -39,7 +39,17 @@ class AgentRouter:
         ),
         (
             "generate_example_code",
-            ("示例", "example", "代码", "python", "函数", "列表", "循环", "duckdb", "polars"),
+            (
+                "示例",
+                "example",
+                "代码",
+                "python",
+                "函数",
+                "列表",
+                "循环",
+                "duckdb",
+                "polars",
+            ),
             0.72,
             "用户希望获得课程相关示例或代码",
         ),

@@ -70,8 +70,11 @@ class AnalyticsRepository:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if profile.last_active_date != today_str:
             try:
-                last = datetime.strptime(profile.last_active_date or "", "%Y-%m-%d").date()
+                last = datetime.strptime(
+                    profile.last_active_date or "", "%Y-%m-%d"
+                ).date()
                 from datetime import date
+
                 today = date.today()
                 if (today - last).days == 1:
                     profile.current_streak += 1
@@ -120,8 +123,8 @@ class AnalyticsRepository:
             # 简单移动平均
             total = stats.active_users or 1
             stats.avg_session_minutes = (
-                (stats.avg_session_minutes * (total - 1) + duration_seconds / 60) / total
-            )
+                stats.avg_session_minutes * (total - 1) + duration_seconds / 60
+            ) / total
 
         await self.db.flush()
 
@@ -142,10 +145,14 @@ class AnalyticsRepository:
             return
 
         # 检查该 visitor 今日是否已有记录
-        exists_stmt = select(func.count()).select_from(LearningRecord).where(
-            LearningRecord.visitor_id == visitor_id,
-            func.date(LearningRecord.created_time) == today_str,
-            LearningRecord.is_deleted == False,  # noqa: E712
+        exists_stmt = (
+            select(func.count())
+            .select_from(LearningRecord)
+            .where(
+                LearningRecord.visitor_id == visitor_id,
+                func.date(LearningRecord.created_time) == today_str,
+                LearningRecord.is_deleted == False,  # noqa: E712
+            )
         )
         exists_result = await self.db.execute(exists_stmt)
         count = exists_result.scalar() or 0
@@ -164,13 +171,10 @@ class AnalyticsRepository:
         description: str | None = None,
     ) -> CodeSnapshot:
         # 获取当前最大版本号
-        stmt = (
-            select(func.max(CodeSnapshot.version))
-            .where(
-                CodeSnapshot.visitor_id == visitor_id,
-                CodeSnapshot.lesson_slug == lesson_slug,
-                CodeSnapshot.is_deleted == False,  # noqa: E712
-            )
+        stmt = select(func.max(CodeSnapshot.version)).where(
+            CodeSnapshot.visitor_id == visitor_id,
+            CodeSnapshot.lesson_slug == lesson_slug,
+            CodeSnapshot.is_deleted == False,  # noqa: E712
         )
         result = await self.db.execute(stmt)
         max_version = result.scalar() or 0
@@ -269,8 +273,12 @@ class AnalyticsRepository:
     # ── 首页统计查询 ─────────────────────────────────────
 
     async def get_total_learners(self) -> int:
-        stmt = select(func.count()).select_from(UserProfile).where(
-            UserProfile.is_deleted == False,  # noqa: E712
+        stmt = (
+            select(func.count())
+            .select_from(UserProfile)
+            .where(
+                UserProfile.is_deleted == False,  # noqa: E712
+            )
         )
         result = await self.db.execute(stmt)
         return result.scalar() or 0
@@ -323,7 +331,12 @@ class AnalyticsRepository:
         for row in rows:
             slug = row.lesson_slug
             if slug not in lesson_stats:
-                lesson_stats[slug] = {"slug": slug, "codeRuns": 0, "aiHelps": 0, "completed": False}
+                lesson_stats[slug] = {
+                    "slug": slug,
+                    "codeRuns": 0,
+                    "aiHelps": 0,
+                    "completed": False,
+                }
             if row.event_type == "code_run":
                 lesson_stats[slug]["codeRuns"] = row.count
             elif row.event_type == "ai_help":
@@ -332,7 +345,9 @@ class AnalyticsRepository:
                 lesson_stats[slug]["completed"] = True
 
         return {
-            "completedLessons": [s["slug"] for s in lesson_stats.values() if s["completed"]],
+            "completedLessons": [
+                s["slug"] for s in lesson_stats.values() if s["completed"]
+            ],
             "lessonDetails": list(lesson_stats.values()),
         }
 
@@ -420,12 +435,18 @@ class AnalyticsRepository:
 
         return stats
 
-    async def get_lesson_snapshots_count(self, visitor_id: str, lesson_slug: str) -> int:
+    async def get_lesson_snapshots_count(
+        self, visitor_id: str, lesson_slug: str
+    ) -> int:
         """获取用户在特定课程的代码快照数量（用于回补建议）"""
-        stmt = select(func.count()).select_from(CodeSnapshot).where(
-            CodeSnapshot.visitor_id == visitor_id,
-            CodeSnapshot.lesson_slug == lesson_slug,
-            CodeSnapshot.is_deleted == False,  # noqa: E712
+        stmt = (
+            select(func.count())
+            .select_from(CodeSnapshot)
+            .where(
+                CodeSnapshot.visitor_id == visitor_id,
+                CodeSnapshot.lesson_slug == lesson_slug,
+                CodeSnapshot.is_deleted == False,  # noqa: E712
+            )
         )
         result = await self.db.execute(stmt)
         return result.scalar() or 0
@@ -544,12 +565,14 @@ class AnalyticsRepository:
         result_list = []
         for slug in incomplete_with_activity:
             stats = lesson_stats[slug]
-            result_list.append({
-                "lesson_slug": slug,
-                "code_runs": stats["code_runs"],
-                "ai_helps": stats["ai_helps"],
-                "snapshots_count": snapshot_map.get(slug, 0),
-                "last_activity_time": last_activity_map.get(slug),
-            })
+            result_list.append(
+                {
+                    "lesson_slug": slug,
+                    "code_runs": stats["code_runs"],
+                    "ai_helps": stats["ai_helps"],
+                    "snapshots_count": snapshot_map.get(slug, 0),
+                    "last_activity_time": last_activity_map.get(slug),
+                }
+            )
 
         return result_list
