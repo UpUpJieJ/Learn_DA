@@ -1,1 +1,5 @@
 .worktrees/
+
+# 运行时日志（仓库根，各子项目日志另见各自 .gitignore）
+logs/
+*.log

@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { cancelAllRequests } from '@/api/index'
-import { useLocalStateStore } from '@/stores/localState'
 
 // =====================================================
 // 路由表定义（全部懒加载，代码分割）
@@ -108,21 +107,13 @@ router.beforeEach((to, _from, next) => {
 // 全局后置钩子
 // =====================================================
 
-router.afterEach((to, _from, failure) => {
+router.afterEach((_to, _from, failure) => {
   if (failure) {
     console.error('[Router] 导航失败:', failure)
-    return
   }
 
-  // 记录最后访问的课程 slug（仅在课程详情页）
-  if (to.name === 'LessonDetail' && to.params.slug) {
-    try {
-      const localStateStore = useLocalStateStore()
-      localStateStore.setLastVisitedLesson(to.params.slug as string)
-    } catch (e) {
-      // store 尚未初始化时静默忽略
-    }
-  }
+  // 阶段 1：lesson_start 由 LessonDetail / Playground 在课程加载成功后单点上报，
+  // 这里不再重复触发，避免同一次访问产生多条事件和多次往返。
 })
 
 export default router

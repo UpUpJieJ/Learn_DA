@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type {
   LocalPreferences,
-  LearningProgress,
   PlaygroundDraft,
   PlaygroundDrafts,
 } from '@/types/api'
@@ -12,7 +11,6 @@ import type {
 // =====================================================
 
 const STORAGE_KEY_PREFERENCES = 'learn_da:preferences'
-const STORAGE_KEY_PROGRESS = 'learn_da:progress'
 const STORAGE_KEY_PLAYGROUND_DRAFTS = 'learn_da:playground_drafts'
 
 // =====================================================
@@ -49,25 +47,16 @@ const DEFAULT_PREFERENCES: LocalPreferences = {
   autoSaveInterval: 0, // 0 = 手动，不自动弹窗
 }
 
-const DEFAULT_PROGRESS: LearningProgress = {
-  completedLessons: [],
-  lastVisitedSlug: null,
-  updatedAt: Date.now(),
-}
-
 // =====================================================
 // Local State Store
+// 阶段 1：学习进度（completedLessons / lastVisitedSlug）已迁移到
+// learnerState store，localStorage 仅保留偏好设置和 Playground 草稿。
 // =====================================================
 
 export const useLocalStateStore = defineStore('localState', () => {
   // ---- 本地偏好设置（持久化） ----
   const preferences = ref<LocalPreferences>(
     loadFromStorage(STORAGE_KEY_PREFERENCES, DEFAULT_PREFERENCES),
-  )
-
-  // ---- 本地学习进度（持久化） ----
-  const progress = ref<LearningProgress>(
-    loadFromStorage(STORAGE_KEY_PROGRESS, DEFAULT_PROGRESS),
   )
 
   // ---- Playground 草稿（持久化） ----
@@ -92,12 +81,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   )
 
   watch(
-    progress,
-    (val) => saveToStorage(STORAGE_KEY_PROGRESS, val),
-    { deep: true },
-  )
-
-  watch(
     playgroundDrafts,
     (val) => saveToStorage(STORAGE_KEY_PLAYGROUND_DRAFTS, val),
     { deep: true },
@@ -106,16 +89,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   // =====================================================
   // Computed
   // =====================================================
-
-  /** 已完成课程数量 */
-  const completedCount = computed(
-    () => progress.value.completedLessons.length,
-  )
-
-  /** 是否完成某节课 */
-  function isLessonCompleted(slug: string): boolean {
-    return progress.value.completedLessons.includes(slug)
-  }
 
   /** 编辑器主题 */
   const editorTheme = computed(() => preferences.value.editorTheme)
@@ -191,56 +164,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   }
 
   // =====================================================
-  // Actions - 学习进度
-  // =====================================================
-
-  /**
-   * 标记某节课为已完成
-   */
-  function markLessonCompleted(slug: string) {
-    if (!progress.value.completedLessons.includes(slug)) {
-      progress.value.completedLessons.push(slug)
-      progress.value.updatedAt = Date.now()
-    }
-  }
-
-  /**
-   * 取消某节课的完成状态
-   */
-  function unmarkLessonCompleted(slug: string) {
-    progress.value.completedLessons = progress.value.completedLessons.filter(
-      (s) => s !== slug,
-    )
-    progress.value.updatedAt = Date.now()
-  }
-
-  /**
-   * 切换某节课的完成状态
-   */
-  function toggleLessonCompleted(slug: string) {
-    if (isLessonCompleted(slug)) {
-      unmarkLessonCompleted(slug)
-    } else {
-      markLessonCompleted(slug)
-    }
-  }
-
-  /**
-   * 记录最后访问的课程 slug
-   */
-  function setLastVisitedLesson(slug: string) {
-    progress.value.lastVisitedSlug = slug
-    progress.value.updatedAt = Date.now()
-  }
-
-  /**
-   * 重置所有学习进度
-   */
-  function resetProgress() {
-    progress.value = { ...DEFAULT_PROGRESS, updatedAt: Date.now() }
-  }
-
-  // =====================================================
   // Actions - Playground 草稿
   // =====================================================
 
@@ -309,20 +232,15 @@ export const useLocalStateStore = defineStore('localState', () => {
   return {
     // state
     preferences,
-    progress,
     playgroundDrafts,
     isAgentOpen,
     isSidebarOpen,
 
     // computed
-    completedCount,
     editorTheme,
     editorFontSize,
     uiLanguage,
     autoSaveInterval,
-
-    // computed functions
-    isLessonCompleted,
 
     // actions - preferences
     toggleEditorTheme,
@@ -333,13 +251,6 @@ export const useLocalStateStore = defineStore('localState', () => {
     setLanguage,
     setAutoSaveInterval,
     resetPreferences,
-
-    // actions - progress
-    markLessonCompleted,
-    unmarkLessonCompleted,
-    toggleLessonCompleted,
-    setLastVisitedLesson,
-    resetProgress,
 
     // actions - playground drafts
     getPlaygroundDraft,

@@ -115,7 +115,7 @@ async def test_event_track_no_longer_requires_visitor_id_in_body(client):
     response = await client.post(
         "/api/v1/analytics/track",
         json={
-            "eventType": "lesson_view",
+            "eventType": "lesson_start",
             "lessonSlug": "python-basics",
             "durationSeconds": 30,
         },

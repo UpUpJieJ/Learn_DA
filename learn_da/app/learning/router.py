@@ -5,6 +5,7 @@ from app.analytics.service import AnalyticsService
 from app.core import get_anonymous_visitor_id
 from app.core.content_loader import load_catalog
 from app.core.database.database import get_db
+from app.learner_state.service import LearnerStateService
 from app.utils.base_response import StdResp
 
 from .recommendation import RecommendationService
@@ -31,6 +32,7 @@ def get_recommendation_service(
     return RecommendationService(
         repository=LearningRepository(),
         analytics_service=AnalyticsService(db),
+        learner_state_service=LearnerStateService(db),
     )
 
 
@@ -121,24 +123,20 @@ async def get_example(
 @router.get("/recommendations", response_model=StdResp[RecommendationResponse])
 async def get_recommendations(
     visitor_id: str = Depends(get_anonymous_visitor_id),
-    completed_lessons: str = "",  # 逗号分隔的 slug 列表
     current_lesson: str | None = None,
     service: RecommendationService = Depends(get_recommendation_service),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     获取用户的下一步学习建议
 
-    Args:
-        visitor_id: 从 session cookie 获取
-        completed_lessons: 已完成课程列表（逗号分隔）
-        current_lesson: 当前正在学习的课程 slug（可选）
+    完成状态从服务器端 Learner State 读取，不再信任客户端自报。
     """
-    completed_list = [s.strip() for s in completed_lessons.split(",") if s.strip()]
-
     result = await service.get_recommendation(
         visitor_id=visitor_id,
-        completed_lessons=completed_list,
         current_lesson_slug=current_lesson,
     )
 
+    # 回补建议会写入冷却记录，提交以保证跨进程 / 重启后仍然生效。
+    await db.commit()
     return StdResp.success(data=result)

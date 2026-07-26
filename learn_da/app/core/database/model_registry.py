@@ -11,10 +11,16 @@ from app.analytics.models import (  # noqa: F401
     DailyStats,
     CodeSnapshot,
 )
+from app.learner_state.models import (  # noqa: F401
+    LearnerLessonProgress,
+    RecommendationCooldown,
+)
 
 __all__ = [
     "LearningRecord",
     "UserProfile",
     "DailyStats",
     "CodeSnapshot",
+    "LearnerLessonProgress",
+    "RecommendationCooldown",
 ]

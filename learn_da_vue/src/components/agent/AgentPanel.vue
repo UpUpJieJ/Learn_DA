@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onUnmounted } from "vue";
 import { useLocalStateStore } from "@/stores/localState";
+import { useLearnerStateStore } from "@/stores/learnerState";
 import { usePlaygroundStore } from "@/stores/playground";
 import {
     streamChatMessage,
@@ -32,6 +33,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const localStateStore = useLocalStateStore();
+const learnerStateStore = useLearnerStateStore();
 const playgroundStore = usePlaygroundStore();
 
 // 状态
@@ -344,10 +346,9 @@ async function sendQuickAction(action: QuickAction) {
 
         try {
             const response = await getRecommendationGuidance({
-                completedLessons: [...localStateStore.progress.completedLessons],
                 currentLesson:
                     agentContext.value.currentLesson ||
-                    localStateStore.progress.lastVisitedSlug ||
+                    learnerStateStore.lastVisitedSlug ||
                     undefined,
             });
             assistantMsg.content = response.exercisePrompt

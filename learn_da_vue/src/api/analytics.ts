@@ -9,7 +9,6 @@ import type {
     UserProfile,
     UserLessonStats,
     DailyTrendItem,
-    RecommendedLessonsResponse,
     CategoryProgress,
 } from "@/types/api";
 
@@ -62,11 +61,6 @@ export function fetchUserLessonStats() {
 /** 获取每日趋势 */
 export function fetchDailyTrend(days: number = 30) {
     return get<DailyTrendItem[]>("/analytics/daily-trend", { days });
-}
-
-/** 获取推荐课程 */
-export function fetchRecommendedLessons() {
-    return get<RecommendedLessonsResponse>("/analytics/recommended-lessons");
 }
 
 /** 获取分类进度 */

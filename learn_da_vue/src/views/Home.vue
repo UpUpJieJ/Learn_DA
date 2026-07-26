@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLocalStateStore } from '@/stores/localState'
+import { useLearnerStateStore } from '@/stores/learnerState'
 import { learningTracks, platformCopy } from '@/lib/learningTracks'
 import { fetchHomeStats } from '@/api/analytics'
 import { fetchCatalog, fetchCategoryStats, type CategoryStat } from '@/api/learning'
 import type { CatalogTrack, HomeStats, PlatformCatalog } from '@/types/api'
 
 const router = useRouter()
-const localStateStore = useLocalStateStore()
+const learnerStateStore = useLearnerStateStore()
 
 // ---- 动画控制 ----
 const heroVisible = ref(false)
@@ -134,7 +134,7 @@ const stats = computed(() => {
   ]
 })
 
-const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug)
+const lastVisitedSlug = computed(() => learnerStateStore.lastVisitedSlug)
 const hasLearningProgress = computed(() => !!lastVisitedSlug.value)
 
 // ---- 操作 ----

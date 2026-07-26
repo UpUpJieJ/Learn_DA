@@ -29,6 +29,10 @@ Thumbs.db
 *.env
 .env.local
 .env.*.local
+# 手工备份 / 副本（.env 备份含密钥、DB 备份含用户数据，一律禁止入库）
+*.bak
+.env.bak
+.env.*.bak
 
 # Logs
 logs/

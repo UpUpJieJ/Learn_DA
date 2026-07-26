@@ -12,6 +12,7 @@ from config.settings import settings
 
 if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
+    from app.learner_state.service import LearnerStateService
     from app.learning.repository import LearningRepository
 
 
@@ -166,9 +167,11 @@ class RecommendationService:
         self,
         repository: "LearningRepository | None" = None,
         analytics_service: "AnalyticsService | None" = None,
+        learner_state_service: "LearnerStateService | None" = None,
     ):
         self.repository = repository
         self.analytics_service = analytics_service
+        self.learner_state_service = learner_state_service
         self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
         self.AI_HELPS_THRESHOLD = settings.RECOMMENDATION_AI_HELPS_THRESHOLD
         self.SNAPSHOTS_THRESHOLD = settings.RECOMMENDATION_SNAPSHOTS_THRESHOLD
@@ -177,9 +180,6 @@ class RecommendationService:
             settings.RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS
         )
         self._lesson_metadata_cache: dict[str, LessonMetadata] | None = None
-        self._review_cooldowns: dict[str, str] = (
-            {}
-        )  # {visitor_id+lesson_slug: ISO timestamp}
 
     def _get_lesson_metadata(self) -> dict[str, LessonMetadata]:
         """获取课程元数据（带缓存）"""
@@ -273,20 +273,26 @@ class RecommendationService:
     async def get_recommendation(
         self,
         visitor_id: str,
-        completed_lessons: list[str],
+        completed_lessons: list[str] | None = None,
         current_lesson_slug: str | None = None,
     ) -> RecommendationResponse:
         """
         获取用户的下一步学习建议
 
-        Args:
-            visitor_id: 访客 ID
-            completed_lessons: 已完成课程列表
-            current_lesson_slug: 当前正在学习的课程（可选）
-
-        Returns:
-            建议响应（包含主要建议和备选建议）
+        完成状态由服务端 LearnerState 提供，不接受客户端自报：注入了
+        ``learner_state_service`` 时，传入的 ``completed_lessons`` 会被忽略。
+        该参数只为未注入 LearnerState 的单元测试保留显式输入能力。
         """
+        # 从 LearnerState 读取权威完成状态
+        if self.learner_state_service is not None:
+            completed_lessons = await self.learner_state_service.get_completed_lessons(
+                visitor_id
+            )
+        elif completed_lessons is None:
+            raise RuntimeError(
+                "completed_lessons is required when no LearnerStateService is injected"
+            )
+
         metadata_map = self._get_lesson_metadata()
 
         # 优先级 1: 回补建议（检测到学习困难时触发）
@@ -522,22 +528,12 @@ class RecommendationService:
         if current_lesson_slug not in metadata_map:
             return None
 
-        # 冷却检查：同一 visitor+lesson 在冷却期内不重复触发
-        cooldown_key = f"{visitor_id}::{current_lesson_slug}"
-        if cooldown_key in self._review_cooldowns:
-            from datetime import datetime, timezone
-
-            try:
-                last_trigger = datetime.fromisoformat(
-                    self._review_cooldowns[cooldown_key]
-                )
-                if last_trigger.tzinfo is None:
-                    last_trigger = last_trigger.replace(tzinfo=timezone.utc)
-                elapsed = (datetime.now(timezone.utc) - last_trigger).total_seconds()
-                if elapsed < self.REVIEW_COOLDOWN_SECONDS:
-                    return None
-            except (ValueError, TypeError):
-                pass  # 解析失败则忽略冷却
+        # 冷却检查：同一 visitor+lesson 在冷却期内不重复触发（持久化）
+        if self.learner_state_service is not None:
+            if await self.learner_state_service.is_in_cooldown(
+                visitor_id, current_lesson_slug
+            ):
+                return None
 
         # 获取当前课程的学习统计
         stats = await self.analytics_service.get_lesson_specific_stats(
@@ -576,10 +572,11 @@ class RecommendationService:
         if not needs_review:
             return None
 
-        # 记录冷却时间
-        from datetime import datetime, timezone
-
-        self._review_cooldowns[cooldown_key] = datetime.now(timezone.utc).isoformat()
+        # 记录冷却时间（持久化）
+        if self.learner_state_service is not None:
+            await self.learner_state_service.set_cooldown(
+                visitor_id, current_lesson_slug, self.REVIEW_COOLDOWN_SECONDS
+            )
 
         # 选择回补课程
         current_meta = metadata_map[current_lesson_slug]

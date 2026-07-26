@@ -11,13 +11,13 @@ import type {
     PlatformCatalog,
     RecommendationResponse,
 } from "@/types/api";
-import { useLocalStateStore } from "@/stores/localState";
+import { useLearnerStateStore } from "@/stores/learnerState";
 import { currentTrackKeys, learningTrackMeta } from "@/lib/learningTracks";
 import { getRecommendationContextLesson } from "@/lib/recommendation";
 
 const router = useRouter();
 const route = useRoute();
-const localStateStore = useLocalStateStore();
+const learnerStateStore = useLearnerStateStore();
 
 // =====================================================
 // 状态
@@ -117,7 +117,7 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
 
     try {
         const currentLesson = getRecommendationContextLesson({
-            lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
+            lastVisitedSlug: learnerStateStore.lastVisitedSlug,
         });
         const [lessonsData, statsData, catalogData, recommendationData] = await Promise.all([
             fetchLessons({
@@ -126,7 +126,6 @@ async function loadLessons(category: LessonCategory | "all" = activeCategory.val
             fetchCategoryStats(),
             fetchCatalog().catch(() => null),
             getRecommendations({
-                completedLessons: localStateStore.progress.completedLessons,
                 currentLesson,
             }).catch(() => null),
         ]);
@@ -185,7 +184,7 @@ const filteredLessons = computed(() => {
 const totalCount = computed(() => filteredLessons.value.length);
 const completedCount = computed(
     () =>
-        filteredLessons.value.filter((l) => localStateStore.isLessonCompleted(l.slug))
+        filteredLessons.value.filter((l) => learnerStateStore.isLessonCompleted(l.slug))
             .length,
 );
 
@@ -217,7 +216,7 @@ function normalizeTrackColor(color?: string): "blue" | "yellow" | "purple" | "em
 }
 
 // ---- 继续学习 ----
-const lastVisitedSlug = computed(() => localStateStore.progress.lastVisitedSlug);
+const lastVisitedSlug = computed(() => learnerStateStore.lastVisitedSlug);
 const lastVisitedTitle = computed(() => {
     if (!lastVisitedSlug.value) return null;
     const lesson = lessons.value.find((l) => l.slug === lastVisitedSlug.value);
@@ -229,7 +228,7 @@ const currentTrackLessons = computed(() => {
 });
 const currentTrackCompletedCount = computed(() => {
     return currentTrackLessons.value.filter((lesson) =>
-        localStateStore.isLessonCompleted(lesson.slug),
+        learnerStateStore.isLessonCompleted(lesson.slug),
     ).length;
 });
 const currentTrackProgressPercent = computed(() => {
@@ -247,7 +246,7 @@ const currentTrackContinueLesson = computed(() => {
     }
 
     const firstUnfinished = currentTrackLessons.value.find(
-        (lesson) => !localStateStore.isLessonCompleted(lesson.slug),
+        (lesson) => !learnerStateStore.isLessonCompleted(lesson.slug),
     );
     return firstUnfinished ?? currentTrackLessons.value[0] ?? null;
 });
@@ -314,7 +313,7 @@ watch(
 );
 
 watch(
-    () => localStateStore.progress.updatedAt,
+    () => learnerStateStore.completedLessons,
     () => {
         void loadLessons(activeCategory.value);
     },
@@ -578,7 +577,7 @@ function getRecommendationStyle(rec: any) {
                             class="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700"
                             @click="goToLesson(currentTrackContinueLesson.slug)"
                         >
-                            {{ localStateStore.isLessonCompleted(currentTrackContinueLesson.slug) ? "回顾这条路径" : "继续这条路径" }}
+                            {{ learnerStateStore.isLessonCompleted(currentTrackContinueLesson.slug) ? "回顾这条路径" : "继续这条路径" }}
                             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                             </svg>
@@ -829,10 +828,10 @@ function getRecommendationStyle(rec: any) {
                             {{ group.items.length }} 课
                         </span>
                         <span
-                            v-if="group.items.filter(l => localStateStore.isLessonCompleted(l.slug)).length > 0"
+                            v-if="group.items.filter(l => learnerStateStore.isLessonCompleted(l.slug)).length > 0"
                             class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-600 text-xs font-medium"
                         >
-                            已完成 {{ group.items.filter(l => localStateStore.isLessonCompleted(l.slug)).length }}/{{ group.items.length }}
+                            已完成 {{ group.items.filter(l => learnerStateStore.isLessonCompleted(l.slug)).length }}/{{ group.items.length }}
                         </span>
                     </div>
 
@@ -845,7 +844,7 @@ function getRecommendationStyle(rec: any) {
                             :key="lesson.slug"
                             :lesson="lesson"
                             :is-completed="
-                                localStateStore.isLessonCompleted(lesson.slug)
+                                learnerStateStore.isLessonCompleted(lesson.slug)
                             "
                             @click="goToLesson(lesson.slug)"
                         />
@@ -864,7 +863,7 @@ function getRecommendationStyle(rec: any) {
                     v-for="lesson in filteredLessons"
                     :key="lesson.slug"
                     :lesson="lesson"
-                    :is-completed="localStateStore.isLessonCompleted(lesson.slug)"
+                    :is-completed="learnerStateStore.isLessonCompleted(lesson.slug)"
                     @click="goToLesson(lesson.slug)"
                 />
             </div>

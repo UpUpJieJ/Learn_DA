@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { useLocalStateStore } from "@/stores/localState";
+import { useLearnerStateStore } from "@/stores/learnerState";
 import { getRecommendationContextLesson } from "@/lib/recommendation";
 import {
   fetchUserProfile,
   fetchUserLessonStats,
   fetchDailyTrend,
-  fetchRecommendedLessons,
   fetchCategoryProgress,
 } from "@/api/analytics";
 import { fetchCatalog, fetchLessons } from "@/api/learning";
@@ -16,36 +15,32 @@ import type {
   UserProfile,
   UserLessonStats,
   DailyTrendItem,
-  RecommendedLessonsResponse,
   CategoryProgress,
   RecommendationResponse,
   PlatformCatalog,
   LessonSummary,
 } from "@/types/api";
 import * as echarts from "echarts/core";
-import { LineChart, RadarChart } from "echarts/charts";
+import { LineChart } from "echarts/charts";
 import {
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
-  RadarComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 
 echarts.use([
   LineChart,
-  RadarChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
   GridComponent,
-  RadarComponent,
   CanvasRenderer,
 ]);
 
 const router = useRouter();
-const localStateStore = useLocalStateStore();
+const learnerStateStore = useLearnerStateStore();
 
 // =====================================================
 // 状态
@@ -57,7 +52,6 @@ const profile = ref<UserProfile | null>(null);
 const lessonStats = ref<UserLessonStats | null>(null);
 const lessons = ref<LessonSummary[]>([]);
 const dailyTrend = ref<DailyTrendItem[]>([]);
-const recommended = ref<RecommendedLessonsResponse | null>(null);
 const categoryProgress = ref<CategoryProgress | null>(null);
 const recommendation = ref<RecommendationResponse | null>(null);
 const catalog = ref<PlatformCatalog | null>(null);
@@ -77,16 +71,14 @@ async function loadAllData() {
   isLoading.value = true;
   try {
     const currentLesson = getRecommendationContextLesson({
-      lastVisitedSlug: localStateStore.progress.lastVisitedSlug,
+      lastVisitedSlug: learnerStateStore.lastVisitedSlug,
     });
     const results = await Promise.all([
       fetchUserProfile().catch(() => null),
       fetchUserLessonStats().catch(() => null),
       fetchDailyTrend(30).catch(() => null),
-      fetchRecommendedLessons().catch(() => null),
       fetchCategoryProgress().catch(() => null),
       getRecommendations({
-        completedLessons: localStateStore.progress.completedLessons,
         currentLesson,
       }).catch(() => null),
       fetchCatalog().catch(() => null),
@@ -95,11 +87,10 @@ async function loadAllData() {
     if (results[0]) profile.value = results[0];
     if (results[1]) lessonStats.value = results[1];
     if (results[2]) dailyTrend.value = results[2];
-    if (results[3]) recommended.value = results[3];
-    if (results[4]) categoryProgress.value = results[4];
-    if (results[5]) recommendation.value = results[5];
-    if (results[6]) catalog.value = results[6];
-    lessons.value = results[7] ?? [];
+    if (results[3]) categoryProgress.value = results[3];
+    if (results[4]) recommendation.value = results[4];
+    if (results[5]) catalog.value = results[5];
+    lessons.value = results[6] ?? [];
   } catch {
     // 静默处理
   } finally {
@@ -113,12 +104,7 @@ onMounted(loadAllData);
 // 格式化工具
 // =====================================================
 
-function formatMinutes(min: number): string {
-  if (min < 60) return `${min} 分钟`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m > 0 ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
-}
+// 阶段 1 §5.4：累计学习时长无可靠采集链路，相关 formatMinutes 已移除。
 
 // =====================================================
 // ECharts - 趋势折线图
@@ -152,57 +138,13 @@ function renderTrendChart() {
 
 // =====================================================
 // ECharts - 能力雷达图
+// 阶段 1 §5.4：能力分尚无可信生成逻辑，暂时隐藏雷达图。
 // =====================================================
-
-const radarChartRef = ref<HTMLElement | null>(null);
-let radarChart: echarts.ECharts | null = null;
-
-function renderRadarChart() {
-  if (!radarChartRef.value || !profile.value) return;
-
-  if (!radarChart) {
-    radarChart = echarts.init(radarChartRef.value);
-  }
-
-  radarChart.setOption({
-    radar: {
-      indicator: [
-        { name: "Polars", max: 100 },
-        { name: "DuckDB", max: 100 },
-        { name: "SQL", max: 100 },
-        { name: "数据处理", max: 100 },
-        { name: "API 熟练度", max: 100 },
-      ],
-    },
-    series: [
-      {
-        type: "radar",
-        data: [
-          {
-            value: [
-              profile.value.polarsScore,
-              profile.value.duckdbScore,
-              profile.value.sqlScore,
-              profile.value.dataProcessingScore,
-              profile.value.apiMasteryScore,
-            ],
-            name: "能力值",
-            areaStyle: { color: "rgba(59, 130, 246, 0.2)" },
-            lineStyle: { color: "#3b82f6" },
-            itemStyle: { color: "#3b82f6" },
-          },
-        ],
-      },
-    ],
-  });
-}
 
 // 切换 tab 时渲染对应图表
 watch(activeTab, (tab) => {
   if (tab === "trend") {
     setTimeout(renderTrendChart, 100);
-  } else if (tab === "ability") {
-    setTimeout(renderRadarChart, 100);
   }
 });
 
@@ -269,8 +211,8 @@ function categoryBarClass(color: string): string {
 }
 
 const completionRate = computed(() => {
-  if (!recommended.value || recommended.value.totalCount === 0) return 0;
-  return Math.round((recommended.value.completedCount / recommended.value.totalCount) * 100);
+  if (lessons.value.length === 0) return 0;
+  return Math.round((learnerStateStore.totalCompleted / lessons.value.length) * 100);
 });
 
 // =====================================================
@@ -381,9 +323,10 @@ function getRecommendationStyle(rec: any) {
           <!-- 统计卡片 -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div class="bg-white rounded-2xl border border-slate-100 p-5">
-              <div class="text-xs text-slate-400 mb-1">累计学习时长</div>
+              <!-- 阶段 1 §5.4：累计学习时长无可靠采集链路，改用 LearnerState 的已开始课程数 -->
+              <div class="text-xs text-slate-400 mb-1">已开始课程</div>
               <div class="text-2xl font-bold text-slate-800">
-                {{ formatMinutes(profile?.totalLearningMinutes ?? 0) }}
+                {{ learnerStateStore.progress?.totalStarted ?? 0 }}
               </div>
             </div>
             <div class="bg-white rounded-2xl border border-slate-100 p-5">
@@ -454,14 +397,14 @@ function getRecommendationStyle(rec: any) {
                 </div>
                 <div>
                   <div class="text-sm text-slate-600">
-                    已完成 <span class="font-bold text-slate-800">{{ recommended?.completedCount ?? 0 }}</span> / {{ recommended?.totalCount ?? 0 }} 课
+                    已完成 <span class="font-bold text-slate-800">{{ learnerStateStore.totalCompleted }}</span> / {{ lessons.length }} 课
                   </div>
                   <button
-                    v-if="recommended?.recommended"
+                    v-if="recommendation?.primary"
                     class="mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    @click="router.push(`/learn/${recommended.recommended.slug}`)"
+                    @click="router.push(`/learn/${recommendation.primary.targetSlug}`)"
                   >
-                    继续学习：{{ recommended.recommended.title }} →
+                    继续学习：{{ recommendation.primary.targetTitle }} →
                   </button>
                 </div>
               </div>
@@ -525,22 +468,6 @@ function getRecommendationStyle(rec: any) {
             </div>
           </div>
 
-          <!-- 推荐课程 (旧版，保留兼容) -->
-          <div v-else-if="recommended?.recommended" class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-6">
-            <div class="flex items-center justify-between">
-              <div>
-                <h3 class="text-sm font-semibold text-blue-700 mb-1">📌 推荐下一步</h3>
-                <p class="text-lg font-bold text-slate-800">{{ recommended.recommended.title }}</p>
-                <p class="text-sm text-slate-500 mt-1">{{ recommended.recommended.description }}</p>
-              </div>
-              <button
-                class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors shrink-0"
-                @click="router.push(`/learn/${recommended.recommended.slug}`)"
-              >
-                开始学习
-              </button>
-            </div>
-          </div>
         </div>
 
         <!-- ===================== 课程统计 ===================== -->
@@ -598,49 +525,33 @@ function getRecommendationStyle(rec: any) {
         </div>
 
         <!-- ===================== 能力雷达 ===================== -->
+        <!-- 阶段 1 §5.4：能力分尚无可信生成逻辑，暂时隐藏雷达图与分数列表，
+             只保留有真实数据的分类学习进度，避免展示长期为 0 的占位指标。 -->
         <div v-if="activeTab === 'ability'" class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- 雷达图 -->
-            <div class="bg-white rounded-2xl border border-slate-100 p-6">
-              <h3 class="text-sm font-semibold text-slate-700 mb-4">能力雷达图</h3>
-              <div ref="radarChartRef" class="w-full h-72" />
-            </div>
-
-            <!-- 分类进度 -->
-            <div class="bg-white rounded-2xl border border-slate-100 p-6">
-              <h3 class="text-sm font-semibold text-slate-700 mb-4">分类学习进度</h3>
-              <div class="space-y-5">
-                <div v-for="cat in categoryList" :key="cat.key">
-                  <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-sm text-slate-600">{{ cat.label }}</span>
-                    <span class="text-xs text-slate-400">
-                      完成 {{ cat.count }} / {{ cat.total }} 课
-                    </span>
-                  </div>
-                  <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      class="h-full rounded-full transition-all duration-500"
-                      :class="cat.barClass"
-                      :style="{ width: `${cat.percent}%` }"
-                    />
-                  </div>
+          <div class="bg-white rounded-2xl border border-slate-100 p-6">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">分类学习进度</h3>
+            <div class="space-y-5">
+              <div v-for="cat in categoryList" :key="cat.key">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-sm text-slate-600">{{ cat.label }}</span>
+                  <span class="text-xs text-slate-400">
+                    完成 {{ cat.count }} / {{ cat.total }} 课
+                  </span>
+                </div>
+                <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="cat.barClass"
+                    :style="{ width: `${cat.percent}%` }"
+                  />
                 </div>
               </div>
+            </div>
 
-              <!-- 能力分列表 -->
-              <div class="mt-6 pt-4 border-t border-slate-100 space-y-2">
-                <div v-for="score in [
-                  { label: 'Polars', value: profile?.polarsScore ?? 0 },
-                  { label: 'DuckDB', value: profile?.duckdbScore ?? 0 },
-                  { label: 'SQL', value: profile?.sqlScore ?? 0 },
-                  { label: '数据处理', value: profile?.dataProcessingScore ?? 0 },
-                  { label: 'API 熟练度', value: profile?.apiMasteryScore ?? 0 },
-                ]" :key="score.label"
-                  class="flex items-center justify-between text-sm"
-                >
-                  <span class="text-slate-500">{{ score.label }}</span>
-                  <span class="font-mono font-medium text-slate-700">{{ score.value.toFixed(1) }}</span>
-                </div>
+            <!-- 能力雷达暂未开放提示 -->
+            <div class="mt-6 pt-4 border-t border-slate-100">
+              <div class="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                🎯 能力雷达图暂未开放。能力分数需要基于可验证练习结果生成，将在后续阶段提供可信定义后启用。
               </div>
             </div>
           </div>

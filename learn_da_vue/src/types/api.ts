@@ -207,12 +207,6 @@ export interface LocalPreferences {
     autoSaveInterval: number;
 }
 
-export interface LearningProgress {
-    completedLessons: string[];
-    lastVisitedSlug: string | null;
-    updatedAt: number;
-}
-
 export interface PlaygroundDraft {
     code: string;
     language: "python" | "sql";
@@ -246,14 +240,22 @@ export type EventType =
     | "code_run"
     | "code_save"
     | "lesson_complete"
+    | "lesson_uncomplete"
     | "ai_help"
     | "lesson_start";
+
+/** 代码执行结果状态（仅 code_run 事件） */
+export type CodeRunStatus = "success" | "error" | "timeout" | "rejected";
 
 /** 事件上报请求 */
 export interface EventTrackRequest {
     eventType: EventType;
     lessonSlug?: string;
     durationSeconds?: number;
+    /** 幂等键（前端生成 UUID），相同 eventId 重放不重复写入 */
+    eventId?: string;
+    /** 执行结果（仅 code_run）：success / error / timeout / rejected */
+    status?: CodeRunStatus;
 }
 
 /** 事件上报响应 */
@@ -341,15 +343,35 @@ export interface DailyTrendItem {
     aiHelps: number;
 }
 
-/** 推荐课程响应 */
-export interface RecommendedLessonsResponse {
-    recommended: LessonSummary | null;
-    completedCount: number;
-    totalCount: number;
-}
-
 /** 分类进度 */
 export type CategoryProgress = Record<string, number>;
+
+// =====================================================
+// 阶段 1：统一学习事实 - Learner State
+// =====================================================
+
+/** 单课进度详情 */
+export interface LessonProgressDetail {
+    lessonSlug: string;
+    status: string; // started / completed / uncompleted
+    completedAt: string | null;
+    lastActivityAt: string | null;
+    attemptCount: number;
+    successCount: number;
+    errorCount: number;
+}
+
+/** 学习者完整进度投影 */
+export interface LearnerProgressSummary {
+    completedLessons: string[];
+    lastVisitedSlug: string | null;
+    lessonDetails: LessonProgressDetail[];
+    totalCompleted: number;
+    totalStarted: number;
+}
+
+// 状态变更没有专用响应体：完成 / 撤销 / 开始统一走 EventTrackRequest
+// 上报到 /analytics/track，由后端同事务联动 LearnerState 投影。
 
 // =====================================================
 // Phase 3: 学习建议系统

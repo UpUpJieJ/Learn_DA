@@ -5,16 +5,18 @@
 ## 当前状态
 
 - 2026-07-14 已完成全项目与 Agent 专项审查；当前成熟度判断为内部 Alpha，公开部署前应先完成安全执行、统一学习事实和工程门禁。
-- Phase 3 已于 2026-07-14 完成整体收口；统一结论见 [`phase3-completion-summary.md`](phase3-completion-summary.md)。
-- Phase 3 Round 1 已完成：建立学习建议服务、建议数据结构和课程元数据。
-- Phase 3 Round 2 已完成：把默认顺学建议接入 Dashboard、Learning、LessonDetail。
-- Phase 3 Round 3 已完成：补齐回补、分支、回流三类建议，并已补充核心自动化测试。
-- Phase 3 Round 4 已完成：在规则建议之上增加 Agent 引导层，可解释当前推荐并生成一个小练习。
-- 阶段 0 的“安全执行与交付门禁”设计已确认，详细实施计划已形成，等待选择执行方式。
+- Phase 3 Round 1-4 已完成（建议服务、接入页面、回补/分支/回流、Agent 引导层）。
+- 阶段 0 的“安全执行与交付门禁”已实施：独立 fail-closed Runner 服务、签名匿名 session cookie、Markdown 净化、快照治理与生产 HTTP 加固。Task 9（CI workflow、Mypy baseline 检查器、安全验收文档）尚未落地。
+- 阶段 1 的“统一学习事实”已实施：`learner_state` 深模块、事件枚举与幂等键、前端统一状态来源、推荐与 Agent 输入收口、一次性重算脚本，并适配阶段 0 的签名 session 身份模型。后端 150 项测试、Runner 17 项、前端 24 项测试通过，前端 type-check 与生产构建通过。
+- 阶段 1 复盘修复（2026-07-26）：补上 `.env` 漏配的 `learner_state` 模块开关（此前所有 learner-state 路由在真实环境不注册）、收口双写路径（`learner_state` 只保留读端点，状态变更统一走 `/analytics/track`）、补齐端点层契约测试，并首次实际验证阶段 1 迁移的升级 / 回滚与历史数据回填。
+
+## 写路径约定（阶段 1）
+
+学习状态的**唯一写入口**是 `POST /analytics/track`：`AnalyticsService.track_event` 在同一事务内写事件日志并联动 `LearnerStateService` 投影。`/learner-state/*` 只提供读接口（`GET /learner-state/progress`）。前端所有完成 / 撤销 / 开始都带 `eventId` 上报，离线重试复用同一 `eventId` 以保证幂等。
 
 ## 下一步
 
-Phase 3 不再新增任务。当前按“安全执行与交付门禁”实施计划推进阶段 0；完成安全验收后，再进入统一学习事实和简化学习主路径。
+阶段 0、1 已基本完成。Task 9（CI/mypy baseline/安全验收文档）仍需补齐以闭合阶段 0 的交付门禁。之后进入阶段 2（可验证练习闭环）或阶段 3（Agent 可靠性）。Agent 模块的链路整理已单独排期。
 
 ## 文档地图
 

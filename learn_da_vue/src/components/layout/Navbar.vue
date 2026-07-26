@@ -2,11 +2,13 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLocalStateStore } from '@/stores/localState'
+import { useLearnerStateStore } from '@/stores/learnerState'
 import { platformCopy } from '@/lib/learningTracks'
 
 const router = useRouter()
 const route = useRoute()
 const localStateStore = useLocalStateStore()
+const learnerStateStore = useLearnerStateStore()
 
 // =====================================================
 // 导航项配置
@@ -64,7 +66,7 @@ function isActive(item: (typeof navItems)[0]): boolean {
 // =====================================================
 
 const progressText = computed(() => {
-  const count = localStateStore.completedCount
+  const count = learnerStateStore.totalCompleted
   return count > 0 ? `已完成 ${count} 课` : null
 })
 </script>
@@ -212,7 +214,7 @@ const progressText = computed(() => {
          移动端底部导航提示条（仅在 md 以下显示）
     ============================================= -->
     <div
-      v-if="route.path.startsWith('/learn/') && localStateStore.progress.lastVisitedSlug"
+      v-if="route.path.startsWith('/learn/') && learnerStateStore.lastVisitedSlug"
       class="sm:hidden border-t border-slate-100 px-4 py-2 bg-slate-50 flex items-center justify-between text-xs text-slate-500"
     >
       <span class="flex items-center gap-1">

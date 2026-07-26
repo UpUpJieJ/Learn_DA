@@ -49,6 +49,29 @@ class FakeAnalyticsService:
         return self.incomplete_lessons
 
 
+class FakeLearnerStateService:
+    """内存版冷却管理，用于测试阶段 1 持久化冷却。"""
+
+    def __init__(self):
+        self._cooldowns: dict[str, datetime] = {}
+
+    async def is_in_cooldown(self, visitor_id: str, lesson_slug: str) -> bool:
+        key = f"{visitor_id}:{lesson_slug}"
+        until = self._cooldowns.get(key)
+        if until is None:
+            return False
+        return datetime.now(timezone.utc) < until
+
+    async def set_cooldown(
+        self, visitor_id: str, lesson_slug: str, seconds: int
+    ) -> None:
+        key = f"{visitor_id}:{lesson_slug}"
+        self._cooldowns[key] = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+
+    async def get_completed_lessons(self, visitor_id: str) -> list[str]:
+        return []
+
+
 def recommendation_lessons() -> list[dict]:
     return [
         {
@@ -84,9 +107,11 @@ async def test_review_recommendation_triggers_on_code_runs_and_cools_down():
             "current": {"codeRuns": 5, "aiHelps": 0, "completed": False},
         }
     )
+    learner_state = FakeLearnerStateService()
     service = RecommendationService(
         repository=FakeRepository(recommendation_lessons()),
         analytics_service=analytics,
+        learner_state_service=learner_state,
     )
 
     first = await service.get_recommendation(

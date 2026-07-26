@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
+import { useLearnerStateStore } from "@/stores/learnerState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
 import type { DataFrameCell, ExampleSummary, LessonDetail, CodeSnapshotItem } from "@/types/api";
@@ -13,6 +14,7 @@ const route = useRoute();
 const router = useRouter();
 const playgroundStore = usePlaygroundStore();
 const localStateStore = useLocalStateStore();
+const learnerStateStore = useLearnerStateStore();
 
 // =====================================================
 // 课程文档（左侧面板）
@@ -50,7 +52,7 @@ async function loadLesson(slug: string) {
   isLoadingLesson.value = true;
   try {
     currentLesson.value = await fetchLessonBySlug(slug);
-    localStateStore.setLastVisitedLesson(slug);
+    learnerStateStore.recordLessonStart(slug);
     loadDraftForContext(currentLesson.value.codeExample);
   } catch (err) {
     console.error("加载课程失败:", err);
@@ -506,14 +508,18 @@ function stopAutoSave() {
 }
 
 async function runCode() {
-  // 上报代码运行事件
+  const response = await playgroundStore.runCode();
+  activeResultTab.value = response?.resultType === "dataframe" ? "dataframe" : "output";
+
+  // 阶段 1：执行完成后上报 code_run 事件，附带真实执行状态
+  // 不再在点击执行时提前记录，避免把成功运行误计为失败
+  const execStatus = playgroundStore.lastResponse?.status ?? "success";
   trackEvent({
     eventType: "code_run",
     lessonSlug: props.slug || undefined,
+    eventId: crypto.randomUUID(),
+    status: execStatus === "success" ? "success" : "error",
   }).catch(() => {});
-
-  const response = await playgroundStore.runCode();
-  activeResultTab.value = response?.resultType === "dataframe" ? "dataframe" : "output";
 }
 
 function syncLineNumberScroll(e: Event) {

@@ -22,16 +22,38 @@ class AnalyticsRepository:
         event_type: str,
         lesson_slug: str | None = None,
         duration_seconds: int | None = None,
-    ) -> LearningRecord:
+        event_id: str | None = None,
+        status: str | None = None,
+        metadata_json: str | None = None,
+    ) -> tuple[LearningRecord, bool]:
+        """写入一条学习事件。
+
+        返回 ``(record, created)``：当 ``event_id`` 命中已有记录时 ``created=False``，
+        调用方可据此跳过画像/每日统计等副作用，保证相同事件重放不改变最终投影。
+        """
+        # 幂等检查：如果提供了 event_id，先查询是否已存在
+        if event_id:
+            existing_stmt = select(LearningRecord).where(
+                LearningRecord.event_id == event_id,
+                LearningRecord.is_deleted == False,  # noqa: E712
+            )
+            existing_result = await self.db.execute(existing_stmt)
+            existing = existing_result.scalar_one_or_none()
+            if existing is not None:
+                return existing, False  # 幂等：已存在则跳过，不重复写入
+
         record = LearningRecord(
             visitor_id=visitor_id,
             event_type=event_type,
             lesson_slug=lesson_slug,
             duration_seconds=duration_seconds,
+            event_id=event_id,
+            status=status,
+            metadata_json=metadata_json,
         )
         self.db.add(record)
         await self.db.flush()
-        return record
+        return record, True
 
     # ── 用户画像 ─────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 """
-Phase 1: 学习行为追踪数据表
+阶段 1（重构）：学习行为追踪数据表
 - learning_records: 学习行为记录（代码保存、运行、完成课程等）
 - user_profiles: 用户画像（累计学习时长、连续天数、能力雷达图等）
 - daily_stats: 每日全局统计（平台级 DAU / 代码运行次数等）
@@ -17,12 +17,12 @@ class LearningRecord(BaseModel):
     __tablename__ = "learning_records"
 
     visitor_id = Column(
-        String(64), nullable=False, index=True, comment="访客 ID（前端生成）"
+        String(64), nullable=False, index=True, comment="访客 ID（session 注入）"
     )
     event_type = Column(
         String(32),
         nullable=False,
-        comment="事件类型: code_run / code_save / lesson_complete / ai_help / lesson_start",
+        comment="事件类型: lesson_start / lesson_complete / lesson_uncomplete / code_run / code_save / ai_help",
     )
     lesson_slug = Column(
         String(128), nullable=True, comment="关联课程 slug，全局事件可为空"
@@ -30,6 +30,19 @@ class LearningRecord(BaseModel):
     duration_seconds = Column(
         Integer, nullable=True, comment="持续时长（秒），如课程阅读时长"
     )
+    event_id = Column(
+        String(64),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="幂等键（前端生成 UUID）",
+    )
+    status = Column(
+        String(20),
+        nullable=True,
+        comment="执行结果: success / error / timeout / rejected（仅 code_run 类事件）",
+    )
+    metadata_json = Column(Text, nullable=True, comment="可选扩展元数据 JSON")
 
     __table_args__ = (
         Index("idx_lr_visitor_event", "visitor_id", "event_type"),

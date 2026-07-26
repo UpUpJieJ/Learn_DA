@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from openai import AsyncOpenAI
@@ -5,6 +6,10 @@ from openai import AsyncOpenAI
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
 from config.settings import settings
+
+if TYPE_CHECKING:
+    from app.analytics.service import AnalyticsService
+    from app.learner_state.service import LearnerStateService
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
 from .prompts import (
@@ -37,11 +42,15 @@ class AgentService:
         knowledge_retriever: KnowledgeRetriever | None = None,
         router: AgentRouter | None = None,
         recommendation_service: RecommendationService | None = None,
+        learner_state_service: "LearnerStateService | None" = None,
+        analytics_service: "AnalyticsService | None" = None,
     ) -> None:
         self.model = settings.effective_llm_model
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
         self.recommendation_service = recommendation_service
+        self.learner_state_service = learner_state_service
+        self.analytics_service = analytics_service
 
     def extract_user_message(self, payload: AgentChatRequest) -> str:
         if payload.message:
@@ -180,9 +189,16 @@ class AgentService:
                 repository=LearningRepository()
             )
 
+        # 从 LearnerState 读取权威完成状态，不再依赖前端传入
+        completed_lessons = payload.completed_lessons
+        if self.learner_state_service is not None:
+            completed_lessons = await self.learner_state_service.get_completed_lessons(
+                visitor_id
+            )
+
         response = await self.recommendation_service.get_recommendation(
             visitor_id=visitor_id,
-            completed_lessons=payload.completed_lessons,
+            completed_lessons=completed_lessons,
             current_lesson_slug=payload.current_lesson,
         )
         recommendation = response.primary

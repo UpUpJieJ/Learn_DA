@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from "vue-router";
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import Navbar from "@/components/layout/Navbar.vue";
+import { useLearnerStateStore } from "@/stores/learnerState";
 
 const route = useRoute();
 const isPlayground = computed(() => route.path.startsWith("/playground"));
+
+// 阶段 1：启动时从服务器同步学习进度（统一学习事实）
+const learnerStateStore = useLearnerStateStore();
+onMounted(() => {
+    learnerStateStore.syncFromServer();
+});
 </script>
 
 <template>

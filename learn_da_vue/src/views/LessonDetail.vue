@@ -2,10 +2,10 @@
 import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
-import { trackEvent, saveCodeSnapshot } from "@/api/analytics";
+import { saveCodeSnapshot } from "@/api/analytics";
 import { getRecommendations } from "@/api/recommendation";
 import type { LessonDetail, LessonDifficulty, RecommendationResponse } from "@/types/api";
-import { useLocalStateStore } from "@/stores/localState";
+import { useLearnerStateStore } from "@/stores/learnerState";
 import { usePlaygroundStore } from "@/stores/playground";
 import { renderMarkdown } from "@/lib/markdown";
 
@@ -22,7 +22,7 @@ const props = defineProps<{
 // =====================================================
 
 const router = useRouter();
-const localStateStore = useLocalStateStore();
+const learnerStateStore = useLearnerStateStore();
 const playgroundStore = usePlaygroundStore();
 
 // =====================================================
@@ -86,20 +86,15 @@ async function loadLesson(slug: string) {
         const [lessonData, recommendationData] = await Promise.all([
             fetchLessonBySlug(slug),
             getRecommendations({
-                completedLessons: localStateStore.progress.completedLessons,
                 currentLesson: slug,
             }).catch(() => null),
         ]);
 
         lesson.value = lessonData;
         recommendation.value = recommendationData;
-        localStateStore.setLastVisitedLesson(slug);
-
-        // 上报课程开始学习事件
-        trackEvent({
-            eventType: "lesson_start",
-            lessonSlug: slug,
-        }).catch(() => {});
+        // 阶段 1：唯一的 lesson_start 上报点。store 内部走 /analytics/track，
+        // 后端在同一事务内联动 LearnerState 投影。
+        learnerStateStore.recordLessonStart(slug);
 
         // 等 DOM 渲染后提取目录
         await nextTick();
@@ -115,7 +110,6 @@ async function loadLesson(slug: string) {
 
 async function refreshRecommendation(slug: string) {
     recommendation.value = await getRecommendations({
-        completedLessons: localStateStore.progress.completedLessons,
         currentLesson: slug,
     }).catch(() => null);
 }
@@ -175,28 +169,26 @@ function setupScrollSpy() {
 // =====================================================
 
 const isCompleted = computed(() =>
-    lesson.value ? localStateStore.isLessonCompleted(lesson.value.slug) : false,
+    lesson.value ? learnerStateStore.isLessonCompleted(lesson.value.slug) : false,
 );
 
 // ---- 完成动画控制 ----
 const showCompletionAnim = ref(false);
 
-function toggleCompleted() {
+async function toggleCompleted() {
     if (!lesson.value) return;
     const lessonSlug = lesson.value.slug;
-    const wasCompleted = localStateStore.isLessonCompleted(lessonSlug);
-    localStateStore.toggleLessonCompleted(lessonSlug);
-    void refreshRecommendation(lessonSlug);
+    const wasCompleted = learnerStateStore.isLessonCompleted(lessonSlug);
 
-    // 标记为完成时播放庆祝动画 + 上报事件
-    if (!wasCompleted) {
+    // store 内部通过 /analytics/track 上报事件，后端同事务联动 LearnerState 投影
+    if (wasCompleted) {
+        await learnerStateStore.uncompleteLesson(lessonSlug);
+    } else {
+        await learnerStateStore.completeLesson(lessonSlug);
         showCompletionAnim.value = true;
         setTimeout(() => (showCompletionAnim.value = false), 2000);
-        trackEvent({
-            eventType: "lesson_complete",
-            lessonSlug,
-        }).catch(() => {});
     }
+    void refreshRecommendation(lessonSlug);
 }
 
 // =====================================================
@@ -224,10 +216,7 @@ async function saveLessonSnapshot() {
             language: "python",
             description: `课程示例起点：${lesson.value.title}`,
         });
-        trackEvent({
-            eventType: "code_save",
-            lessonSlug: lesson.value.slug,
-        }).catch(() => {});
+        // code_save 事件由后端 save_snapshot 同事务记录，前端不再重复上报
         snapshotSaved.value = true;
         setTimeout(() => {
             snapshotSaved.value = false;

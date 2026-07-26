@@ -138,7 +138,6 @@ export async function explainCode(payload: ExplainCodeRequest): Promise<ExplainC
 }
 
 export async function getRecommendationGuidance(payload: {
-  completedLessons: string[]
   currentLesson?: string
 }): Promise<RecommendationGuidanceResponse> {
   return post<RecommendationGuidanceResponse>('/agent/recommendation-guidance', payload)

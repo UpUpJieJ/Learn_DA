@@ -3,13 +3,12 @@ import type { RecommendationResponse } from "@/types/api";
 
 /**
  * 获取用户的下一步学习建议
+ * 完成状态由服务器端 Learner State 提供，不再需要客户端传入
  */
 export async function getRecommendations(params: {
-  completedLessons: string[]; // slug 列表
-  currentLesson?: string; // 当前课程 slug
+  currentLesson?: string;
 }): Promise<RecommendationResponse> {
   return get<RecommendationResponse>("/learning/recommendations", {
-    completed_lessons: params.completedLessons.join(","),
     current_lesson: params.currentLesson,
   });
 }
