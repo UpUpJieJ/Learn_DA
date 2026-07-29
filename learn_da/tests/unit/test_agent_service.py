@@ -4,11 +4,8 @@ from app.agent.prompts import (
     SYSTEM_PROMPT,
     build_chat_messages,
     build_context_block,
-    build_explain_messages,
-    build_fix_messages,
 )
 from app.agent.routing import AgentRoute, AgentRouter
-from app.agent.results import parse_structured_result
 from app.agent.tools import AGENT_TOOLS, get_agent_tool
 from app.agent.knowledge import (
     EmbeddingConfig,
@@ -16,14 +13,17 @@ from app.agent.knowledge import (
     KnowledgeRetriever,
     build_knowledge_block,
 )
-from app.agent.schemas import (
-    AgentChatRequest,
-    AgentContext,
-    ExplainCodeRequest,
-    FixCodeRequest,
-    FixCodeResponse,
-)
+from app.agent.schemas import AgentChatRequest, AgentContext
+from app.agent.llm_client import LLMResult
 from app.agent.service import AgentService
+
+
+def llm_ok(content: str) -> LLMResult:
+    return LLMResult(content=content, error_reason=None, latency_ms=0)
+
+
+LLM_UNAVAILABLE = LLMResult(
+    content=None, error_reason="no_api_key", latency_ms=0)
 
 
 class FakeKnowledgeRetriever:
@@ -44,22 +44,6 @@ class FakeRouter:
     def resolve(self, message: str) -> AgentRoute:
         self.messages.append(message)
         return self.route
-
-
-def test_fix_code_response_serializes_optional_verification():
-    """verification is always None now (user confirms via playground)."""
-    response = FixCodeResponse(
-        fixed_code="print('ok')",
-        explanation="修复完成",
-        model="test-model",
-        used_fallback=False,
-        verification=None,
-    )
-
-    body = response.model_dump(mode="json", by_alias=True)
-
-    assert body["fixedCode"] == "print('ok')"
-    assert body["verification"] is None
 
 
 def test_context_block_includes_lesson_output_and_error():
@@ -113,7 +97,7 @@ def test_router_recognizes_general_python_example_requests():
     assert route.reason == "用户希望获得课程相关示例或代码"
 
 
-def test_tool_registry_contains_format_and_fallback_for_each_tool():
+def test_tool_registry_contains_fallback_for_each_tool():
     expected_tools = {
         "generate_example_code",
         "generate_exercise",
@@ -127,7 +111,6 @@ def test_tool_registry_contains_format_and_fallback_for_each_tool():
     for tool_name in expected_tools:
         tool = get_agent_tool(tool_name)
         assert tool.name == tool_name
-        assert "必须按以下格式回复" in tool.response_format
         assert tool.fallback_content
 
 
@@ -154,87 +137,16 @@ def test_agent_fallbacks_are_general_learning_friendly():
 
 
 @pytest.mark.unit
-async def test_explain_code_fallback_is_general_learning_friendly(monkeypatch):
-    service = AgentService(knowledge_retriever=FakeKnowledgeRetriever([]))
-
-    async def fake_ask_llm(messages):
-        return None
-
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
-
-    result = await service.explain_code(ExplainCodeRequest(code="print('ok')"))
-
-    assert result.used_fallback is True
-    assert "Polars 或 DuckDB API" not in result.explanation
-    assert "Polars LazyFrame" not in result.explanation
-    assert "当前课程" in result.explanation
-
-
-def test_parse_structured_result_extracts_sections_and_code_blocks():
-    content = (
-        "问题原因：\n"
-        "变量 df 尚未定义。\n\n"
-        "修复方式：\n"
-        "先创建 DataFrame，再执行筛选。\n\n"
-        "修复代码：\n"
-        "```python\n"
-        "print('ok')\n"
-        "```\n\n"
-        "验证建议：\n"
-        "运行后应看到 ok。"
-    )
-
-    result = parse_structured_result("fix_code", content)
-
-    assert result.kind == "fix_code"
-    assert [section.title for section in result.sections] == [
-        "问题原因",
-        "修复方式",
-        "修复代码",
-        "验证建议",
-    ]
-    assert result.sections[0].content == "变量 df 尚未定义。"
-    assert result.code_blocks[0].language == "python"
-    assert result.code_blocks[0].code == "print('ok')"
-
-
-def test_explain_prompt_requires_stable_sections():
-    messages = build_explain_messages("print('ok')")
-    content = messages[-1]["content"]
-
-    assert "必须按以下格式回复" in content
-    assert "结论：" in content
-    assert "关键步骤：" in content
-    assert "容易混淆：" in content
-    assert "建议你试试：" in content
-
-
-def test_fix_prompt_requires_stable_sections_and_code_block():
-    messages = build_fix_messages("print(df)", "NameError")
-    content = messages[-1]["content"]
-
-    assert "必须按以下格式回复" in content
-    assert "问题原因：" in content
-    assert "修复方式：" in content
-    assert "修复代码：" in content
-    assert "```python" in content
-    assert "验证建议：" in content
-
-
-def test_chat_prompt_uses_exercise_format_instruction():
+def test_chat_prompt_has_no_format_template():
     messages = build_chat_messages(
         user_message="根据本课生成一个练习",
         history=[],
         context=None,
         max_turns=3,
-        tool_name="generate_exercise",
     )
     content = messages[-1]["content"]
 
-    assert "练习目标：" in content
-    assert "任务：" in content
-    assert "提示：" in content
-    assert "完成后检查：" in content
+    assert content == "根据本课生成一个练习"
 
 
 def test_chat_prompt_for_exercise_preserves_hint_first_instruction():
@@ -243,9 +155,9 @@ def test_chat_prompt_for_exercise_preserves_hint_first_instruction():
         history=[],
         context=AgentContext(currentLesson="polars-basics"),
         max_turns=3,
-        tool_name="generate_exercise",
     )
-    system_messages = [message["content"] for message in messages if message["role"] == "system"]
+    system_messages = [message["content"]
+                       for message in messages if message["role"] == "system"]
 
     assert any("不要直接给最终答案" in content for content in system_messages)
 
@@ -295,10 +207,14 @@ def test_knowledge_block_uses_stable_format():
 
 
 def test_embedding_config_requires_key_url_and_model():
-    assert EmbeddingConfig(api_key=None, base_url="https://example.test", model="m").enabled is False
-    assert EmbeddingConfig(api_key="key", base_url=None, model="m").enabled is False
-    assert EmbeddingConfig(api_key="key", base_url="https://example.test", model=None).enabled is False
-    assert EmbeddingConfig(api_key="key", base_url="https://example.test", model="m").enabled is True
+    assert EmbeddingConfig(
+        api_key=None, base_url="https://example.test", model="m").enabled is False
+    assert EmbeddingConfig(api_key="key", base_url=None,
+                           model="m").enabled is False
+    assert EmbeddingConfig(
+        api_key="key", base_url="https://example.test", model=None).enabled is False
+    assert EmbeddingConfig(
+        api_key="key", base_url="https://example.test", model="m").enabled is True
 
 
 @pytest.mark.unit
@@ -318,18 +234,16 @@ async def test_chat_injects_retrieved_knowledge(monkeypatch):
     service = AgentService(knowledge_retriever=retriever)
     captured_messages = []
 
-    async def fake_ask_llm(messages):
+    async def fake_complete(messages):
         captured_messages.extend(messages)
-        return "简短回答：\nLazyFrame 需要 collect()。\n\n下一步建议：\n运行一次 collect()。"
+        return llm_ok(
+            "简短回答：\nLazyFrame 需要 collect()。\n\n下一步建议：\n运行一次 collect()。"
+        )
 
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
+    monkeypatch.setattr(service, "_complete", fake_complete)
 
     result = await service.chat(AgentChatRequest(message="为什么 LazyFrame 不执行？"))
 
-    assert result.route is not None
-    assert result.route.tool_name == "general_chat"
-    assert result.structured_result is not None
-    assert result.structured_result.kind == "general_chat"
     assert retriever.queries
     assert any("相关知识点：" in message["content"] for message in captured_messages)
 
@@ -349,113 +263,43 @@ async def test_chat_uses_injected_router_decision(monkeypatch):
         router=router,
     )
 
-    async def fake_ask_llm(messages):
-        return None
+    async def fake_complete(messages):
+        return LLM_UNAVAILABLE
 
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
+    monkeypatch.setattr(service, "_complete", fake_complete)
 
     result = await service.chat(AgentChatRequest(message="接下来怎么学"))
 
     assert router.messages == ["接下来怎么学"]
-    assert result.tool_name == "suggest_next_step"
-    assert result.route is not None
-    assert result.route.confidence == 0.91
-    assert result.structured_result is not None
-    assert result.structured_result.sections[0].title == "当前状态"
     assert "当前状态：" in result.content
 
 
 @pytest.mark.unit
-async def test_fix_code_response_includes_structured_result(monkeypatch):
-    service = AgentService(
-        knowledge_retriever=FakeKnowledgeRetriever([]),
-    )
-
-    async def fake_ask_llm(messages):
-        return (
-            "问题原因：\n变量未定义。\n\n"
-            "修复方式：\n改为打印固定文本。\n\n"
-            "修复代码：\n```python\nprint('ok')\n```\n\n"
-            "验证建议：\n运行后看到 ok。"
-        )
-
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
-
-    result = await service.fix_code(
-        FixCodeRequest(code="print(df)", errorMessage="NameError")
-    )
-
-    assert result.structured_result is not None
-    assert result.structured_result.kind == "fix_code"
-    assert result.structured_result.code_blocks[0].code == "print('ok')"
-
-
-@pytest.mark.unit
-async def test_explain_code_response_includes_structured_result(monkeypatch):
+async def test_chat_fallback_exposes_error_reason(monkeypatch):
+    """Task 2.2: 降级时 fallback_reason 必须透出 LLM 错误分类。"""
     service = AgentService(knowledge_retriever=FakeKnowledgeRetriever([]))
 
-    async def fake_ask_llm(messages):
-        return (
-            "结论：\n这段代码打印 ok。\n\n"
-            "关键步骤：\n1. 调用 print。\n\n"
-            "容易混淆：\nprint 会直接输出。\n\n"
-            "建议你试试：\n改成别的文本。"
-        )
+    async def fake_complete(messages):
+        return LLMResult(content=None, error_reason="rate_limited", latency_ms=3)
 
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
+    monkeypatch.setattr(service, "_complete", fake_complete)
 
-    result = await service.explain_code(ExplainCodeRequest(code="print('ok')"))
+    result = await service.chat(AgentChatRequest(message="解释一下表达式"))
 
-    assert result.structured_result is not None
-    assert result.structured_result.kind == "explain_code"
-    assert result.structured_result.sections[0].title == "结论"
+    assert result.used_fallback is True
+    assert result.fallback_reason == "rate_limited"
 
 
 @pytest.mark.unit
-async def test_fix_code_never_executes_code(monkeypatch):
-    """Agent fix must never execute code — user must confirm via playground."""
-    from unittest.mock import AsyncMock
+async def test_chat_success_has_no_fallback_reason(monkeypatch):
+    service = AgentService(knowledge_retriever=FakeKnowledgeRetriever([]))
 
-    exploding_sandbox = AsyncMock()
-    exploding_sandbox.execute = AsyncMock(side_effect=AssertionError("sandbox must not be called"))
+    async def fake_complete(messages):
+        return llm_ok("这是回答")
 
-    service = AgentService(
-        knowledge_retriever=FakeKnowledgeRetriever([]),
-    )
+    monkeypatch.setattr(service, "_complete", fake_complete)
 
-    async def fake_ask_llm(messages):
-        return "修复代码：\n```python\nprint('ok')\n```"
-
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
-
-    result = await service.fix_code(
-        FixCodeRequest(code="print(df)", errorMessage="NameError")
-    )
-
-    assert result.fixed_code == "print('ok')"
-    assert result.verification is None
-    # sandbox_service should not even exist as an attribute
-    assert not hasattr(service, "sandbox_service")
-
-
-@pytest.mark.unit
-async def test_fix_code_marks_verification_false_when_sandbox_errors(monkeypatch):
-    """Legacy test: verification is always None now (user confirms via playground)."""
-    service = AgentService(
-        knowledge_retriever=FakeKnowledgeRetriever([]),
-    )
-
-    async def fake_ask_llm(messages):
-        return "修复建议：\n```python\nprint(df)\n```"
-
-    monkeypatch.setattr(service, "_ask_llm", fake_ask_llm)
-
-    result = await service.fix_code(
-        FixCodeRequest(
-            code="print(df)",
-            errorMessage="NameError: name 'df' is not defined",
-        )
-    )
+    result = await service.chat(AgentChatRequest(message="解释一下表达式"))
 
     assert result.used_fallback is False
-    assert result.verification is None
+    assert result.fallback_reason is None

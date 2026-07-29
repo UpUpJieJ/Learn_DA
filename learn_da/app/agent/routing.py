@@ -12,6 +12,13 @@ class AgentRoute:
 
 
 class AgentRouter:
+    """关键词意图路由。
+
+    阶段 ④ 后职责变更：仅在 FC 降级路径（AGENT_FC_ENABLED 关闭或无 key）
+    使用；FC 开启时意图由模型通过工具调用自主判断，不再经过本路由。
+    基线准确率见 docs/agent-eval-baseline-2026-07.md（43.9%）。
+    """
+
     rules: tuple[tuple[ToolName, tuple[str, ...], float, str], ...] = (
         (
             "fix_code",

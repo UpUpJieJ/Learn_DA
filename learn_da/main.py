@@ -26,6 +26,26 @@ async def lifespan(app: FastAPI):
     http_client = httpx.AsyncClient()
     app.state.runner_client = RunnerClient(http_client)
 
+    # Agent 知识检索器 — 课程 Markdown 只在启动时加载一次，全部请求共享；
+    # embedding 向量经 EmbeddingCache 按内容哈希持久化，重启后不重复嵌入。
+    # LLM client 同为进程级单例：连接池全请求复用，shutdown 时统一关闭。
+    app.state.agent_llm_client = None
+    if "agent" in settings.enabled_app_modules:
+        from app.agent.embedding_cache import EmbeddingCache
+        from app.agent.knowledge import KnowledgeRetriever
+
+        app.state.knowledge_retriever = KnowledgeRetriever(
+            embedding_cache=EmbeddingCache()
+        )
+
+        if settings.effective_llm_api_key:
+            from openai import AsyncOpenAI
+
+            app.state.agent_llm_client = AsyncOpenAI(
+                api_key=settings.effective_llm_api_key,
+                base_url=settings.effective_llm_base_url,
+            )
+
     try:
         if settings.REDIS_ENABLED:
             from app.core.redis import AsyncRedisClient
@@ -39,6 +59,9 @@ async def lifespan(app: FastAPI):
     yield
 
     await app.state.runner_client.close()
+
+    if app.state.agent_llm_client is not None:
+        await app.state.agent_llm_client.close()
 
     if settings.REDIS_ENABLED:
         from app.core.redis import redis_pool_manager
@@ -140,7 +163,8 @@ async def readiness(
         checks["database"] = f"unhealthy: {exc}"
 
     # Runner
-    runner_client: RunnerClient | None = getattr(app.state, "runner_client", None)
+    runner_client: RunnerClient | None = getattr(
+        app.state, "runner_client", None)
     if runner_client and await runner_client.is_ready():
         checks["runner"] = "healthy"
     else:

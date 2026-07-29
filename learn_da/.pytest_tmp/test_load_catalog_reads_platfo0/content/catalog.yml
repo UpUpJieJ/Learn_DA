@@ -1,0 +1,11 @@
+platform:
+  name: LearnHub
+  title: General Learning
+topics:
+  - key: programming
+    label: Programming
+tracks:
+  - key: python-basics
+    topic: programming
+    label: Python Basics
+    start_lesson: python-functions

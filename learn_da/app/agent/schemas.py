@@ -32,7 +32,8 @@ class AgentContext(BaseModel):
         alias="currentCode",
         max_length=12000,
     )
-    last_error: str | None = Field(default=None, alias="lastError", max_length=4000)
+    last_error: str | None = Field(
+        default=None, alias="lastError", max_length=4000)
     current_lesson: str | None = Field(
         default=None,
         alias="currentLesson",
@@ -64,92 +65,14 @@ class AgentChatPayload(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str | None = Field(default=None, min_length=1, max_length=4000)
     payload: AgentChatPayload | None = None
-    history: list[AgentChatMessage] = Field(default_factory=list, max_length=20)
+    history: list[AgentChatMessage] = Field(
+        default_factory=list, max_length=20)
     context: AgentContext | None = None
 
 
 class AgentChatData(BaseResponseModel):
-    tool_name: ToolName
     content: str
     model: str
     used_fallback: bool = False
-    route: "AgentRouteInfo | None" = None
-    structured_result: "AgentStructuredResult | None" = None
-
-
-class RecommendationGuidanceRequest(BaseResponseModel):
-    completed_lessons: list[str] = Field(
-        default_factory=list,
-        alias="completedLessons",
-    )
-    current_lesson: str | None = Field(None, alias="currentLesson")
-
-
-class RecommendationGuidanceResponse(BaseResponseModel):
-    recommendation: LearningRecommendation | None = None
-    explanation: str
-    exercise_prompt: str | None = None
-    model: str
-    used_fallback: bool = False
-
-
-class AgentRouteInfo(BaseResponseModel):
-    tool_name: ToolName
-    confidence: float
-    reason: str
-    matched_keyword: str | None = None
-
-
-class AgentResultSection(BaseResponseModel):
-    title: str
-    content: str
-
-
-class AgentCodeBlock(BaseResponseModel):
-    language: str | None = None
-    code: str
-
-
-class AgentStructuredResult(BaseResponseModel):
-    kind: ToolName
-    sections: list[AgentResultSection] = []
-    code_blocks: list[AgentCodeBlock] = []
-
-
-class FixCodeRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=12000)
-    error_message: str = Field(alias="errorMessage", min_length=1, max_length=4000)
-    context: AgentContext | None = None
-
-
-class AgentRunVerification(BaseResponseModel):
-    verified: bool
-    request_id: UUID
-    execution_id: UUID
-    status: ExecutionStatus
-    stdout: str = ""
-    stderr: str = ""
-    error_type: str | None = None
-    duration_ms: int = Field(ge=0)
-    output_truncated: bool = False
-
-
-class FixCodeResponse(BaseResponseModel):
-    fixed_code: str
-    explanation: str
-    model: str
-    used_fallback: bool = False
-    verification: AgentRunVerification | None = None
-    structured_result: AgentStructuredResult | None = None
-
-
-class ExplainCodeRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=12000)
-    context: AgentContext | None = None
-
-
-class ExplainCodeResponse(BaseResponseModel):
-    explanation: str
-    model: str
-    used_fallback: bool = False
-    structured_result: AgentStructuredResult | None = None
+    # used_fallback=True 时的降级原因（LLMErrorReason），成功时为 None
+    fallback_reason: str | None = None

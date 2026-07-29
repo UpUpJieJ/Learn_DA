@@ -19,6 +19,22 @@ MODEL_REGISTRY = model_registry
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+@pytest.fixture(autouse=True)
+def offline_llm_guard(monkeypatch):
+    """测试全局离线护栏：清空 .env 中的 LLM/embedding 真实 key。
+
+    FC 默认开启后，若不清空 key，API 测试会真实调用外部 LLM（慢、计费、
+    非确定）。需要 key 的测试在自身内部用 monkeypatch 显式设置即可覆盖。
+    """
+    from config.settings import settings
+
+    monkeypatch.setattr(settings, "LLM_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_API_KEY", None)
+    monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_BASE_URL", None)
+    monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_MODEL", None)
+
+
 @pytest.fixture(scope="session")
 def anyio_backend():
     return "asyncio"

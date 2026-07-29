@@ -5,6 +5,7 @@
 能够感知到表结构变化。
 """
 
+from app.agent.models import AgentEmbedding  # noqa: F401
 from app.analytics.models import (  # noqa: F401
     LearningRecord,
     UserProfile,
@@ -17,6 +18,7 @@ from app.learner_state.models import (  # noqa: F401
 )
 
 __all__ = [
+    "AgentEmbedding",
     "LearningRecord",
     "UserProfile",
     "DailyStats",

@@ -1,0 +1,148 @@
+# Agent 意图路由评测集（阶段 ③ Task 3.1）
+#
+# expected_intent 是"人类语义判断"的期望意图（六选一，对应 ToolName），
+# 不是当前关键词路由的实际输出——两者的差距正是基线要量化的对象。
+#
+# tags 说明：
+#   natural_zh     自然中文完整问句
+#   conflict       意图冲突（消息同时含多个意图的关键词）
+#   broad_keyword  宽泛词误导（含"代码/函数/python"等宽泛词但意图不同）
+#   english        纯英文
+#   mixed          中英混合
+#   chitchat       无明确意图闲聊
+
+cases:
+  # ---- fix_code ----
+  - message: "这段代码运行时报 NameError，帮我看看怎么改"
+    expected_intent: fix_code
+    tags: [natural_zh]
+  - message: "帮我修复代码之前先解释一下为什么报错"
+    expected_intent: fix_code
+    tags: [natural_zh, conflict]
+  - message: "My code throws a TypeError, can you help me fix it?"
+    expected_intent: fix_code
+    tags: [english]
+  - message: "帮我 debug 一下这段 SQL"
+    expected_intent: fix_code
+    tags: [mixed]
+  - message: "为什么我的 join 结果多出了很多行"
+    expected_intent: fix_code
+    tags: [natural_zh]
+  - message: "运行结果和课程里展示的不一样，是我哪里错了吗"
+    expected_intent: fix_code
+    tags: [natural_zh]
+  - message: "帮我看看这段 polars 代码为什么算出来的结果不对"
+    expected_intent: fix_code
+    tags: [natural_zh, broad_keyword]
+
+  # ---- explain_code ----
+  - message: "帮我讲讲这段代码每一行都在做什么"
+    expected_intent: explain_code
+    tags: [natural_zh, broad_keyword]
+  - message: "解释这个错误是什么意思"
+    expected_intent: explain_code
+    tags: [natural_zh, conflict]
+  - message: "这道练习的报错我看不懂"
+    expected_intent: explain_code
+    tags: [natural_zh, conflict]
+  - message: "这个列表推导式是什么意思"
+    expected_intent: explain_code
+    tags: [natural_zh, broad_keyword]
+  - message: "Can you explain what this expression does?"
+    expected_intent: explain_code
+    tags: [english]
+  - message: "这个 error message 是啥意思"
+    expected_intent: explain_code
+    tags: [mixed, conflict]
+  - message: "lazyframe 和 dataframe 有什么区别"
+    expected_intent: explain_code
+    tags: [natural_zh]
+  - message: "什么是窗口函数"
+    expected_intent: explain_code
+    tags: [natural_zh, broad_keyword, conflict]
+  - message: "这个 with_columns 的用法帮我解释下"
+    expected_intent: explain_code
+    tags: [mixed]
+
+  # ---- generate_exercise ----
+  - message: "给我出几道关于分组聚合的练习题"
+    expected_intent: generate_exercise
+    tags: [natural_zh]
+  - message: "出一道关于常见报错排查的练习题"
+    expected_intent: generate_exercise
+    tags: [natural_zh, conflict]
+  - message: "Give me an exercise about window functions"
+    expected_intent: generate_exercise
+    tags: [english]
+  - message: "有没有 quiz 可以练一练"
+    expected_intent: generate_exercise
+    tags: [mixed]
+  - message: "根据本课内容出三道选择题"
+    expected_intent: generate_exercise
+    tags: [natural_zh]
+
+  # ---- suggest_next_step ----
+  - message: "我学完了 Polars 基础，接下来应该学什么"
+    expected_intent: suggest_next_step
+    tags: [natural_zh]
+  - message: "下一步的练习应该做什么"
+    expected_intent: suggest_next_step
+    tags: [natural_zh, conflict]
+  - message: "What should I learn next after finishing DuckDB basics?"
+    expected_intent: suggest_next_step
+    tags: [english, broad_keyword]
+  - message: "我现在应该复习哪一课"
+    expected_intent: suggest_next_step
+    tags: [natural_zh]
+  - message: "给我推荐下一课"
+    expected_intent: suggest_next_step
+    tags: [natural_zh]
+  - message: "Let's continue with the next lesson"
+    expected_intent: suggest_next_step
+    tags: [english]
+
+  # ---- generate_example_code ----
+  - message: "给我一个用 with_columns 新增一列的示例代码"
+    expected_intent: generate_example_code
+    tags: [natural_zh]
+  - message: "Show me an example of groupby in Polars"
+    expected_intent: generate_example_code
+    tags: [english]
+  - message: "写一个读取 csv 并筛选行的例子"
+    expected_intent: generate_example_code
+    tags: [natural_zh]
+  - message: "帮我把这段 pandas 代码改成 polars 写法"
+    expected_intent: generate_example_code
+    tags: [mixed]
+  - message: "这个函数怎么写"
+    expected_intent: generate_example_code
+    tags: [natural_zh, broad_keyword]
+
+  # ---- general_chat ----
+  - message: "你好呀，今天学习状态一般"
+    expected_intent: general_chat
+    tags: [chitchat]
+  - message: "我的代码越写越乱，有什么整理思路吗"
+    expected_intent: general_chat
+    tags: [natural_zh, broad_keyword]
+  - message: "python 好难啊，我有点想放弃了"
+    expected_intent: general_chat
+    tags: [chitchat, broad_keyword]
+  - message: "循环学到一半，明天继续"
+    expected_intent: general_chat
+    tags: [chitchat, broad_keyword]
+  - message: "示例数据从哪里下载"
+    expected_intent: general_chat
+    tags: [natural_zh, broad_keyword]
+  - message: "你好"
+    expected_intent: general_chat
+    tags: [chitchat]
+  - message: "谢谢你，今天先到这里"
+    expected_intent: general_chat
+    tags: [chitchat]
+  - message: "你是谁做的"
+    expected_intent: general_chat
+    tags: [chitchat]
+  - message: "今天天气不错"
+    expected_intent: general_chat
+    tags: [chitchat]

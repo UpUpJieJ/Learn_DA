@@ -145,37 +145,6 @@ export interface AgentContext {
     stderr?: string;
 }
 
-export type AgentToolName =
-    | "generate_example_code"
-    | "generate_exercise"
-    | "fix_code"
-    | "explain_code"
-    | "suggest_next_step"
-    | "general_chat";
-
-export interface AgentRouteInfo {
-    toolName: AgentToolName;
-    confidence: number;
-    reason: string;
-    matchedKeyword?: string | null;
-}
-
-export interface AgentResultSection {
-    title: string;
-    content: string;
-}
-
-export interface AgentCodeBlock {
-    language?: string | null;
-    code: string;
-}
-
-export interface AgentStructuredResult {
-    kind: AgentToolName;
-    sections: AgentResultSection[];
-    codeBlocks: AgentCodeBlock[];
-}
-
 /** Agent 对话请求 */
 export interface AgentChatRequest {
     message: string;
@@ -188,11 +157,8 @@ export interface AgentChatResponse {
     reply: string;
     suggestedCode?: string;
     references?: string[];
-    toolName?: AgentToolName;
     model?: string;
     usedFallback?: boolean;
-    route?: AgentRouteInfo | null;
-    structuredResult?: AgentStructuredResult | null;
 }
 
 // =====================================================
@@ -413,13 +379,4 @@ export interface LearningRecommendation {
 export interface RecommendationResponse {
     primary: LearningRecommendation | null;
     alternatives: LearningRecommendation[];
-}
-
-/** Agent 对当前规则建议的解释与练习引导 */
-export interface RecommendationGuidanceResponse {
-    recommendation: LearningRecommendation | null;
-    explanation: string;
-    exercisePrompt?: string | null;
-    model: string;
-    usedFallback: boolean;
 }

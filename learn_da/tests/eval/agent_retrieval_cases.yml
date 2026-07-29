@@ -1,0 +1,70 @@
+# Agent 知识检索评测集（阶段 ③ Task 3.1）
+#
+# 期望值为 hit@3：expected_lesson_slug 出现在检索结果前 3 条的课程 slug 中即算命中。
+# 基线 runner 只跑关键词检索（不调用外部 embedding，纯离线）。
+#
+# tags 说明：
+#   sentence_zh     自然中文整句（当前关键词检索的已知弱项）
+#   single_keyword  单关键词
+#   cross_lesson    跨课程概念
+
+cases:
+  # ---- 自然中文整句 ----
+  - query: "我想给数据里每一行按条件打上不同的标签"
+    expected_lesson_slug: polars-expressions
+    tags: [sentence_zh]
+  - query: "怎么把两张表按用户编号拼在一起"
+    expected_lesson_slug: polars-joins
+    tags: [sentence_zh]
+  - query: "如何统计每个分组的平均值和数量"
+    expected_lesson_slug: polars-groupby
+    tags: [sentence_zh]
+  - query: "数据里有缺失值和重复行要怎么处理"
+    expected_lesson_slug: polars-cleaning
+    tags: [sentence_zh]
+  - query: "为什么惰性执行要最后调用 collect 才出结果"
+    expected_lesson_slug: polars-lazy-pipeline
+    tags: [sentence_zh]
+  - query: "用 SQL 给每个用户的订单按时间排名"
+    expected_lesson_slug: duckdb-window-functions
+    tags: [sentence_zh]
+  - query: "SQL 查询太长了想拆成几个步骤来写"
+    expected_lesson_slug: duckdb-joins-cte
+    tags: [sentence_zh]
+  - query: "怎么定义一个带默认参数的函数"
+    expected_lesson_slug: python-functions
+    tags: [sentence_zh]
+  - query: "字典和列表应该什么时候用哪个"
+    expected_lesson_slug: python-collections
+    tags: [sentence_zh]
+
+  # ---- 单关键词 ----
+  - query: "with_columns"
+    expected_lesson_slug: polars-expressions
+    tags: [single_keyword]
+  - query: "窗口函数"
+    expected_lesson_slug: duckdb-window-functions
+    tags: [single_keyword]
+  - query: "LazyFrame"
+    expected_lesson_slug: polars-lazy-pipeline
+    tags: [single_keyword]
+  - query: "group_by"
+    expected_lesson_slug: polars-groupby
+    tags: [single_keyword]
+  - query: "CTE"
+    expected_lesson_slug: duckdb-joins-cte
+    tags: [single_keyword]
+
+  # ---- 跨课程概念 ----
+  - query: "polars 处理完的数据怎么交给 duckdb 用 SQL 查询"
+    expected_lesson_slug: polars-duckdb-workflow
+    tags: [cross_lesson, sentence_zh]
+  - query: "SELECT 和 WHERE 的基本用法"
+    expected_lesson_slug: duckdb-sql-foundations
+    tags: [cross_lesson]
+  - query: "怎么用 duckdb 直接查询 dataframe"
+    expected_lesson_slug: duckdb-analytics
+    tags: [cross_lesson]
+  - query: "第一次使用 polars 怎么创建 DataFrame 并选择列"
+    expected_lesson_slug: polars-basics
+    tags: [cross_lesson, sentence_zh]

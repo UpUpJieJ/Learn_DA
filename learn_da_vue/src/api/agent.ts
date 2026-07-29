@@ -3,11 +3,7 @@ import type {
   AgentChatRequest,
   AgentChatResponse,
   AgentContext,
-  AgentRouteInfo,
-  AgentStructuredResult,
-  AgentToolName,
   ChatMessage,
-  RecommendationGuidanceResponse,
 } from '@/types/api'
 
 // =====================================================
@@ -24,11 +20,8 @@ interface StreamChatOptions {
 
 interface AgentChatBackendData {
   content?: string
-  toolName?: AgentToolName
   model?: string
   usedFallback?: boolean
-  route?: AgentRouteInfo | null
-  structuredResult?: AgentStructuredResult | null
 }
 
 /**
@@ -51,11 +44,8 @@ export async function streamChatMessage(
     }
     return {
       reply,
-      toolName: data.toolName,
       model: data.model,
       usedFallback: data.usedFallback,
-      route: data.route,
-      structuredResult: data.structuredResult,
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error('请求失败')
@@ -79,66 +69,4 @@ export function buildChatHistory(
     .filter((m) => m.id !== currentMessageId)
     .map(({ role, content }) => ({ role, content }))
   return filtered.slice(-20)
-}
-
-// =====================================================
-// 快捷操作
-// =====================================================
-
-export interface FixCodeRequest {
-  code: string
-  errorMessage: string
-  context?: AgentContext
-}
-
-export interface FixCodeVerification {
-  verified: boolean
-  status: string
-  stdout: string
-  stderr: string
-  executionTime: number
-  usedSandbox: string
-}
-
-export interface FixCodeResponse {
-  fixedCode: string
-  explanation: string
-  model?: string
-  usedFallback?: boolean
-  verification?: FixCodeVerification | null
-  structuredResult?: AgentStructuredResult | null
-}
-
-/**
- * 修复代码错误
- * POST /agent/fix
- */
-export async function fixCode(payload: FixCodeRequest): Promise<FixCodeResponse> {
-  return post<FixCodeResponse>('/agent/fix', payload)
-}
-
-export interface ExplainCodeRequest {
-  code: string
-  context?: AgentContext
-}
-
-export interface ExplainCodeResponse {
-  explanation: string
-  model?: string
-  usedFallback?: boolean
-  structuredResult?: AgentStructuredResult | null
-}
-
-/**
- * 解释代码含义
- * POST /agent/explain
- */
-export async function explainCode(payload: ExplainCodeRequest): Promise<ExplainCodeResponse> {
-  return post<ExplainCodeResponse>('/agent/explain', payload)
-}
-
-export async function getRecommendationGuidance(payload: {
-  currentLesson?: string
-}): Promise<RecommendationGuidanceResponse> {
-  return post<RecommendationGuidanceResponse>('/agent/recommendation-guidance', payload)
 }

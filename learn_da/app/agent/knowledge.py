@@ -8,6 +8,8 @@ from openai import AsyncOpenAI
 from app.core.content_loader import load_all_lessons
 from config.settings import settings
 
+from .embedding_cache import EmbeddingCache, embedding_content_hash
+
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
@@ -65,16 +67,21 @@ class KnowledgeRetriever:
         lessons: list[dict] | None = None,
         embedding_config: EmbeddingConfig | None = None,
         embedding_client: OpenAICompatibleEmbeddingClient | None = None,
+        embedding_cache: EmbeddingCache | None = None,
     ) -> None:
         self.lessons = lessons if lessons is not None else load_all_lessons()
         self.chunks = self._build_chunks(self.lessons)
         self.embedding_config = embedding_config or EmbeddingConfig.from_settings()
         self.embedding_client = embedding_client
+        # 可选持久化缓存：命中时相同内容的 chunk 跨进程/重启不重复嵌入
+        self.embedding_cache = embedding_cache
         if self.embedding_client is None and self.embedding_config.enabled:
             self.embedding_client = OpenAICompatibleEmbeddingClient(
                 self.embedding_config
             )
         self._chunk_embeddings: list[list[float]] | None = None
+        # 最近一次 search 的检索方式（embedding/keyword/none），仅供日志观测
+        self.last_retrieval_mode: str = "none"
 
     async def search(
         self,
@@ -82,16 +89,21 @@ class KnowledgeRetriever:
         current_lesson: str | None = None,
         limit: int = 3,
     ) -> list[KnowledgeChunk]:
+        self.last_retrieval_mode = "none"
         if not query.strip() or not self.chunks:
             return []
 
         if self.embedding_client is not None and self.embedding_config.enabled:
             try:
-                return await self._embedding_search(query, current_lesson, limit)
+                results = await self._embedding_search(query, current_lesson, limit)
+                self.last_retrieval_mode = "embedding"
+                return results
             except Exception:
                 pass
 
-        return self._keyword_search(query, current_lesson, limit)
+        results = self._keyword_search(query, current_lesson, limit)
+        self.last_retrieval_mode = "keyword" if results else "none"
+        return results
 
     async def _embedding_search(
         self,
@@ -100,9 +112,8 @@ class KnowledgeRetriever:
         limit: int,
     ) -> list[KnowledgeChunk]:
         assert self.embedding_client is not None
-        texts = [self._chunk_text_for_embedding(chunk) for chunk in self.chunks]
         if self._chunk_embeddings is None:
-            self._chunk_embeddings = await self.embedding_client.embed_texts(texts)
+            self._chunk_embeddings = await self._load_or_build_chunk_embeddings()
         query_embedding = (await self.embedding_client.embed_texts([query]))[0]
 
         ranked = []
@@ -112,6 +123,34 @@ class KnowledgeRetriever:
                 score += 0.08
             ranked.append(self._with_score(chunk, score))
         return sorted(ranked, key=lambda chunk: chunk.score, reverse=True)[:limit]
+
+    async def _load_or_build_chunk_embeddings(self) -> list[list[float]]:
+        """惰性构建 chunk 向量：优先命中持久化缓存，只嵌入 miss 的 chunk。"""
+        assert self.embedding_client is not None
+        texts = [self._chunk_text_for_embedding(
+            chunk) for chunk in self.chunks]
+        if self.embedding_cache is None:
+            return await self.embedding_client.embed_texts(texts)
+
+        model = self.embedding_config.model or ""
+        hashes = [embedding_content_hash(model, text) for text in texts]
+        cached = await self.embedding_cache.get_many(model, hashes)
+        missing = [
+            (chunk_hash, text)
+            for chunk_hash, text in zip(hashes, texts)
+            if chunk_hash not in cached
+        ]
+        if missing:
+            vectors = await self.embedding_client.embed_texts(
+                [text for _, text in missing]
+            )
+            fresh = {
+                chunk_hash: vector
+                for (chunk_hash, _), vector in zip(missing, vectors)
+            }
+            await self.embedding_cache.set_many(model, fresh)
+            cached.update(fresh)
+        return [cached[chunk_hash] for chunk_hash in hashes]
 
     def _keyword_search(
         self,
@@ -168,18 +207,21 @@ class KnowledgeRetriever:
             heading_match = re.match(r"^(#{2,6})\s+(.+)$", line)
             if heading_match:
                 if current_lines:
-                    sections.append((current_heading, "\n".join(current_lines).strip()))
+                    sections.append(
+                        (current_heading, "\n".join(current_lines).strip()))
                 current_heading = heading_match.group(2).strip()
                 current_lines = []
                 continue
             current_lines.append(line)
 
         if current_lines:
-            sections.append((current_heading, "\n".join(current_lines).strip()))
+            sections.append(
+                (current_heading, "\n".join(current_lines).strip()))
         return sections or [("课程概览", content.strip())]
 
     def _tokenize(self, text: str) -> list[str]:
-        terms = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*|[\u4e00-\u9fff]+", text.lower())
+        terms = re.findall(
+            r"[a-zA-Z_][a-zA-Z0-9_]*|[\u4e00-\u9fff]+", text.lower())
         return [term for term in terms if len(term) > 1]
 
     def _chunk_text_for_embedding(self, chunk: KnowledgeChunk) -> str:

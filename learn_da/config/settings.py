@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     LLM_BASE_URL: Optional[str] = None
     LLM_MODEL: Optional[str] = None
     LLM_ENABLE_THINKING: bool = False
+    LLM_TIMEOUT_SECONDS: float = 60
+    LLM_MAX_RETRIES: int = 1
+    # 阶段 ④：受限 Function Calling（只读工具 + 硬步数上限）。
+    # 2026-07-28 FC 评测 90.2% ≥ 关键词基线 43.9%，默认开启；无 key 时仍确定性降级
+    AGENT_FC_ENABLED: bool = True
+    AGENT_FC_MAX_TOOL_ROUNDS: int = 2
     LEARN_DA_EMBEDDING_PROVIDER: str = "openai_compatible"
     LEARN_DA_EMBEDDING_API_KEY: Optional[str] = None
     LEARN_DA_EMBEDDING_BASE_URL: Optional[str] = None
@@ -137,9 +143,11 @@ class Settings(BaseSettings):
         if not self.RUNNER_URL.strip():
             raise ValueError("RUNNER_URL is required in production")
         if len(self.RUNNER_TOKEN) < 32:
-            raise ValueError("RUNNER_TOKEN must contain at least 32 characters")
+            raise ValueError(
+                "RUNNER_TOKEN must contain at least 32 characters")
         if len(self.SESSION_SECRET) < 32:
-            raise ValueError("SESSION_SECRET must contain at least 32 characters")
+            raise ValueError(
+                "SESSION_SECRET must contain at least 32 characters")
         return self
 
 

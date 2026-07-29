@@ -159,19 +159,23 @@ export async function request<T = unknown>(
     config: AxiosRequestConfig,
 ): Promise<T> {
     const key = buildRequestKey(config);
-    const controller = new AbortController();
+    // 调用方传入 signal 时必须原样透传，AgentPanel 的“停止生成”依赖它中断
+    // 实际 Axios 请求；仅未提供时才为请求去重创建内部 controller。
+    const controller = config.signal ? undefined : new AbortController();
 
     cancelRequest(key);
-    pendingRequests.set(key, controller);
+    if (controller) {
+        pendingRequests.set(key, controller);
+    }
 
     try {
         const response = await instance.request<ApiResponse<T>>({
             ...config,
-            signal: controller.signal,
+            signal: config.signal ?? controller?.signal,
         });
         return response.data.data as T;
     } finally {
-        if (pendingRequests.get(key) === controller) {
+        if (controller && pendingRequests.get(key) === controller) {
             pendingRequests.delete(key);
         }
     }

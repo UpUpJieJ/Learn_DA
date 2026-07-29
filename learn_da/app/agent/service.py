@@ -3,8 +3,9 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
-from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
+from app.learning.recommendation import RecommendationService
+from app.utils import log
 from config.settings import settings
 
 if TYPE_CHECKING:
@@ -12,27 +13,11 @@ if TYPE_CHECKING:
     from app.learner_state.service import LearnerStateService
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
-from .prompts import (
-    build_chat_messages,
-    build_explain_messages,
-    build_fix_messages,
-    build_recommendation_guidance_messages,
-)
-from .results import parse_structured_result
+from .fc_tools import FC_TOOLS, FCToolExecutor
+from .llm_client import LLMClient, LLMResult
+from .prompts import build_chat_messages, build_fc_chat_messages
 from .routing import AgentRouter
-from .schemas import (
-    AgentChatData,
-    AgentChatRequest,
-    AgentRouteInfo,
-    AgentRunVerification,
-    ExplainCodeRequest,
-    ExplainCodeResponse,
-    FixCodeRequest,
-    FixCodeResponse,
-    RecommendationGuidanceRequest,
-    RecommendationGuidanceResponse,
-    ToolName,
-)
+from .schemas import AgentChatData, AgentChatRequest, AgentContext, ToolName
 from .tools import get_agent_tool
 
 
@@ -44,13 +29,18 @@ class AgentService:
         recommendation_service: RecommendationService | None = None,
         learner_state_service: "LearnerStateService | None" = None,
         analytics_service: "AnalyticsService | None" = None,
+        llm_client: AsyncOpenAI | None = None,
     ) -> None:
         self.model = settings.effective_llm_model
+        # 运行时由 router 依赖注入 lifespan 共享的 retriever（避免每请求重建）；
+        # 默认自建仅供单测直接构造 AgentService 时使用。
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
         self.recommendation_service = recommendation_service
         self.learner_state_service = learner_state_service
         self.analytics_service = analytics_service
+        # lifespan 共享的 LLM client；未注入时 _complete 自建临时 client 并负责关闭
+        self.llm_client = llm_client
 
     def extract_user_message(self, payload: AgentChatRequest) -> str:
         if payload.message:
@@ -66,7 +56,7 @@ class AgentService:
         user_message = self.extract_user_message(payload)
         route = self.router.resolve(user_message)
         tool_name = route.tool_name
-        knowledge_block = await self._retrieve_knowledge(
+        knowledge_block, knowledge_hits = await self._retrieve_knowledge(
             query=user_message,
             current_lesson=payload.context.current_lesson if payload.context else None,
         )
@@ -75,197 +65,214 @@ class AgentService:
             history=payload.history,
             context=payload.context,
             max_turns=settings.OPENAI_MAX_TURNS,
-            tool_name=tool_name,
         )
         messages = self._inject_knowledge(messages, knowledge_block)
-        content = await self._ask_llm(messages)
-        if content:
+        result = await self._complete(messages)
+        # 单次请求的路由/检索/LLM 指标通过 request_id 与 [llm] 日志串联
+        log.info(
+            "[agent] chat route={} confidence={} retrieval_mode={} "
+            "knowledge_hits={} used_fallback={} fallback_reason={}",
+            tool_name,
+            route.confidence,
+            getattr(self.knowledge_retriever,
+                    "last_retrieval_mode", "unknown"),
+            knowledge_hits,
+            result.content is None,
+            result.error_reason or "-",
+        )
+        if result.content:
             return AgentChatData(
-                tool_name=tool_name,
-                content=content,
+                content=result.content,
                 model=self.model,
                 used_fallback=False,
-                route=AgentRouteInfo.model_validate(route.__dict__),
-                structured_result=parse_structured_result(tool_name, content),
             )
         fallback_content = get_agent_tool(tool_name).fallback_content
         return AgentChatData(
-            tool_name=tool_name,
             content=fallback_content,
             model=self.model,
             used_fallback=True,
-            route=AgentRouteInfo.model_validate(route.__dict__),
-            structured_result=parse_structured_result(tool_name, fallback_content),
+            fallback_reason=result.error_reason,
         )
 
-    async def fix_code(self, payload: FixCodeRequest) -> FixCodeResponse:
-        knowledge_block = await self._retrieve_knowledge(
-            query=f"{payload.error_message}\n{payload.code}",
-            current_lesson=payload.context.current_lesson if payload.context else None,
-        )
-        content = await self._ask_llm(
-            self._inject_knowledge(
-                build_fix_messages(
-                    payload.code, payload.error_message, payload.context
-                ),
-                knowledge_block,
-            )
-        )
-        if content:
-            fixed_code = self._extract_code_block(content) or payload.code
-            return FixCodeResponse(
-                fixed_code=fixed_code,
-                explanation=content,
-                model=self.model,
-                used_fallback=False,
-                structured_result=parse_structured_result("fix_code", content),
-            )
-        fallback_explanation = (
-            "问题原因：\n"
-            "我暂时无法连接模型。根据错误信息看，代码可能引用了尚未定义的变量或对象。\n\n"
-            "修复方式：\n"
-            "请先确认变量已经创建，再运行后续语句；如果变量来自上一段代码，需要把创建过程也放进当前代码。\n\n"
-            "修复代码：\n"
-            "```python\n"
-            f"{payload.code}\n"
-            "```\n\n"
-            "验证建议：\n"
-            "重新运行后，确认不再出现 NameError、ColumnNotFoundError 或类似的上下文缺失错误。"
-        )
-        return FixCodeResponse(
-            fixed_code=payload.code,
-            explanation=fallback_explanation,
-            model=self.model,
-            used_fallback=True,
-            structured_result=parse_structured_result("fix_code", fallback_explanation),
-        )
-
-    async def explain_code(self, payload: ExplainCodeRequest) -> ExplainCodeResponse:
-        knowledge_block = await self._retrieve_knowledge(
-            query=payload.code,
-            current_lesson=payload.context.current_lesson if payload.context else None,
-        )
-        content = await self._ask_llm(
-            self._inject_knowledge(
-                build_explain_messages(payload.code, payload.context),
-                knowledge_block,
-            )
-        )
-        if content:
-            return ExplainCodeResponse(
-                explanation=content,
-                model=self.model,
-                used_fallback=False,
-                structured_result=parse_structured_result("explain_code", content),
-            )
-        fallback_explanation = (
-            "结论：\n"
-            "我暂时无法连接模型。这段代码会按顺序执行 Python 语句，可以先结合当前课程判断每一行的输入、处理和输出。\n\n"
-            "关键步骤：\n"
-            "1. 先看变量、函数或数据对象是如何创建的。\n"
-            "2. 再看关键语句如何处理这些值。\n"
-            "3. 最后看 print、return 或其他输出如何体现运行结果。\n\n"
-            "容易混淆：\n"
-            "代码是逐行运行的，如果某个变量来自前面的步骤，需要确保创建过程也在当前 Playground 代码里。\n\n"
-            "建议你试试：\n"
-            "把其中一个输入值或函数参数改掉，再观察输出或报错如何变化。"
-        )
-        return ExplainCodeResponse(
-            explanation=fallback_explanation,
-            model=self.model,
-            used_fallback=True,
-            structured_result=parse_structured_result(
-                "explain_code", fallback_explanation
-            ),
-        )
-
-    async def recommendation_guidance(
+    async def chat_with_tools(
         self,
-        payload: RecommendationGuidanceRequest,
+        payload: AgentChatRequest,
         visitor_id: str,
-    ) -> RecommendationGuidanceResponse:
+    ) -> AgentChatData:
+        """受限 Function Calling 编排循环（阶段 ④ Task 4.1）。
+
+        硬约束：最多 AGENT_FC_MAX_TOOL_ROUNDS 轮工具调用，超限后强制
+        tool_choice="none" 要求直接回答；非法工具参数只给一次重试机会，
+        二次失败走确定性 fallback。单次请求最多 max_rounds+1 次 LLM 调用。
+        """
+        user_message = self.extract_user_message(payload)
+        current_lesson = (
+            payload.context.current_lesson if payload.context else None
+        )
         if self.recommendation_service is None:
             self.recommendation_service = RecommendationService(
-                repository=LearningRepository()
+                repository=LearningRepository(),
+                learner_state_service=self.learner_state_service,
             )
-
-        # 从 LearnerState 读取权威完成状态，不再依赖前端传入
-        completed_lessons = payload.completed_lessons
-        if self.learner_state_service is not None:
-            completed_lessons = await self.learner_state_service.get_completed_lessons(
-                visitor_id
-            )
-
-        response = await self.recommendation_service.get_recommendation(
+        executor = FCToolExecutor(
+            knowledge_retriever=self.knowledge_retriever,
             visitor_id=visitor_id,
-            completed_lessons=completed_lessons,
-            current_lesson_slug=payload.current_lesson,
+            learner_state_service=self.learner_state_service,
+            recommendation_service=self.recommendation_service,
+            current_lesson=current_lesson,
         )
-        recommendation = response.primary
-        content = await self._ask_llm(
-            build_recommendation_guidance_messages(recommendation)
+        messages = build_fc_chat_messages(
+            user_message=user_message,
+            history=payload.history,
+            context=payload.context,
+            max_turns=settings.OPENAI_MAX_TURNS,
         )
-        if content and content.strip():
-            explanation, exercise = self._split_guidance_content(content)
-            return RecommendationGuidanceResponse(
-                recommendation=recommendation,
-                explanation=(
-                    explanation
-                    or self._fallback_recommendation_explanation(recommendation)
-                ),
-                exercise_prompt=(
-                    exercise or self._fallback_recommendation_exercise(recommendation)
-                ),
-                model=self.model,
-                used_fallback=False,
-            )
 
-        return RecommendationGuidanceResponse(
-            recommendation=recommendation,
-            explanation=self._fallback_recommendation_explanation(recommendation),
-            exercise_prompt=self._fallback_recommendation_exercise(recommendation),
+        max_rounds = settings.AGENT_FC_MAX_TOOL_ROUNDS
+        fallback_reason: str = "upstream_error"
+        invalid_params_seen = False
+        llm_calls = 0
+        for round_index in range(max_rounds + 1):
+            force_answer = round_index >= max_rounds
+            result = await self._complete(
+                messages,
+                tools=FC_TOOLS,
+                tool_choice="none" if force_answer else "auto",
+            )
+            llm_calls += 1
+            if result.error_reason:
+                fallback_reason = result.error_reason
+                break
+            if result.tool_calls and not force_answer:
+                messages.append(self._assistant_tool_call_message(result))
+                aborted = False
+                for tool_call in result.tool_calls:
+                    execution = await executor.execute(
+                        tool_call.name, tool_call.arguments
+                    )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": execution.output,
+                        }
+                    )
+                    if execution.invalid_params:
+                        if invalid_params_seen:
+                            # 一次重试机会已用完，二次非法参数直接降级
+                            fallback_reason = "invalid_tool_params"
+                            aborted = True
+                        invalid_params_seen = True
+                if aborted:
+                    break
+                continue
+            if result.content:
+                tool_name = self._derive_fc_tool_name(executor.called_tools)
+                log.info(
+                    "[agent] fc_chat llm_calls={} tools_called={} "
+                    "tool_name={} used_fallback=False",
+                    llm_calls,
+                    executor.called_tools,
+                    tool_name,
+                )
+                return AgentChatData(
+                    content=result.content,
+                    model=self.model,
+                    used_fallback=False,
+                )
+            # 强制直答轮仍返回 tool_calls / 无有效内容：不再给机会
+            break
+
+        tool_name = self._derive_fc_tool_name(executor.called_tools)
+        fallback_content = get_agent_tool(tool_name).fallback_content
+        log.info(
+            "[agent] fc_chat llm_calls={} tools_called={} tool_name={} "
+            "used_fallback=True fallback_reason={}",
+            llm_calls,
+            executor.called_tools,
+            tool_name,
+            fallback_reason,
+        )
+        return AgentChatData(
+            content=fallback_content,
             model=self.model,
             used_fallback=True,
+            fallback_reason=fallback_reason,
         )
 
-    async def _ask_llm(self, messages: list[dict[str, str]]) -> str | None:
+    @staticmethod
+    def _assistant_tool_call_message(result: LLMResult) -> dict:
+        return {
+            "role": "assistant",
+            "content": result.content or "",
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.name,
+                        "arguments": tool_call.arguments,
+                    },
+                }
+                for tool_call in result.tool_calls
+            ],
+        }
+
+    @staticmethod
+    def _derive_fc_tool_name(called_tools: list[str]) -> ToolName:
+        """意图标签取自模型调用过的工具，不再从正文抠标签。"""
+        if "get_recommendation" in called_tools:
+            return "suggest_next_step"
+        return "general_chat"
+
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> LLMResult:
+        """统一 LLM 调用入口：走 LLMClient 适配器（超时/重试/错误分类）。
+
+        优先复用 lifespan 注入的共享 client；未注入时（单测直接构造等）
+        自建临时 client 并在调用后关闭，无 key 则确定性返回 no_api_key。
+        """
+        if self.llm_client is not None:
+            return await LLMClient(
+                client=self.llm_client, model=self.model
+            ).complete(messages, tools=tools, tool_choice=tool_choice)
+
         api_key = settings.effective_llm_api_key
         if not api_key:
-            return None
+            return await LLMClient(client=None, model=self.model).complete(
+                messages, tools=tools, tool_choice=tool_choice
+            )
 
+        temp_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.effective_llm_base_url,
+        )
         try:
-            client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=settings.effective_llm_base_url,
-            )
-            extra_body = {}
-            if settings.LLM_ENABLE_THINKING:
-                extra_body["enable_thinking"] = True
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,
-                extra_body=extra_body,
-            )
-        except Exception:
-            return None
-
-        if not response.choices:
-            return None
-        message = response.choices[0].message
-        return message.content if message else None
+            return await LLMClient(
+                client=temp_client, model=self.model
+            ).complete(messages, tools=tools, tool_choice=tool_choice)
+        finally:
+            # 共享 client 由 lifespan 统一关闭，这里只回收自建的临时 client
+            try:
+                await temp_client.close()
+            except Exception:
+                pass
 
     async def _retrieve_knowledge(
         self,
         query: str,
         current_lesson: str | None,
-    ) -> str:
+    ) -> tuple[str, int]:
         chunks = await self.knowledge_retriever.search(
             query=query,
             current_lesson=current_lesson,
             limit=3,
         )
-        return build_knowledge_block(chunks)
+        return build_knowledge_block(chunks), len(chunks)
 
     def _inject_knowledge(
         self,
@@ -294,7 +301,7 @@ class AgentService:
         end = content.find(marker, body_start + 1)
         if end == -1:
             return None
-        return content[body_start + 1 : end].strip()
+        return content[body_start + 1: end].strip()
 
     @staticmethod
     def _split_guidance_content(content: str) -> tuple[str, str | None]:

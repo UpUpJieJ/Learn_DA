@@ -12,7 +12,7 @@
 
 - **教程学习**：覆盖 Polars、DuckDB、组合实战与 Python 编程基础等主题，课程列表支持专题、难度与关键词过滤。
 - **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空、执行历史与按课程保存的本地草稿。
-- **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现，支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
+- **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现（受限只读工具 + 硬步数上限，无 key 时确定性降级），支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
 - **安全执行策略**：开发环境默认优先使用本地/模拟执行；生产环境可开启 Docker 沙箱，限制资源与超时，隔离用户代码。
 - **无登录本地模式**：无需账号即可使用核心功能；学习进度、界面偏好与 Playground 草稿保存在当前浏览器本地。
 
@@ -309,7 +309,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ## 技术亮点
 
-- **无 LangChain**：Agent 层完全基于原生 OpenAI Function Calling 实现，零冗余依赖，调用链路可控，成本更低。
+- **无 LangChain**：Agent 层完全基于原生 OpenAI Function Calling 实现（只读工具集、模型不参与推荐排序、硬步数上限），零冗余依赖，调用链路可控，成本更低；离线评测集验证意图准确率 90.2%（关键词基线 43.9%）。
 - **安全沙箱**：用户代码不直接运行在主服务进程，Docker 容器隔离 + 白名单库 + 资源配额 + 超时销毁，保障服务安全。
 - **模块热插拔**：通过 `ENABLED_APP_MODULES` 按需启用 learning / playground / agent 模块，便于功能灰度与维护。
 - **自动路由注册**：后端基于约定自动扫描注册 APIRouter，减少手动维护路由表的成本。

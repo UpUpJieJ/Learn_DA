@@ -1,5 +1,4 @@
-from .schemas import AgentChatMessage, AgentContext, ToolName
-from .tools import EXPLAIN_FORMAT, FIX_FORMAT, response_format_for_tool
+from .schemas import AgentChatMessage, AgentContext
 
 
 SYSTEM_PROMPT = (
@@ -14,36 +13,36 @@ SYSTEM_PROMPT = (
     "除非用户明确要求，不要输出长篇背景知识。"
 )
 
+# 阶段 ④ FC 路径的系统提示：工具只读、按需调用、正文不带意图标签
+FC_SYSTEM_PROMPT = SYSTEM_PROMPT + (
+    "你可以调用只读工具查询课程知识、学习进度和下一步学习建议；"
+    "只在回答需要事实依据时调用工具，拿到结果后综合成简洁回答。"
+    "学习建议以工具返回的规则引擎结果为准，不要自行改变推荐顺序。"
+    "回答正文直接开始，首行不要输出任何意图标签、分类前缀或格式说明。"
+)
 
-def build_recommendation_guidance_messages(recommendation) -> list[dict[str, str]]:
-    if recommendation is None:
-        user_content = (
-            "当前没有明确推荐。请按以下格式回复：\n"
-            "解释建议：说明为什么现在适合自由浏览或继续当前课程。\n\n"
-            "下一步练习：给一个 5 到 10 分钟的小练习。"
-        )
-    else:
-        user_content = (
-            "请解释这条学习建议，并给一个小练习。\n\n"
-            f"建议类型：{recommendation.type}\n"
-            f"目标课程：{recommendation.target_title}\n"
-            f"规则理由：{recommendation.reason}\n"
-            f"优先级：{recommendation.priority}\n\n"
-            "必须按以下格式回复：\n"
-            "解释建议：用 2 到 4 句话说明为什么推荐它。\n\n"
-            "下一步练习：给一个 5 到 10 分钟的小练习，不要直接给答案。"
-        )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_content},
-    ]
+
+def build_fc_chat_messages(
+    user_message: str,
+    history: list[AgentChatMessage],
+    context: AgentContext | None,
+    max_turns: int,
+) -> list[dict[str, str]]:
+    """FC 路径的消息构造：不注入 response_format 模板，结构由工具调用承载。"""
+    messages = [{"role": "system", "content": FC_SYSTEM_PROMPT}]
+    context_block = build_context_block(context)
+    if context_block:
+        messages.append({"role": "system", "content": context_block})
+    messages.extend(compact_history(history, max_turns=max_turns))
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
 
 def compact_history(
     history: list[AgentChatMessage],
     max_turns: int,
 ) -> list[dict[str, str]]:
-    recent = history[-max_turns * 2 :]
+    recent = history[-max_turns * 2:]
     return [{"role": item.role, "content": item.content} for item in recent]
 
 
@@ -76,19 +75,14 @@ def build_chat_messages(
     history: list[AgentChatMessage],
     context: AgentContext | None,
     max_turns: int,
-    tool_name: ToolName = "general_chat",
 ) -> list[dict[str, str]]:
+    """降级路径的消息构造：格式模板已随 FC 默认开启下线。"""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     context_block = build_context_block(context)
     if context_block:
         messages.append({"role": "system", "content": context_block})
     messages.extend(compact_history(history, max_turns=max_turns))
-    messages.append(
-        {
-            "role": "user",
-            "content": f"{user_message}\n\n{response_format_for_tool(tool_name)}",
-        }
-    )
+    messages.append({"role": "user", "content": user_message})
     return messages
 
 
@@ -108,7 +102,7 @@ def build_fix_messages(
                 "必须只给一个修复代码块，并保证代码块是完整可运行的 Python 代码。\n\n"
                 f"错误信息：\n```text\n{error_message[:3000]}\n```\n\n"
                 f"代码：\n```python\n{code[:8000]}\n```"
-                f"{context_text}\n\n{FIX_FORMAT}"
+                f"{context_text}"
             ),
         },
     ]
@@ -127,7 +121,7 @@ def build_explain_messages(
             "content": (
                 "请解释这段代码的作用，保持简洁，并优先结合当前课程语境。\n\n"
                 f"代码：\n```python\n{code[:8000]}\n```"
-                f"{context_text}\n\n{EXPLAIN_FORMAT}"
+                f"{context_text}"
             ),
         },
     ]

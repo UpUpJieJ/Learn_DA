@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,7 +112,7 @@ async def list_examples(
 @router.get("/examples/{slug}", response_model=StdResp[ExampleDetail])
 async def get_example(
     slug: str,
-    service: LearningService = Depends(get_learning_service),
+    service: Annotated[LearningService, Depends(get_learning_service)],
 ):
     return StdResp.success(data=service.get_example(slug))
 

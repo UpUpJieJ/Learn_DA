@@ -1,19 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onUnmounted } from "vue";
+import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useLocalStateStore } from "@/stores/localState";
 import { useLearnerStateStore } from "@/stores/learnerState";
 import { usePlaygroundStore } from "@/stores/playground";
-import {
-    streamChatMessage,
-    buildChatHistory,
-    explainCode,
-    fixCode,
-    getRecommendationGuidance,
-} from "@/api/agent";
+import { streamChatMessage, buildChatHistory } from "@/api/agent";
 import { renderMarkdown } from "@/lib/markdown";
 import type { ChatMessage, AgentContext } from "@/types/api";
 
-type QuickActionKey = "explain" | "fix" | "exercise" | "next" | "guidance" | "pandas2polars" | "sql2duckdb";
+type QuickActionKey = "resolve_problem" | "next_step";
 
 interface QuickAction {
     key: QuickActionKey;
@@ -130,56 +124,7 @@ const inputPlaceholder = computed(() => {
         : "例如：这节课最重要的概念是什么？";
 });
 
-const quickActions = computed<QuickAction[]>(() => [
-    {
-        key: "explain",
-        label: "解释代码",
-        disabled: !hasCurrentCode.value,
-        prompt: supportsMigrationAnalogy.value
-            ? "请结合当前课程，解释我现在 Playground 里的代码，并给出与 Pandas/SQL 写法的对照说明。"
-            : "请结合当前课程，解释我现在 Playground 里的代码，重点说明关键概念和下一步练习方向。",
-    },
-    {
-        key: "fix",
-        label: "修复错误",
-        disabled: !hasCurrentCode.value || !hasCurrentError.value,
-        prompt: "请结合当前课程和最近一次执行错误，帮我修复当前代码。",
-    },
-    ...(supportsMigrationAnalogy.value
-        ? [
-              {
-                  key: "pandas2polars" as const,
-                  label: "Pandas 对照",
-                  disabled: false,
-                  prompt: "结合当前课程和代码，给我一个 Pandas 到 Polars 的写法对照示例，说明关键 API 对应关系。",
-              },
-              {
-                  key: "sql2duckdb" as const,
-                  label: "SQL 对照",
-                  disabled: false,
-                  prompt: "结合当前课程和代码，给我一个 SQL 到 DuckDB 的用法对照示例，说明关键差异。",
-              },
-          ]
-        : []),
-    {
-        key: "exercise",
-        label: "出一道练习",
-        disabled: false,
-        prompt: "请根据当前课程生成一个小练习，并给出提示但先不要直接给最终答案。",
-    },
-    {
-        key: "next",
-        label: "下一步",
-        disabled: false,
-        prompt: "请根据当前课程、代码和运行结果，告诉我下一步应该学习或尝试什么。",
-    },
-    {
-        key: "guidance",
-        label: "解释推荐",
-        disabled: false,
-        prompt: "请解释当前学习推荐，并给我一个可以马上开始的小练习。",
-    },
-]);
+const quickActions = computed<QuickAction[]>(() => hasCurrentError.value ? [{ key: "resolve_problem", label: "解决当前报错", disabled: false, prompt: "请结合当前课程、代码和最近一次报错，帮我定位原因，并给出一个最小可验证的修复步骤。" }] : [{ key: "next_step", label: "下一步怎么做", disabled: false, prompt: "请结合我的当前课程、代码和学习进度，告诉我现在最值得做的一步。" }]);
 
 function formatAgentErrorMessage(message?: string) {
     if (!message?.trim()) {
@@ -318,109 +263,7 @@ async function sendMessage(text?: string) {
     }
 }
 
-async function sendQuickAction(action: QuickAction) {
-    if (action.disabled || isLoading.value) return;
-    if (["exercise", "next", "pandas2polars", "sql2duckdb"].includes(action.key)) {
-        await sendMessage(action.prompt);
-        return;
-    }
-
-    if (action.key === "guidance") {
-        const userMsg: ChatMessage = {
-            id: `user-${Date.now()}`,
-            role: "user",
-            content: action.prompt,
-            timestamp: Date.now(),
-        };
-        const assistantMsg: ChatMessage = {
-            id: `assistant-${Date.now()}`,
-            role: "assistant",
-            content: "",
-            timestamp: Date.now(),
-            isStreaming: true,
-        };
-
-        messages.value.push(userMsg, assistantMsg);
-        isLoading.value = true;
-        await scrollToBottom();
-
-        try {
-            const response = await getRecommendationGuidance({
-                currentLesson:
-                    agentContext.value.currentLesson ||
-                    learnerStateStore.lastVisitedSlug ||
-                    undefined,
-            });
-            assistantMsg.content = response.exercisePrompt
-                ? `${response.explanation}\n\n下一步练习：\n${response.exercisePrompt}`
-                : response.explanation;
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "请求失败";
-            assistantMsg.content = formatAgentErrorMessage(message);
-        } finally {
-            assistantMsg.isStreaming = false;
-            isLoading.value = false;
-            await scrollToBottom();
-        }
-        return;
-    }
-
-    const code = agentContext.value.currentCode?.trim();
-    if (!code) return;
-
-    const userMsg: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        content: action.prompt,
-        timestamp: Date.now(),
-    };
-    const assistantId = `assistant-${Date.now()}`;
-    const assistantMsg: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-        isStreaming: true,
-    };
-
-    messages.value.push(userMsg, assistantMsg);
-    isLoading.value = true;
-    await scrollToBottom();
-
-    try {
-        if (action.key === "explain") {
-            const response = await explainCode({
-                code,
-                context: agentContext.value,
-            });
-            assistantMsg.content = response.explanation;
-        } else {
-            const errorMessage =
-                agentContext.value.stderr ||
-                "当前没有捕获到具体错误，请检查代码逻辑。";
-            const response = await fixCode({
-                code,
-                errorMessage,
-                context: agentContext.value,
-            });
-            const verification = response.verification
-                ? `\n\n验证结果：${response.verification.verified ? "通过" : "未通过"}（${response.verification.status}，${response.verification.executionTime}ms）${
-                      response.verification.stderr
-                          ? `\n\n验证错误：\n\`\`\`text\n${response.verification.stderr}\n\`\`\``
-                          : ""
-                  }`
-                : "";
-            assistantMsg.content = `${response.explanation}\n\n修复代码：\n\`\`\`python\n${response.fixedCode}\n\`\`\`${verification}`;
-        }
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "请求失败";
-        assistantMsg.content = formatAgentErrorMessage(message);
-    } finally {
-        assistantMsg.isStreaming = false;
-        isLoading.value = false;
-        await scrollToBottom();
-    }
-}
+async function sendQuickAction(action: QuickAction) { if (!action.disabled && !isLoading.value) await sendMessage(action.prompt); }
 
 function stopStreaming() {
     abortController?.abort();
@@ -688,7 +531,7 @@ onUnmounted(() => {
                 <p class="mb-3 text-[11px] leading-relaxed text-slate-500">
                     围绕当前课程、代码和报错提供提示，默认先讲思路，再给可执行建议。
                 </p>
-                <div class="mb-3 grid grid-cols-3 gap-2">
+                <div class="mb-3 grid grid-cols-1 gap-2">
                     <button
                         v-for="action in quickActions"
                         :key="action.key"
@@ -868,7 +711,7 @@ onUnmounted(() => {
             <p class="mb-3 text-[11px] leading-relaxed text-slate-500">
                 优先结合当前课程、代码和报错给你提示，不直接跳过思考过程。
             </p>
-            <div class="mb-3 grid grid-cols-2 gap-2">
+            <div class="mb-3 grid grid-cols-1 gap-2">
                 <button
                     v-for="action in quickActions"
                     :key="action.key"
