@@ -16,7 +16,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 
-COPY docker/setup-debian-apt-mirrors.sh /tmp/setup-debian-apt-mirrors.sh
+COPY learn_da/docker/setup-debian-apt-mirrors.sh /tmp/setup-debian-apt-mirrors.sh
 RUN chmod +x /tmp/setup-debian-apt-mirrors.sh && APT_MIRROR=${APT_MIRROR} /tmp/setup-debian-apt-mirrors.sh \
     && rm -f /tmp/setup-debian-apt-mirrors.sh
 
