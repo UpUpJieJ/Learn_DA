@@ -1,8 +1,0 @@
-# WARNING: This override mounts the local Docker socket for development only.
-# NEVER use this file in production. It grants the Runner full access to the
-# host Docker daemon, which is a significant security boundary.
-
-services:
-  runner:
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock

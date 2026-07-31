@@ -37,10 +37,12 @@
 ```
 .
 ├── README.md                 # 本文件
+├── docker-compose.app.yml    # 应用服务器编排（Web + Backend）
+├── docker-compose.runner.yml # 专用 Runner 服务器编排
+├── deploy/                   # 部署环境变量模板与运维文档
 ├── learn_da/                 # 后端（Backend）
 │   ├── main.py               # FastAPI 应用入口
 │   ├── pyproject.toml        # Python 依赖与工具配置
-│   ├── docker-compose.yml    # 容器编排（App + Redis）
 │   ├── Dockerfile            # 主应用镜像
 │   ├── Dockerfile.sandbox    # 代码沙箱镜像
 │   ├── config/               # 配置管理（Pydantic Settings）
@@ -132,38 +134,32 @@ npm run dev
 
 前端默认运行在 `http://127.0.0.1:5173`，已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
 
-### Docker Compose 一键启动（仅后端）
+### Docker Compose 生产部署
+
+生产环境分为两台服务器：应用服务器运行 Web 与 Backend，专用 Runner
+服务器运行用户代码的沙箱。不要在应用服务器挂载 Docker socket。
+
+完整步骤见 [`deploy/README.md`](deploy/README.md)。最简命令如下：
 
 ```bash
-cd learn_da
+# Runner 服务器：先构建受限沙箱与 Runner
+cp deploy/runner.env.example deploy/runner.env
+docker compose --env-file deploy/runner.env -f docker-compose.runner.yml \
+  --profile sandbox build
+docker compose --env-file deploy/runner.env -f docker-compose.runner.yml \
+  up -d --build runner
 
-# 构建并启动主应用（含 SQLite 本地存储）
-docker-compose up -d app
-
-# 若需要 Redis 缓存
-docker-compose --profile redis up -d
-
-# 构建沙箱镜像（用于隔离执行用户代码）
-docker-compose --profile sandbox build
+# 应用服务器：RUNNER_URL 指向 Runner 的私网地址
+cp deploy/app.env.example deploy/app.env
+docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 ```
 
-### Docker Compose 生产部署（前端 + 后端 + Nginx）
+可选：在应用服务器命令增加 `--profile redis` 启用 Redis。
 
-在仓库根目录一键拉起：
-
-```bash
-# 1. 配置环境变量
-cp deploy/.env.example deploy/.env
-# 编辑 deploy/.env：PUBLIC_ORIGIN、LLM_API_KEY 等
-
-# 2. 构建并启动
-docker compose -f docker-compose.prod.yml up -d --build
-
-# 3. 访问
-# 浏览器打开 http://服务器IP  （默认映射 80 端口）
-```
-
-可选：`--profile redis` 启用 Redis；`--profile sandbox` 构建 Playground 沙箱镜像。
+只有一台服务器时，可在同一条 Compose 命令中加载两份编排，并在
+`deploy/app.env` 设置 `RUNNER_URL=http://runner:8080`、在
+`deploy/runner.env` 设置 `RUNNER_BIND_ADDRESS=127.0.0.1`。Runner 不会
+对公网暴露，但它仍持有该主机 Docker socket，因此这是资源受限时的折中方案。
 
 镜像基于 **Debian 12 (bookworm)**，基础镜像标签为 `python/node/nginx:*-slim`（避免部分镜像站对 `*-bookworm-slim` 返回 403）。构建时默认 **APT 清华源**、`pip/uv` **阿里 PyPI**、`npm` **npmmirror**。拉取失败见 [`deploy/DOCKER_MIRROR.md`](deploy/DOCKER_MIRROR.md)。
 
@@ -189,10 +185,10 @@ docker compose -f docker-compose.prod.yml up -d --build
 | `RECOMMENDATION_SNAPSHOTS_THRESHOLD` | `4` | 触发回补建议的代码快照数量阈值 |
 | `RECOMMENDATION_REVIEW_COOLDOWN_SECONDS` | `86400` | 同一用户同一课程重复触发回补建议的冷却时间 |
 | `RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS` | `3` | 触发回流建议的未学习天数阈值 |
-| `SANDBOX_DOCKER_ENABLED` | `false` | 是否启用 Docker 沙箱执行 |
-| `SANDBOX_LOCAL_ENABLED` | `true` | 是否允许开发环境本地执行 |
-| `SANDBOX_USE_MOCK_WHEN_DISABLED` | `true` | Docker 与本地执行都关闭时是否返回模拟结果 |
-| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics` | 启用的业务模块 |
+| `RUNNER_URL` | — | 专用 Runner 的私网 URL，生产环境必填 |
+| `RUNNER_TOKEN` | — | Backend 与 Runner 共用的内部认证密钥，至少 32 字符 |
+| `SESSION_SECRET` | — | Backend 匿名会话签名密钥，生产环境至少 32 字符 |
+| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,practice` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
 
@@ -300,10 +296,11 @@ pytest --cov=app --cov=services --cov-report=html
    - 按需启用 Redis 提升缓存性能。
    - 迁移至 MySQL 以支持并发写入。
 3. **生产环境**：
-   - 务必启用 `SANDBOX_DOCKER_ENABLED=true`，确保用户代码在 Docker 沙箱中运行。
-   - 配置 Nginx / Traefik 反向代理，SSL 终止。
-   - 配置 `RATE_LIMIT_ENABLED=true` 与慢速限流策略，防止接口滥用。
-   - 使用独立 Redis 与 MySQL/PostgreSQL，持久化日志与数据卷。
+   - 使用 `docker-compose.app.yml` 部署 Web 与 Backend，使用
+     `docker-compose.runner.yml` 在专用主机部署 Runner。
+   - 仅允许应用服务器通过私网访问 Runner 的 8080 端口；禁止公网暴露。
+   - 配置 HTTPS 反向代理、限流策略和持久化数据卷。
+   - 多个 Backend 副本时使用独立 Redis 与 MySQL，勿共享 SQLite 文件。
 
 ---
 

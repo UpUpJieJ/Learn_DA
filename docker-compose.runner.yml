@@ -1,0 +1,48 @@
+# Deploy this file only on the dedicated Runner host. That host must not run
+# application workloads or expose port 8080 to the public Internet.
+
+services:
+  runner:
+    build:
+      context: .
+      dockerfile: learn_da_runner/Dockerfile
+      args:
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    restart: unless-stopped
+    env_file:
+      - ./deploy/runner.env
+    environment:
+      RUNNER_PORT: 8080
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/runner.env}
+      RUNNER_DOCKER_IMAGE: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+      RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-5}
+      RUNNER_MEMORY_LIMIT_MB: ${RUNNER_MEMORY_LIMIT_MB:-256}
+      RUNNER_CPU_QUOTA: ${RUNNER_CPU_QUOTA:-50000}
+      RUNNER_PIDS_LIMIT: ${RUNNER_PIDS_LIMIT:-64}
+      RUNNER_TMPFS_SIZE_MB: ${RUNNER_TMPFS_SIZE_MB:-64}
+      RUNNER_MAX_OUTPUT_BYTES: ${RUNNER_MAX_OUTPUT_BYTES:-65536}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_SOCKET_GID:?Set Docker socket group ID in deploy/runner.env}"
+    ports:
+      - "${RUNNER_BIND_ADDRESS:-127.0.0.1}:${RUNNER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  sandbox-image:
+    build:
+      context: ./learn_da
+      dockerfile: Dockerfile.sandbox
+      args:
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    image: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+    profiles: ["sandbox"]

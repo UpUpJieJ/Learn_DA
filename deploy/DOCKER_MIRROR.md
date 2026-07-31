@@ -16,13 +16,13 @@ unexpected status from HEAD request to https://docker.m.daocloud.io/...: 403 For
 重新构建：
 
 ```bash
-docker compose -f docker-compose.prod.yml build --no-cache
+docker compose --env-file deploy/app.env -f docker-compose.app.yml build --no-cache
 ```
 
 ## 方案二：构建时传入基础镜像（勿在 .env 里留空变量）
 
 ```bash
-docker compose -f docker-compose.prod.yml build \
+docker compose --env-file deploy/app.env -f docker-compose.app.yml build \
   --build-arg PYTHON_BASE_IMAGE=docker.1ms.run/library/python:3.12-slim
 
 cd learn_da_vue && docker build \
@@ -31,7 +31,7 @@ cd learn_da_vue && docker build \
   -t learn_da_web .
 ```
 
-注意：不要在 `deploy/.env` 中写 `NGINX_BASE_IMAGE=` 空值，否则会覆盖 Dockerfile 默认值导致构建失败。
+注意：不要在 `deploy/app.env` 中写 `NGINX_BASE_IMAGE=` 空值，否则会覆盖 Dockerfile 默认值导致构建失败。
 
 ## 方案三：修改 / 移除有问题的 registry-mirror
 
@@ -59,5 +59,5 @@ sudo systemctl restart docker
 docker pull python:3.12-slim
 docker pull node:22-slim
 docker pull nginx:1.27-slim
-docker compose -f docker-compose.prod.yml build
+docker compose --env-file deploy/app.env -f docker-compose.app.yml build
 ```
