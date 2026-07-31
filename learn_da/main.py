@@ -26,6 +26,11 @@ async def lifespan(app: FastAPI):
     http_client = httpx.AsyncClient()
     app.state.runner_client = RunnerClient(http_client)
 
+    # Phase 2: 暴露 AsyncSession factory，供 playground 练习执行在同一事务中
+    # 写 Attempt + code_run + Learner State
+    from app.core.database.database import AsyncSessionLocal
+    app.state.db_session_factory = AsyncSessionLocal
+
     # Agent 知识检索器 — 课程 Markdown 只在启动时加载一次，全部请求共享；
     # embedding 向量经 EmbeddingCache 按内容哈希持久化，重启后不重复嵌入。
     # LLM client 同为进程级单例：连接池全请求复用，shutdown 时统一关闭。

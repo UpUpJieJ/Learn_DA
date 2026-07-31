@@ -8,80 +8,82 @@ class LearningRepository:
     """
     学习资源仓库 - 从 Markdown 文件加载课程和示例
     """
-    
+
     def __init__(self):
         self._lessons: list[LessonDetail] | None = None
         self._examples: list[ExampleDetail] | None = None
-    
+
     def _load_lessons(self) -> list[LessonDetail]:
         """懒加载课程数据"""
         if self._lessons is None:
             raw_lessons = load_all_lessons()
             self._lessons = []
-            
+
             # 构建 slug -> lesson 映射，用于查找前后课程
-            slug_map = {l['slug']: l for l in raw_lessons}
-            
+            slug_map = {l["slug"]: l for l in raw_lessons}
+
             for raw in raw_lessons:
                 # 处理 prev_lesson
                 prev_lesson = None
-                if raw.get('prev_lesson'):
-                    prev = raw['prev_lesson']
-                    prev_lesson = LessonNav(slug=prev['slug'], title=prev['title'])
-                
+                if raw.get("prev_lesson"):
+                    prev = raw["prev_lesson"]
+                    prev_lesson = LessonNav(slug=prev["slug"], title=prev["title"])
+
                 # 处理 next_lesson
                 next_lesson = None
-                if raw.get('next_lesson'):
-                    next_l = raw['next_lesson']
-                    next_lesson = LessonNav(slug=next_l['slug'], title=next_l['title'])
-                
+                if raw.get("next_lesson"):
+                    next_l = raw["next_lesson"]
+                    next_lesson = LessonNav(slug=next_l["slug"], title=next_l["title"])
+
                 lesson = LessonDetail(
-                    id=raw['id'],
-                    slug=raw['slug'],
-                    title=raw['title'],
-                    topic=raw.get('topic', 'data-analysis'),
-                    category=raw['category'],
-                    difficulty=raw['difficulty'],
-                    description=raw.get('description', ''),
-                    estimated_minutes=raw.get('estimated_minutes', 15),
-                    order=raw.get('order', 0),
-                    tags=raw.get('tags', []),
-                    track=raw.get('track', ''),
-                    content=raw['content'],
-                    code_example=raw.get('code_example', ''),
+                    id=raw["id"],
+                    slug=raw["slug"],
+                    title=raw["title"],
+                    topic=raw.get("topic", "data-analysis"),
+                    category=raw["category"],
+                    difficulty=raw["difficulty"],
+                    description=raw.get("description", ""),
+                    estimated_minutes=raw.get("estimated_minutes", 15),
+                    order=raw.get("order", 0),
+                    tags=raw.get("tags", []),
+                    track=raw.get("track", ""),
+                    content=raw["content"],
+                    code_example=raw.get("code_example", ""),
                     prev_lesson=prev_lesson,
                     next_lesson=next_lesson,
                     # Phase 2: 练习结构（可选）
-                    practice_objective=raw.get('practice_objective', ''),
-                    completion_criteria=raw.get('completion_criteria', []),
-                    prerequisites=raw.get('prerequisites', []),
-                    recommended_next=raw.get('recommended_next', []),
-                    skill_tags=raw.get('skill_tags', []),
-                    is_review_friendly=raw.get('is_review_friendly', False),
-                    is_branch_point=raw.get('is_branch_point', False),
+                    practice_objective=raw.get("practice_objective", ""),
+                    completion_criteria=raw.get("completion_criteria", []),
+                    prerequisites=raw.get("prerequisites", []),
+                    recommended_next=raw.get("recommended_next", []),
+                    skill_tags=raw.get("skill_tags", []),
+                    is_review_friendly=raw.get("is_review_friendly", False),
+                    is_branch_point=raw.get("is_branch_point", False),
+                    # Phase 2: 正式练习定义
+                    exercise=raw.get("exercise"),
                 )
                 self._lessons.append(lesson)
-        
+
         return self._lessons
-    
+
     def _load_examples(self) -> list[ExampleDetail]:
         """懒加载示例数据"""
         if self._examples is None:
             raw_examples = load_all_examples()
             self._examples = [
                 ExampleDetail(
-                    slug=raw['slug'],
-                    title=raw['title'],
-                    topic=raw['topic'],
-                    summary=raw.get('summary', ''),
-                    code=raw.get('code', ''),
-                    expected_output=raw.get('expected_output', ''),
+                    slug=raw["slug"],
+                    title=raw["title"],
+                    topic=raw["topic"],
+                    summary=raw.get("summary", ""),
+                    code=raw.get("code", ""),
+                    expected_output=raw.get("expected_output", ""),
                 )
                 for raw in raw_examples
             ]
-        
+
         return self._examples
-    
+
     def list_lessons(
         self,
         topic: str | None = None,
@@ -147,6 +149,7 @@ class LearningRepository:
     def get_category_stats(self) -> list[dict[str, Any]]:
         """获取分类统计"""
         from collections import Counter
+
         lessons = self._load_lessons()
         counts = Counter(lesson.category for lesson in lessons)
         label_map = {
@@ -159,7 +162,7 @@ class LearningRepository:
             {"category": cat, "label": label_map.get(cat, cat), "count": count}
             for cat, count in counts.items()
         ]
-    
+
     def reload(self):
         """重新加载内容（用于开发时热重载）"""
         self._lessons = None

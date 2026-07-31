@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
     from app.learner_state.service import LearnerStateService
     from app.learning.repository import LearningRepository
+    from app.practice.service import PracticeService
 
 
 # =====================================================
@@ -163,15 +164,20 @@ class RecommendationService:
         ],
     }
 
+    # Phase 2: 练习失败触发回补的阈值
+    PRACTICE_FAILURES_THRESHOLD = 3
+
     def __init__(
         self,
         repository: "LearningRepository | None" = None,
         analytics_service: "AnalyticsService | None" = None,
         learner_state_service: "LearnerStateService | None" = None,
+        practice_service: "PracticeService | None" = None,
     ):
         self.repository = repository
         self.analytics_service = analytics_service
         self.learner_state_service = learner_state_service
+        self.practice_service = practice_service
         self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
         self.AI_HELPS_THRESHOLD = settings.RECOMMENDATION_AI_HELPS_THRESHOLD
         self.SNAPSHOTS_THRESHOLD = settings.RECOMMENDATION_SNAPSHOTS_THRESHOLD
@@ -569,6 +575,19 @@ class RecommendationService:
                 f"你在这节课停留了较长时间，建议先回顾 {{review_lesson}} 打好基础再继续"
             )
 
+        # Phase 2: 练习连续失败也是回补信号
+        practice_failures = 0
+        if not needs_review and self.practice_service and current_lesson_slug:
+            practice_failures = await self._count_practice_failures(
+                visitor_id, current_lesson_slug
+            )
+            if practice_failures >= self.PRACTICE_FAILURES_THRESHOLD:
+                needs_review = True
+                reason_template = (
+                    f"你在这节课的练习中连续 {practice_failures} 次未通过验证，"
+                    f"建议回顾 {{review_lesson}} 巩固基础后再尝试"
+                )
+
         if not needs_review:
             return None
 
@@ -642,6 +661,22 @@ class RecommendationService:
                 "snapshots": snapshots_count,
             },
         )
+
+    async def _count_practice_failures(
+        self, visitor_id: str, lesson_slug: str
+    ) -> int:
+        """Phase 2: 统计某课程最近练习中未通过验证的次数"""
+        try:
+            summaries = await self.practice_service.get_attempt_summaries(
+                visitor_id=visitor_id, lesson_slug=lesson_slug, limit=10
+            )
+            return sum(
+                1
+                for s in summaries
+                if s.verification_status in ("failed", "unverifiable")
+            )
+        except Exception:
+            return 0
 
     @staticmethod
     def _check_long_stall(stats: dict, snapshots_count: int) -> bool:

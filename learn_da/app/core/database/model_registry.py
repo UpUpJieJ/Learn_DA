@@ -16,6 +16,7 @@ from app.learner_state.models import (  # noqa: F401
     LearnerLessonProgress,
     RecommendationCooldown,
 )
+from app.practice.models import ExerciseAttempt  # noqa: F401
 
 __all__ = [
     "AgentEmbedding",
@@ -25,4 +26,5 @@ __all__ = [
     "CodeSnapshot",
     "LearnerLessonProgress",
     "RecommendationCooldown",
+    "ExerciseAttempt",
 ]

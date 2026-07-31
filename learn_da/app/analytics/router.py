@@ -209,3 +209,67 @@ async def get_category_progress(
     service = AnalyticsService(db)
     result = await service.get_category_progress(visitor_id)
     return StdResp.success(data=result)
+
+
+# ── Phase 2: 练习指标 ────────────────────────────────
+
+
+@router.get("/analytics/practice-stats")
+async def get_practice_stats(
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取用户练习指标：验证通过数、最近尝试、可恢复练习、错误类别"""
+    from app.practice.repository import PracticeRepository
+    from app.practice.service import PracticeService
+
+    repo = PracticeRepository(db)
+    service = PracticeService(db=db, practice_repo=repo)
+
+    # 验证通过数
+    passed_count = await repo.count_passed_exercises(visitor_id)
+    total_attempts = await repo.count_attempts(visitor_id)
+
+    # 最近尝试摘要
+    recent_attempts = await service.get_attempt_summaries(visitor_id, limit=5)
+
+    # 可恢复练习：最近未通过的练习（按 exercise_id 去重）
+    all_recent = await repo.get_attempt_summaries_by_visitor(visitor_id, limit=50)
+    resumable: list[dict] = []
+    seen_exercises: set[str] = set()
+    for a in all_recent:
+        if (
+            a.verification_status in ("failed", "not_run", "unverifiable")
+            and a.exercise_id not in seen_exercises
+        ):
+            seen_exercises.add(a.exercise_id)
+            resumable.append(
+                {
+                    "exerciseId": a.exercise_id,
+                    "lessonSlug": a.lesson_slug,
+                    "lastStatus": a.verification_status,
+                }
+            )
+        if len(resumable) >= 5:
+            break
+
+    # 错误类别统计（最近 20 次尝试）
+    recent_for_errors = await repo.get_attempt_summaries_by_visitor(
+        visitor_id, limit=20
+    )
+    error_categories: dict[str, int] = {}
+    for a in recent_for_errors:
+        if a.failure_reason:
+            error_categories[a.failure_reason] = (
+                error_categories.get(a.failure_reason, 0) + 1
+            )
+
+    return StdResp.success(
+        data={
+            "passedExercises": passed_count,
+            "totalAttempts": total_attempts,
+            "recentAttempts": [s.model_dump(by_alias=True) for s in recent_attempts],
+            "resumableExercises": resumable,
+            "errorCategories": error_categories,
+        }
+    )

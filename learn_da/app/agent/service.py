@@ -11,6 +11,7 @@ from config.settings import settings
 if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
     from app.learner_state.service import LearnerStateService
+    from app.practice.service import PracticeService
 
 from .knowledge import KnowledgeRetriever, build_knowledge_block
 from .fc_tools import FC_TOOLS, FCToolExecutor
@@ -29,6 +30,7 @@ class AgentService:
         recommendation_service: RecommendationService | None = None,
         learner_state_service: "LearnerStateService | None" = None,
         analytics_service: "AnalyticsService | None" = None,
+        practice_service: "PracticeService | None" = None,
         llm_client: AsyncOpenAI | None = None,
     ) -> None:
         self.model = settings.effective_llm_model
@@ -39,6 +41,7 @@ class AgentService:
         self.recommendation_service = recommendation_service
         self.learner_state_service = learner_state_service
         self.analytics_service = analytics_service
+        self.practice_service = practice_service
         # lifespan 共享的 LLM client；未注入时 _complete 自建临时 client 并负责关闭
         self.llm_client = llm_client
 
@@ -119,6 +122,7 @@ class AgentService:
             visitor_id=visitor_id,
             learner_state_service=self.learner_state_service,
             recommendation_service=self.recommendation_service,
+            practice_service=self.practice_service,
             current_lesson=current_lesson,
         )
         messages = build_fc_chat_messages(

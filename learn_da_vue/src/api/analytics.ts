@@ -10,6 +10,7 @@ import type {
     UserLessonStats,
     DailyTrendItem,
     CategoryProgress,
+    PracticeStats,
 } from "@/types/api";
 
 // =====================================================
@@ -66,4 +67,9 @@ export function fetchDailyTrend(days: number = 30) {
 /** 获取分类进度 */
 export function fetchCategoryProgress() {
     return get<CategoryProgress>("/analytics/category-progress");
+}
+
+/** 获取可验证练习指标 */
+export function fetchPracticeStats() {
+    return get<PracticeStats>("/analytics/practice-stats");
 }

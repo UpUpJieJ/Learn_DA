@@ -1,7 +1,12 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { executeCode, formatCode } from "@/api/playground";
-import type { ExecuteResponse, ExecutionSource } from "@/types/api";
+import type {
+    ExecuteResponse,
+    ExecutionSource,
+    ExerciseDefinition,
+    ExerciseVerification,
+} from "@/types/api";
 
 // =====================================================
 // 执行历史记录条目
@@ -38,6 +43,11 @@ export const usePlaygroundStore = defineStore("playground", () => {
     // ---- 格式化状态 ----
     const isFormatting = ref(false);
 
+    // ---- Phase 2: 练习状态 ----
+    const activeExercise = ref<ExerciseDefinition | null>(null);
+    const activeLessonSlug = ref<string | null>(null);
+    const exercisePassed = ref(false);
+
     // =====================================================
     // Computed
     // =====================================================
@@ -63,6 +73,20 @@ export const usePlaygroundStore = defineStore("playground", () => {
             (stdout.value.length > 0 || stderr.value.length > 0),
     );
 
+    /** Phase 2: 当前是否有活跃练习 */
+    const isInExercise = computed(() => activeExercise.value !== null);
+
+    /** Phase 2: 最近一次验证结果 */
+    const lastVerification = computed<ExerciseVerification | null>(
+        () => lastResponse.value?.verification ?? null,
+    );
+
+    /** Phase 2: 验证是否通过 */
+    const isVerificationPassed = computed(
+        () =>
+            lastVerification.value?.status === "passed" || exercisePassed.value,
+    );
+
     // =====================================================
     // Actions
     // =====================================================
@@ -82,6 +106,9 @@ export const usePlaygroundStore = defineStore("playground", () => {
                 language: language.value,
                 requestId: crypto.randomUUID(),
                 source,
+                // Phase 2: 练习执行参数
+                lessonSlug: activeLessonSlug.value ?? undefined,
+                exerciseId: activeExercise.value?.id ?? undefined,
             });
 
             // Don't store rejected/unavailable responses as successes
@@ -95,6 +122,12 @@ export const usePlaygroundStore = defineStore("playground", () => {
             }
 
             lastResponse.value = response;
+
+            // Phase 2: 检查验证结果
+            if (response.verification?.status === "passed") {
+                exercisePassed.value = true;
+            }
+
             addToHistory(code.value, response);
             return response;
         } catch (err) {
@@ -173,6 +206,38 @@ export const usePlaygroundStore = defineStore("playground", () => {
         language.value = lang;
     }
 
+    // ---- Phase 2: 练习管理 ----
+
+    /** 开始练习 */
+    function startExercise(
+        exercise: ExerciseDefinition,
+        lessonSlug: string,
+        starterCode?: string,
+    ) {
+        activeExercise.value = exercise;
+        activeLessonSlug.value = lessonSlug;
+        exercisePassed.value = false;
+        if (starterCode !== undefined) {
+            code.value = starterCode;
+        } else if (exercise.starterCode) {
+            code.value = exercise.starterCode;
+        }
+        language.value = (exercise.language as "python" | "sql") ?? "python";
+        clearOutput();
+    }
+
+    /** 结束练习 */
+    function endExercise() {
+        activeExercise.value = null;
+        activeLessonSlug.value = null;
+        exercisePassed.value = false;
+    }
+
+    /** 重置练习通过状态 */
+    function resetExercisePassed() {
+        exercisePassed.value = false;
+    }
+
     // =====================================================
     // 私有工具函数
     // =====================================================
@@ -205,6 +270,10 @@ export const usePlaygroundStore = defineStore("playground", () => {
         lastResponse,
         executionError,
         history,
+        // Phase 2
+        activeExercise,
+        activeLessonSlug,
+        exercisePassed,
 
         // computed
         isLastSuccess,
@@ -213,6 +282,9 @@ export const usePlaygroundStore = defineStore("playground", () => {
         executionTime,
         sortedHistory,
         hasOutput,
+        isInExercise,
+        lastVerification,
+        isVerificationPassed,
 
         // actions
         runCode,
@@ -225,5 +297,8 @@ export const usePlaygroundStore = defineStore("playground", () => {
         setLanguage,
         loadAgentSuggestion,
         nextExecutionSource,
+        startExercise,
+        endExercise,
+        resetExercisePassed,
     };
 });

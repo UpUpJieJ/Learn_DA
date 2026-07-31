@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     TRUSTED_PROXY_IPS: str = ""
     OPENAPI_ENABLED: bool = False
 
-    ENABLED_APP_MODULES: str = "learning,playground,agent,analytics,learner_state"
+    ENABLED_APP_MODULES: str = "learning,playground,agent,analytics,learner_state,practice"
 
     model_config = SettingsConfigDict(
         env_file=".env",

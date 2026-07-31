@@ -21,6 +21,7 @@ from app.utils import log
 if TYPE_CHECKING:
     from app.learner_state.service import LearnerStateService
     from app.learning.recommendation import RecommendationService
+    from app.practice.service import PracticeService
 
     from .knowledge import KnowledgeRetriever
 
@@ -68,11 +69,36 @@ FC_TOOLS: list[dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_exercise_summary",
+            "description": (
+                "获取当前学习者的练习尝试摘要（执行状态、验证状态、错误类型）。"
+                "当用户询问练习进度、验证结果或需要练习建议时调用。"
+                "注意：只返回摘要，不包含完整代码。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lesson_slug": {
+                        "type": "string",
+                        "description": "课程 slug，可选，不填则返回所有练习摘要",
+                    }
+                },
+            },
+        },
+    },
 ]
 
 
 class SearchKnowledgeParams(BaseModel):
     query: str = Field(min_length=1, max_length=500)
+
+
+class GetExerciseSummaryParams(BaseModel):
+    model_config = {"extra": "ignore"}
+    lesson_slug: str | None = None
 
 
 class EmptyParams(BaseModel):
@@ -83,6 +109,7 @@ _PARAM_MODELS: dict[str, type[BaseModel]] = {
     "search_knowledge": SearchKnowledgeParams,
     "get_learner_progress": EmptyParams,
     "get_recommendation": EmptyParams,
+    "get_exercise_summary": GetExerciseSummaryParams,
 }
 
 
@@ -104,12 +131,14 @@ class FCToolExecutor:
         visitor_id: str,
         learner_state_service: "LearnerStateService | None" = None,
         recommendation_service: "RecommendationService | None" = None,
+        practice_service: "PracticeService | None" = None,
         current_lesson: str | None = None,
     ) -> None:
         self.knowledge_retriever = knowledge_retriever
         self.visitor_id = visitor_id
         self.learner_state_service = learner_state_service
         self.recommendation_service = recommendation_service
+        self.practice_service = practice_service
         self.current_lesson = current_lesson
         # 编排循环用：本次会话内已成功执行过的工具名（意图标签来源）
         self.called_tools: list[str] = []
@@ -157,6 +186,8 @@ class FCToolExecutor:
                 return await self._search_knowledge(params)
             if name == "get_learner_progress":
                 return await self._get_learner_progress()
+            if name == "get_exercise_summary":
+                return await self._get_exercise_summary(params)
             return await self._get_recommendation()
         except Exception as exc:  # 工具内部故障也不能中断编排循环
             return ToolExecution(
@@ -222,5 +253,28 @@ class FCToolExecutor:
         primary = getattr(response, "primary", None)
         payload = {
             "recommendation": primary.model_dump(mode="json") if primary else None
+        }
+        return ToolExecution(ok=True, output=json.dumps(payload, ensure_ascii=False))
+
+    async def _get_exercise_summary(
+        self, params: GetExerciseSummaryParams
+    ) -> ToolExecution:
+        """Phase 2: 获取练习尝试摘要（只读，不暴露完整代码）"""
+        if self.practice_service is None:
+            return ToolExecution(
+                ok=False,
+                output=json.dumps(
+                    {"error": "unavailable", "message": "练习服务不可用"},
+                    ensure_ascii=False,
+                ),
+            )
+        summaries = await self.practice_service.get_attempt_summaries(
+            visitor_id=self.visitor_id,
+            lesson_slug=params.lesson_slug,
+            limit=10,
+        )
+        payload = {
+            "attempts": [s.model_dump(by_alias=True) for s in summaries],
+            "total": len(summaries),
         }
         return ToolExecution(ok=True, output=json.dumps(payload, ensure_ascii=False))

@@ -7,9 +7,24 @@ from app.core.content_loader import load_catalog, load_lesson_from_file
 from app.learning.recommendation import RecommendationService
 from app.learning.repository import LearningRepository
 
+# Windows 下 tmp_path 可能有权限问题，使用项目内临时目录
+_LOCAL_TMP = Path(__file__).parent.parent.parent / ".pytest_tmp"
 
-def test_load_catalog_reads_platform_topics_and_tracks(tmp_path: Path):
-    content_dir = tmp_path / "content"
+
+@pytest.fixture()
+def local_tmp():
+    import uuid
+
+    d = _LOCAL_TMP / uuid.uuid4().hex[:12]
+    d.mkdir(parents=True, exist_ok=True)
+    yield d
+    import shutil
+
+    shutil.rmtree(d, ignore_errors=True)
+
+
+def test_load_catalog_reads_platform_topics_and_tracks(local_tmp: Path):
+    content_dir = local_tmp / "content"
     content_dir.mkdir()
     (content_dir / "catalog.yml").write_text(
         """
@@ -46,8 +61,8 @@ def test_default_catalog_includes_existing_data_analysis_tracks():
     assert "python_basics" in track_keys
 
 
-def test_lesson_loader_preserves_general_topic_metadata(tmp_path: Path):
-    lesson_file = tmp_path / "python-functions.md"
+def test_lesson_loader_preserves_general_topic_metadata(local_tmp: Path):
+    lesson_file = local_tmp / "python-functions.md"
     lesson_file.write_text(
         """
 ---

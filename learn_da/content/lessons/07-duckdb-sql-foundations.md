@@ -29,6 +29,42 @@ recommended_next: ['duckdb-joins-cte']
 skill_tags: ['sql_basics', 'select', 'where', 'group_by', 'having', 'order_by']
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: duckdb-sql-groupby-having-v1
+  title: 按品类分组统计
+  language: python
+  starter_code: |
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE orders AS
+        SELECT * FROM (VALUES
+            (1, '华东', '办公', 120),
+            (2, '华东', '数码', 899),
+            (3, '华南', '办公', 240),
+            (4, '华北', '配件', 59)
+        ) AS t(order_id, region, category, amount)
+    """)
+
+    result = con.execute("""
+        # TODO: 按 category 分组，统计订单数和总金额，
+        # 只保留总金额 > 200 的品类，按总金额降序排列
+    """).fetchall()
+
+    print(result)
+  objective: |
+    使用 GROUP BY 按 category 分组，用 COUNT(*) 和 SUM(amount) 聚合，
+    用 HAVING 过滤总金额 > 200 的品类，用 ORDER BY 降序排列。
+  hints:
+    - GROUP BY category 在 WHERE 之后、HAVING 之前
+    - HAVING 用于过滤聚合结果，不是 WHERE
+    - 使用 SUM(amount) AS total_amount 起别名
+  validator:
+    type: stdout_contains
+    expected:
+      - "办公"
+      - "数码"
 ---
 
 # DuckDB SQL 分析基础

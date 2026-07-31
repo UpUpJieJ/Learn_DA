@@ -70,6 +70,8 @@ export interface LessonDetail extends LessonSummary {
     skillTags?: string[];
     isReviewFriendly?: boolean;
     isBranchPoint?: boolean;
+    /** Phase 2: 正式练习定义（可选，有则优先于 practiceObjective） */
+    exercise?: ExerciseDefinition | null;
 }
 
 export interface LessonNav {
@@ -86,6 +88,9 @@ export interface ExecuteRequest {
     language?: "python" | "sql";
     requestId?: string;
     source?: ExecutionSource;
+    /** Phase 2: 练习执行（可选） */
+    lessonSlug?: string;
+    exerciseId?: string;
 }
 
 export type ExecutionSource = "playground" | "agent_suggested";
@@ -115,6 +120,72 @@ export interface ExecuteResponse {
     source?: ExecutionSource;
     errorType?: string | null;
     outputTruncated?: boolean;
+    /** Phase 2: 练习执行结果 */
+    attemptId?: number;
+    verification?: ExerciseVerification | null;
+}
+
+/** Phase 2: 练习验证结果 */
+export interface ExerciseVerification {
+    status: VerificationStatus;
+    failureReason?: string | null;
+    validatorType?: string | null;
+}
+
+export type VerificationStatus = "passed" | "failed" | "unverifiable" | "not_run";
+
+/** Phase 2: 练习定义 */
+export interface ExerciseDefinition {
+    id: string;
+    title: string;
+    language: string;
+    starterCode: string;
+    objective: string;
+    hints: string[];
+    validator: {
+        type: string;
+        expected?: string | string[] | Record<string, unknown> | null;
+    };
+}
+
+/** Phase 2: 练习尝试摘要 */
+export interface ExerciseAttemptSummary {
+    id: number;
+    attemptId: number;
+    exerciseId: string;
+    lessonSlug: string;
+    executionStatus: ExecuteStatus;
+    verificationStatus: VerificationStatus;
+    failureReason?: string | null;
+    createdTime?: string | null;
+    durationMs?: number | null;
+}
+
+/** Phase 2: 练习恢复响应 */
+export interface ExerciseResumeResponse {
+    exerciseId: string;
+    lessonSlug: string;
+    code: string;
+    language: string;
+    isResumed: boolean;
+    lastAttempt?: ExerciseAttemptSummary | null;
+    exerciseTitle: string;
+    objective: string;
+    hints: string[];
+    starterCode: string;
+}
+
+/** Phase 2: Dashboard 可验证练习指标 */
+export interface PracticeStats {
+    passedExercises: number;
+    totalAttempts: number;
+    recentAttempts: ExerciseAttemptSummary[];
+    resumableExercises: Array<{
+        exerciseId: string;
+        lessonSlug: string;
+        lastStatus: VerificationStatus;
+    }>;
+    errorCategories: Record<string, number>;
 }
 
 // =====================================================

@@ -101,6 +101,8 @@ def test_public_execution_models_serialize_only_the_stable_contract():
         "outputTruncated": False,
         "resultType": "text",
         "dataframe": None,
+        "attemptId": None,
+        "verification": None,
     }
     assert "mocked" not in response.model_dump(by_alias=True).values()
     assert "usedSandbox" not in response.model_dump(by_alias=True)

@@ -6,6 +6,7 @@ import { useLocalStateStore } from "@/stores/localState";
 import { useLearnerStateStore } from "@/stores/learnerState";
 import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
+import { resumeExercise } from "@/api/playground";
 import type { DataFrameCell, ExampleSummary, LessonDetail, CodeSnapshotItem } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
@@ -53,7 +54,28 @@ async function loadLesson(slug: string) {
   try {
     currentLesson.value = await fetchLessonBySlug(slug);
     learnerStateStore.recordLessonStart(slug);
-    loadDraftForContext(currentLesson.value.codeExample);
+
+    // Phase 2: 结构化练习接入
+    const exercise = currentLesson.value.exercise;
+    if (exercise) {
+      // 尝试恢复上次未完成的练习
+      try {
+        const resumeData = await resumeExercise(exercise.id, slug);
+        if (resumeData.isResumed) {
+          // 有未通过的尝试，恢复代码
+          playgroundStore.startExercise(exercise, slug, resumeData.code);
+        } else {
+          // 无历史尝试，使用 starter code
+          playgroundStore.startExercise(exercise, slug, exercise.starterCode);
+        }
+      } catch {
+        // 恢复失败，fallback 到 starter code
+        playgroundStore.startExercise(exercise, slug, exercise.starterCode);
+      }
+    } else {
+      // 普通课程，加载草稿
+      loadDraftForContext(currentLesson.value.codeExample);
+    }
   } catch (err) {
     console.error("加载课程失败:", err);
     currentLesson.value = null;
@@ -215,10 +237,30 @@ const resultTabs = ["output", "dataframe", "history", "attempts", "assistant"] a
 // =====================================================
 
 const isPracticeContextCollapsed = ref(false);
+const isCompletingLesson = ref(false);
 
 function togglePracticeContext() {
   isPracticeContextCollapsed.value = !isPracticeContextCollapsed.value;
   localStorage.setItem('playground:practiceContextCollapsed', String(isPracticeContextCollapsed.value));
+}
+
+/** Phase 2: 完成课程（通过 analytics/track 写入 lesson_complete） */
+async function completeLesson() {
+  if (!currentLesson.value || isCompletingLesson.value) return;
+  isCompletingLesson.value = true;
+  try {
+    await trackEvent({
+      eventType: 'lesson_complete',
+      lessonSlug: currentLesson.value.slug,
+      eventId: crypto.randomUUID(),
+    });
+    // 更新本地状态
+    await learnerStateStore.completeLesson(currentLesson.value.slug);
+  } catch (err) {
+    console.error('完成课程失败:', err);
+  } finally {
+    isCompletingLesson.value = false;
+  }
 }
 
 // =====================================================
@@ -778,44 +820,72 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
 
     <!-- 练习上下文卡片 -->
     <div
-      v-if="currentLesson && (currentLesson.practiceObjective || currentLesson.completionCriteria?.length)"
+      v-if="playgroundStore.isInExercise || (currentLesson && (currentLesson.practiceObjective || currentLesson.completionCriteria?.length))"
       class="shrink-0 border-b border-white/5 bg-[#161b22]"
     >
       <div class="px-4 py-3">
         <div class="flex items-start justify-between gap-3">
           <div class="flex-1 min-w-0">
-            <!-- 练习目标 -->
-            <div v-if="!isPracticeContextCollapsed && currentLesson.practiceObjective" class="mb-3">
-              <div class="flex items-center gap-2 mb-1.5">
-                <svg class="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span class="text-xs font-semibold text-blue-300">练习目标</span>
+            <!-- Phase 2: 结构化练习信息 -->
+            <template v-if="playgroundStore.isInExercise && playgroundStore.activeExercise">
+              <div v-if="!isPracticeContextCollapsed" class="space-y-3">
+                <!-- 练习标题 -->
+                <div class="flex items-center gap-2">
+                  <span class="text-lg">🎯</span>
+                  <span class="text-sm font-bold text-blue-300">{{ playgroundStore.activeExercise.title }}</span>
+                </div>
+                <!-- 练习目标 -->
+                <div v-if="playgroundStore.activeExercise.objective">
+                  <p class="text-xs font-semibold text-slate-400 mb-1">练习目标</p>
+                  <p class="text-sm text-slate-300 leading-relaxed">{{ playgroundStore.activeExercise.objective }}</p>
+                </div>
+                <!-- 提示 -->
+                <div v-if="playgroundStore.activeExercise.hints?.length">
+                  <p class="text-xs font-semibold text-slate-400 mb-1">💡 提示</p>
+                  <ul class="space-y-1">
+                    <li v-for="(hint, idx) in playgroundStore.activeExercise.hints" :key="idx" class="text-xs text-slate-400 flex items-start gap-2">
+                      <span class="text-slate-600 shrink-0">•</span>
+                      <span>{{ hint }}</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
-              <p class="text-sm text-slate-300 leading-relaxed pl-6">
-                {{ currentLesson.practiceObjective }}
-              </p>
-            </div>
+            </template>
 
-            <!-- 完成标准 -->
-            <div v-if="!isPracticeContextCollapsed && currentLesson.completionCriteria?.length" class="mb-0">
-              <div class="flex items-center gap-2 mb-1.5">
-                <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-                <span class="text-xs font-semibold text-emerald-300">完成标准</span>
+            <!-- 普通课程的练习目标 -->
+            <template v-else>
+              <div v-if="!isPracticeContextCollapsed && currentLesson?.practiceObjective" class="mb-3">
+                <div class="flex items-center gap-2 mb-1.5">
+                  <svg class="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span class="text-xs font-semibold text-blue-300">练习目标</span>
+                </div>
+                <p class="text-sm text-slate-300 leading-relaxed pl-6">
+                  {{ currentLesson.practiceObjective }}
+                </p>
               </div>
-              <ul class="space-y-1 pl-6">
-                <li
-                  v-for="(criterion, index) in currentLesson.completionCriteria"
-                  :key="index"
-                  class="text-sm text-slate-300 flex items-start gap-2"
-                >
-                  <span class="text-slate-600 shrink-0">•</span>
-                  <span>{{ criterion }}</span>
-                </li>
-              </ul>
-            </div>
+
+              <!-- 完成标准 -->
+              <div v-if="!isPracticeContextCollapsed && currentLesson?.completionCriteria?.length" class="mb-0">
+                <div class="flex items-center gap-2 mb-1.5">
+                  <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  <span class="text-xs font-semibold text-emerald-300">完成标准</span>
+                </div>
+                <ul class="space-y-1 pl-6">
+                  <li
+                    v-for="(criterion, index) in currentLesson.completionCriteria"
+                    :key="index"
+                    class="text-sm text-slate-300 flex items-start gap-2"
+                  >
+                    <span class="text-slate-600 shrink-0">•</span>
+                    <span>{{ criterion }}</span>
+                  </li>
+                </ul>
+              </div>
+            </template>
 
             <!-- 折叠态提示 -->
             <div v-if="isPracticeContextCollapsed" class="flex items-center gap-2">
@@ -1269,7 +1339,51 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                   >
                 </div>
 
-                <!-- 练习反馈：成功时 -->
+                <!-- Phase 2: 练习验证状态 -->
+                <div
+                  v-if="playgroundStore.isInExercise && playgroundStore.lastVerification"
+                  class="mt-4 rounded-lg p-3"
+                  :class="{
+                    'bg-emerald-500/10 border border-emerald-500/30': playgroundStore.lastVerification.status === 'passed',
+                    'bg-red-500/10 border border-red-500/30': playgroundStore.lastVerification.status === 'failed',
+                    'bg-yellow-500/10 border border-yellow-500/30': playgroundStore.lastVerification.status === 'unverifiable',
+                  }"
+                >
+                  <div class="flex items-start gap-2">
+                    <span class="text-lg">
+                      {{ playgroundStore.lastVerification.status === 'passed' ? '✅' : playgroundStore.lastVerification.status === 'failed' ? '❌' : '⚠️' }}
+                    </span>
+                    <div class="flex-1">
+                      <p class="text-sm font-medium" :class="{
+                        'text-emerald-300': playgroundStore.lastVerification.status === 'passed',
+                        'text-red-300': playgroundStore.lastVerification.status === 'failed',
+                        'text-yellow-300': playgroundStore.lastVerification.status === 'unverifiable',
+                      }">
+                        {{ playgroundStore.lastVerification.status === 'passed' ? '练习验证通过！' : playgroundStore.lastVerification.status === 'failed' ? '验证未通过' : '无法验证' }}
+                      </p>
+                      <p v-if="playgroundStore.lastVerification.failureReason" class="text-xs text-slate-400 mt-1">
+                        原因：{{ playgroundStore.lastVerification.failureReason }}
+                      </p>
+
+                      <!-- 验证通过后：完成课程按钮 -->
+                      <div v-if="playgroundStore.isVerificationPassed && currentLesson" class="mt-3">
+                        <button
+                          class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-500"
+                          :disabled="isCompletingLesson"
+                          @click="completeLesson"
+                        >
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {{ isCompletingLesson ? '完成中...' : '查看证据并完成课程' }}
+                        </button>
+                        <p class="text-xs text-slate-500 mt-2">课程完成仍需你显式确认，不会自动完成。</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 练习反馈：成功时（无结构化练习的普通课程） -->
                 <div
                   v-if="currentLesson && playgroundStore.lastResponse?.status === 'success'"
                   class="mt-4 rounded-lg bg-blue-500/5 border border-blue-500/20 p-3"

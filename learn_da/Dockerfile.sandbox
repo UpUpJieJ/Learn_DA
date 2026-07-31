@@ -22,8 +22,9 @@ RUN chmod +x /tmp/setup-debian-apt-mirrors.sh && APT_MIRROR=${APT_MIRROR} /tmp/s
 
 # Create dedicated non-root user with UID/GID 65532 (Spec §3.2).
 RUN groupadd -g 65532 sandbox && useradd -r -u 65532 -g sandbox sandbox
-USER 65532:65532
 
 RUN pip install --upgrade pip -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
     pip install --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
     polars duckdb pandas
+
+USER 65532:65532

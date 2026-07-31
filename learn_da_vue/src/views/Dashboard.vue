@@ -8,6 +8,7 @@ import {
   fetchUserLessonStats,
   fetchDailyTrend,
   fetchCategoryProgress,
+  fetchPracticeStats,
 } from "@/api/analytics";
 import { fetchCatalog, fetchLessons } from "@/api/learning";
 import { getRecommendations } from "@/api/recommendation";
@@ -19,6 +20,7 @@ import type {
   RecommendationResponse,
   PlatformCatalog,
   LessonSummary,
+  PracticeStats,
 } from "@/types/api";
 import * as echarts from "echarts/core";
 import { LineChart } from "echarts/charts";
@@ -55,6 +57,7 @@ const dailyTrend = ref<DailyTrendItem[]>([]);
 const categoryProgress = ref<CategoryProgress | null>(null);
 const recommendation = ref<RecommendationResponse | null>(null);
 const catalog = ref<PlatformCatalog | null>(null);
+const practiceStats = ref<PracticeStats | null>(null);
 
 const tabs = [
   { key: "overview", label: "学习概览", icon: "📊" },
@@ -83,6 +86,7 @@ async function loadAllData() {
       }).catch(() => null),
       fetchCatalog().catch(() => null),
       fetchLessons().catch(() => [] as LessonSummary[]),
+      fetchPracticeStats().catch(() => null),
     ]);
     if (results[0]) profile.value = results[0];
     if (results[1]) lessonStats.value = results[1];
@@ -91,6 +95,7 @@ async function loadAllData() {
     if (results[4]) recommendation.value = results[4];
     if (results[5]) catalog.value = results[5];
     lessons.value = results[6] ?? [];
+    if (results[7]) practiceStats.value = results[7];
   } catch {
     // 静默处理
   } finally {
@@ -214,6 +219,12 @@ const completionRate = computed(() => {
   if (lessons.value.length === 0) return 0;
   return Math.round((learnerStateStore.totalCompleted / lessons.value.length) * 100);
 });
+
+const commonPracticeErrors = computed(() =>
+  Object.entries(practiceStats.value?.errorCategories ?? {})
+    .sort(([, left], [, right]) => right - left)
+    .slice(0, 4),
+);
 
 // =====================================================
 // 下一步学习建议
@@ -348,6 +359,86 @@ function getRecommendationStyle(rec: any) {
               </div>
             </div>
           </div>
+
+          <!-- 可验证练习指标 -->
+          <section class="bg-white border border-slate-100 rounded-lg p-6">
+            <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+              <div>
+                <h2 class="text-sm font-semibold text-slate-800">可验证练习</h2>
+                <p class="text-xs text-slate-500 mt-1">基于服务端保存的练习 Attempt</p>
+              </div>
+              <div class="flex gap-6">
+                <div class="text-right">
+                  <div class="text-2xl font-bold text-emerald-600">
+                    {{ practiceStats?.passedExercises ?? 0 }}
+                  </div>
+                  <div class="text-xs text-slate-400">已验证完成</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-2xl font-bold text-slate-800">
+                    {{ practiceStats?.totalAttempts ?? 0 }}
+                  </div>
+                  <div class="text-xs text-slate-400">练习尝试</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h3 class="text-xs font-semibold text-slate-500 mb-3">恢复中的练习</h3>
+                <div v-if="practiceStats?.resumableExercises.length" class="divide-y divide-slate-100">
+                  <button
+                    v-for="item in practiceStats.resumableExercises"
+                    :key="item.exerciseId"
+                    class="w-full py-3 flex items-center justify-between gap-3 text-left hover:text-blue-700"
+                    @click="router.push(`/playground/${item.lessonSlug}`)"
+                  >
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-slate-700 truncate">{{ item.lessonSlug }}</span>
+                      <span class="block text-xs text-slate-400 mt-0.5">{{ item.exerciseId }}</span>
+                    </span>
+                    <span class="text-xs text-blue-600 shrink-0">继续</span>
+                  </button>
+                </div>
+                <p v-else class="text-sm text-slate-400 py-3">当前没有待恢复练习</p>
+              </div>
+
+              <div>
+                <h3 class="text-xs font-semibold text-slate-500 mb-3">常见错误</h3>
+                <div v-if="commonPracticeErrors.length" class="space-y-2">
+                  <div
+                    v-for="([reason, count]) in commonPracticeErrors"
+                    :key="reason"
+                    class="flex items-center justify-between gap-3 py-1"
+                  >
+                    <code class="text-xs text-slate-600 break-all">{{ reason }}</code>
+                    <span class="text-xs font-semibold text-slate-500 shrink-0">{{ count }} 次</span>
+                  </div>
+                </div>
+                <p v-else class="text-sm text-slate-400 py-3">暂无练习错误记录</p>
+              </div>
+            </div>
+
+            <div v-if="practiceStats?.recentAttempts.length" class="mt-5 pt-5 border-t border-slate-100">
+              <h3 class="text-xs font-semibold text-slate-500 mb-3">最近尝试</h3>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="attempt in practiceStats.recentAttempts"
+                  :key="attempt.attemptId"
+                  class="px-3 py-2 border border-slate-200 rounded text-left hover:border-blue-300"
+                  @click="router.push(`/playground/${attempt.lessonSlug}`)"
+                >
+                  <span class="block text-xs font-medium text-slate-700">{{ attempt.lessonSlug }}</span>
+                  <span
+                    class="block text-xs mt-0.5"
+                    :class="attempt.verificationStatus === 'passed' ? 'text-emerald-600' : 'text-slate-400'"
+                  >
+                    {{ attempt.verificationStatus }}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </section>
 
           <!-- 连续学习 + 进度 -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

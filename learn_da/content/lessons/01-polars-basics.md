@@ -25,6 +25,33 @@ recommended_next: [duckdb-analytics, polars-groupby]
 skill_tags: [dataframe_basics, column_selection, row_filtering, column_derivation]
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: polars-basics-filter-select-v1
+  title: 筛选并选择高价值商品
+  language: python
+  starter_code: |
+    import polars as pl
+
+    orders = pl.DataFrame({
+        'product': ['键盘', '鼠标', '显示器', '耳机'],
+        'price': [200, 80, 1500, 300],
+        'quantity': [3, 5, 1, 2],
+    })
+
+    # TODO: 筛选 price > 100 的商品，只保留 product 和 price 列
+    result = orders
+    print(result)
+  objective: 使用 filter 筛选 price > 100 的行，再用 select 保留 product 和 price 两列。
+  hints:
+    - 用 pl.col('price') 引用列
+    - filter 选择行，select 选择列
+    - 可以链式调用：df.filter(...).select(...)
+  validator:
+    type: stdout_contains
+    expected:
+      - "键盘"
+      - "显示器"
+      - "耳机"
 ---
 
 # Polars 基础入门

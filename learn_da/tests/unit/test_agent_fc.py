@@ -327,10 +327,11 @@ def test_fc_settings_defaults():
 
 
 def test_fc_tools_are_read_only():
-    # 红线：只允许三个只读工具，不得出现执行/写入类工具
+    # 红线：只允许四个只读工具，不得出现执行/写入类工具
     names = {tool["function"]["name"] for tool in FC_TOOLS}
     assert names == {"search_knowledge",
-                     "get_learner_progress", "get_recommendation"}
+                     "get_learner_progress", "get_recommendation",
+                     "get_exercise_summary"}
 
 
 # ---- /chat 入口按 flag 分流（Task 4.2）----

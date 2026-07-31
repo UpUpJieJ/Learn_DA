@@ -8,7 +8,7 @@ import type { RecommendationResponse } from "@/types/api";
 export async function getRecommendations(params: {
   currentLesson?: string;
 }): Promise<RecommendationResponse> {
-  return get<RecommendationResponse>("/learning/recommendations", {
+  return get<RecommendationResponse>("/recommendations", {
     current_lesson: params.currentLesson,
   });
 }

@@ -31,10 +31,17 @@ def get_learning_service() -> LearningService:
 def get_recommendation_service(
     db: AsyncSession = Depends(get_db),
 ) -> RecommendationService:
+    from app.practice.repository import PracticeRepository
+    from app.practice.service import PracticeService
+
+    practice_repo = PracticeRepository(db)
+    practice_service = PracticeService(db=db, practice_repo=practice_repo)
+
     return RecommendationService(
         repository=LearningRepository(),
         analytics_service=AnalyticsService(db),
         learner_state_service=LearnerStateService(db),
+        practice_service=practice_service,
     )
 
 
