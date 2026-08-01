@@ -1,22 +1,24 @@
 from typing import Any
 
-from app.core.content_loader import load_all_lessons, load_all_examples
+from app.core.content_catalog import get_content_index
+from app.core.content_schemas import ContentIndex
 from .schemas import ExampleDetail, LessonDetail, LessonNav
 
 
 class LearningRepository:
     """
-    学习资源仓库 - 从 Markdown 文件加载课程和示例
+    学习资源仓库 - 读取启动时构建的共享内容索引
     """
 
-    def __init__(self):
+    def __init__(self, index: ContentIndex | None = None):
+        self._index = index or get_content_index()
         self._lessons: list[LessonDetail] | None = None
         self._examples: list[ExampleDetail] | None = None
 
     def _load_lessons(self) -> list[LessonDetail]:
-        """懒加载课程数据"""
+        """懒加载课程数据（映射自共享索引，不扫描文件系统）"""
         if self._lessons is None:
-            raw_lessons = load_all_lessons()
+            raw_lessons = self._index.lessons
             self._lessons = []
 
             # 构建 slug -> lesson 映射，用于查找前后课程
@@ -67,9 +69,9 @@ class LearningRepository:
         return self._lessons
 
     def _load_examples(self) -> list[ExampleDetail]:
-        """懒加载示例数据"""
+        """懒加载示例数据（映射自共享索引，不扫描文件系统）"""
         if self._examples is None:
-            raw_examples = load_all_examples()
+            raw_examples = self._index.examples
             self._examples = [
                 ExampleDetail(
                     slug=raw["slug"],

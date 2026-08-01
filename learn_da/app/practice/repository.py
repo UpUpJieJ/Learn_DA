@@ -147,6 +147,54 @@ class PracticeRepository:
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_passed_after(
+        self,
+        visitor_id: str,
+        exercise_id: str,
+        occurred_after: datetime,
+    ) -> ExerciseAttempt | None:
+        """获取某次 Agent 交互之后通过的尝试。
+
+        通过时间和练习 ID 都必须匹配，避免把交互前的历史通过记录误算为
+        "帮助后通过"，也避免同课程的其他练习污染指标。
+        """
+        stmt = (
+            select(ExerciseAttempt)
+            .where(
+                ExerciseAttempt.visitor_id == visitor_id,
+                ExerciseAttempt.exercise_id == exercise_id,
+                ExerciseAttempt.verification_status == "passed",
+                ExerciseAttempt.created_time > occurred_after,
+                ExerciseAttempt.is_deleted == False,  # noqa: E712
+            )
+            .order_by(ExerciseAttempt.created_time.asc(), ExerciseAttempt.id.asc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_by_lesson(
+        self,
+        visitor_id: str,
+        lesson_slug: str,
+    ) -> ExerciseAttempt | None:
+        """获取 visitor 对某课程的最近一次尝试（阶段 3 Agent 证据解析用）。
+
+        始终带 visitor_id 过滤，禁止跨 visitor 查询。
+        """
+        stmt = (
+            select(ExerciseAttempt)
+            .where(
+                ExerciseAttempt.visitor_id == visitor_id,
+                ExerciseAttempt.lesson_slug == lesson_slug,
+                ExerciseAttempt.is_deleted == False,  # noqa: E712
+            )
+            .order_by(ExerciseAttempt.created_time.desc(), ExerciseAttempt.id.desc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_attempt_summaries_by_visitor(
         self,
         visitor_id: str,

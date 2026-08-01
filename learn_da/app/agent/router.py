@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.analytics.schemas import EventTrackRequest, EventType
 from app.analytics.service import AnalyticsService
 from app.core import get_anonymous_visitor_id
 from app.core.database.database import get_db
@@ -12,7 +11,13 @@ from app.utils.limiter import limiter
 from config.settings import settings
 
 from .knowledge import KnowledgeRetriever
-from .schemas import AgentChatData, AgentChatRequest
+from .repository import AgentInteractionRepository
+from .schemas import (
+    AgentChatData,
+    AgentChatRequest,
+    AgentFeedbackRequest,
+    AgentFeedbackResponse,
+)
 from .service import AgentService
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -47,12 +52,15 @@ def get_agent_service(
 
     practice_repo = PracticeRepository(db)
     practice_service = PracticeService(db=db, practice_repo=practice_repo)
+    # 阶段 3：交互审计 repo（与 analytics/practice 共享同一 db session）
+    interaction_repo = AgentInteractionRepository(db)
 
     return AgentService(
         knowledge_retriever=knowledge_retriever,
         analytics_service=AnalyticsService(db),
         learner_state_service=LearnerStateService(db),
         practice_service=practice_service,
+        interaction_repo=interaction_repo,
         # lifespan 共享的 LLM client；为 None 时（无 key / 未经 lifespan 的测试）
         # 由 _complete 自建临时 client 并负责关闭。
         llm_client=getattr(request.app.state, "agent_llm_client", None),
@@ -74,31 +82,25 @@ async def chat_with_agent(
     if _fc_enabled():
         data = await service.chat_with_tools(payload, visitor_id=visitor_id)
     else:
-        data = await service.chat(payload)
+        data = await service.chat(payload, visitor_id=visitor_id)
 
-    # 阶段 1：Agent 后端成功受理后记录 ai_help 事件，统一学习事实来源。
-    # event_id 关联当前请求 ID，同一请求重放不会重复写入。
-    #
-    # 埋点是旁路副作用：LLM 调用已经发生（且已计费），此处失败绝不能把一次成功的
-    # 回答变成 500，因此吞掉异常只记日志。
-    if service.analytics_service is not None:
-        from app.utils.logger import request_id_var
-
-        req_id = request_id_var.get()
-        try:
-            await service.analytics_service.track_event(
-                EventTrackRequest.model_validate(
-                    {
-                        "eventType": EventType.AI_HELP.value,
-                        "lessonSlug": (
-                            payload.context.current_lesson if payload.context else None
-                        ),
-                        "eventId": f"ai_help:{visitor_id}:{req_id}",
-                    }
-                ),
-                visitor_id=visitor_id,
-            )
-        except Exception:
-            log.exception("[agent] ai_help 埋点写入失败，已忽略以保全聊天响应")
-
+    # 阶段 3：ai_help 已在 service 内与 AgentInteraction 同事务写入
+    # （lesson/attempt 来自 evidence resolver，非客户端自报），此处不再重复埋点。
     return StdResp.success(data=data)
+
+
+@router.post("/feedback", response_model=StdResp[AgentFeedbackResponse])
+async def record_feedback(
+    request: Request,
+    req: AgentFeedbackRequest,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    service: AgentService = Depends(get_agent_service),
+):
+    """记录用户对某次 Agent 交互的反馈（upsert，不新增 ai_help）。
+
+    校验 interaction 属于当前 visitor；同一反馈可覆盖更新。
+    """
+    result = await service.record_feedback(req, visitor_id)
+    if not result.recorded:
+        return StdResp.not_found(msg="交互不存在或不属于当前学习者").to_response()
+    return StdResp.success(data=result)

@@ -12,6 +12,7 @@ from config.settings import settings
 
 if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
+    from app.agent.repository import AgentInteractionRepository
     from app.learner_state.service import LearnerStateService
     from app.learning.repository import LearningRepository
     from app.practice.service import PracticeService
@@ -173,11 +174,14 @@ class RecommendationService:
         analytics_service: "AnalyticsService | None" = None,
         learner_state_service: "LearnerStateService | None" = None,
         practice_service: "PracticeService | None" = None,
+        interaction_repo: "AgentInteractionRepository | None" = None,
     ):
         self.repository = repository
         self.analytics_service = analytics_service
         self.learner_state_service = learner_state_service
         self.practice_service = practice_service
+        # 阶段 3：Agent 交互审计（读取帮助后仍未通过的聚合信号）
+        self.interaction_repo = interaction_repo
         self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
         self.AI_HELPS_THRESHOLD = settings.RECOMMENDATION_AI_HELPS_THRESHOLD
         self.SNAPSHOTS_THRESHOLD = settings.RECOMMENDATION_SNAPSHOTS_THRESHOLD
@@ -553,15 +557,34 @@ class RecommendationService:
         code_runs = stats.get("codeRuns", 0)
         ai_helps = stats.get("aiHelps", 0)
         completed = stats.get("completed", False)
+        agent_help_summary = await self._get_agent_help_summary(
+            visitor_id, current_lesson_slug
+        )
 
         # 判断是否需要回补
         needs_review = False
         reason_template = ""
 
-        if not completed and code_runs >= self.CODE_RUNS_THRESHOLD:
+        if (
+            not completed
+            and agent_help_summary["has_unresolved_failure"]
+            and (code_runs > 0 or snapshots_count > 0)
+        ):
+            needs_review = True
+            reason_template = (
+                "你在练习失败后多次获得 AI 提示但仍未通过验证，"
+                "建议回顾 {review_lesson} 巩固基础"
+            )
+        elif not completed and code_runs >= self.CODE_RUNS_THRESHOLD:
             needs_review = True
             reason_template = f"你在这节课尝试了 {code_runs} 次代码运行，建议回顾 {{review_lesson}} 巩固基础"
-        elif not completed and ai_helps >= self.AI_HELPS_THRESHOLD:
+        elif (
+            not completed
+            and ai_helps >= self.AI_HELPS_THRESHOLD
+            and (code_runs > 0 or snapshots_count > 0)
+        ):
+            # 阶段 3：Agent 多次求助但无任何练习活动（code_runs/snapshots 均为 0）
+            # 不触发回补——仅提问未实践不构成学习困难证据
             needs_review = True
             reason_template = (
                 f"你请求了 {ai_helps} 次 AI 帮助，{{review_lesson}} 的内容可能需要复习"
@@ -677,6 +700,63 @@ class RecommendationService:
             )
         except Exception:
             return 0
+
+    async def _get_agent_help_summary(
+        self, visitor_id: str, lesson_slug: str
+    ) -> dict:
+        """阶段 3：读取 Agent 交互聚合信号（帮助后仍未通过）。
+
+        返回 ``{has_help, max_hint_level, has_unresolved_failure}``。
+        RecommendationService 仍是唯一排序来源，Agent 只提供证据信号；
+        读取失败时静默降级为空信号。
+        """
+        if self.interaction_repo is None:
+            return {"has_help": False, "max_hint_level": 0, "has_unresolved_failure": False}
+        try:
+            interactions = await self.interaction_repo.get_recent_by_lesson(
+                visitor_id, lesson_slug, limit=10
+            )
+        except Exception:
+            return {"has_help": False, "max_hint_level": 0, "has_unresolved_failure": False}
+        if not interactions:
+            return {"has_help": False, "max_hint_level": 0, "has_unresolved_failure": False}
+        max_hint = max((i.hint_level or 0) for i in interactions)
+        unresolved = False
+        for interaction in interactions:
+            if interaction.evidence_state not in (
+                "execution_failed",
+                "verification_failed",
+                "unverifiable",
+            ) or (interaction.hint_level or 0) < 2:
+                continue
+
+            # 新交互都关联 Attempt。只有该交互之后仍没有通过记录时，
+            # 才把它视为未解决失败；旧数据缺少 attempt_id 时保守保留信号。
+            attempt_id = getattr(interaction, "attempt_id", None)
+            occurred_at = getattr(interaction, "created_time", None)
+            if self.practice_service is not None and attempt_id and occurred_at:
+                try:
+                    attempt = await self.practice_service.repo.get_by_id(
+                        attempt_id, visitor_id
+                    )
+                    if attempt and attempt.exercise_id:
+                        passed_after = await self.practice_service.repo.get_passed_after(
+                            visitor_id,
+                            attempt.exercise_id,
+                            occurred_at,
+                        )
+                        if passed_after is not None:
+                            continue
+                except Exception:
+                    # 无法确认后续结果时保守保留未解决信号。
+                    pass
+            unresolved = True
+            break
+        return {
+            "has_help": True,
+            "max_hint_level": max_hint,
+            "has_unresolved_failure": unresolved,
+        }
 
     @staticmethod
     def _check_long_stall(stats: dict, snapshots_count: int) -> bool:

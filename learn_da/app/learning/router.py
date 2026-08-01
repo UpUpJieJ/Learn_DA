@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import AnalyticsService
 from app.core import get_anonymous_visitor_id
-from app.core.content_loader import load_catalog
+from app.core.content_catalog import get_content_index
 from app.core.database.database import get_db
 from app.learner_state.service import LearnerStateService
 from app.utils.base_response import StdResp
@@ -31,17 +31,20 @@ def get_learning_service() -> LearningService:
 def get_recommendation_service(
     db: AsyncSession = Depends(get_db),
 ) -> RecommendationService:
+    from app.agent.repository import AgentInteractionRepository
     from app.practice.repository import PracticeRepository
     from app.practice.service import PracticeService
 
     practice_repo = PracticeRepository(db)
     practice_service = PracticeService(db=db, practice_repo=practice_repo)
+    interaction_repo = AgentInteractionRepository(db)
 
     return RecommendationService(
         repository=LearningRepository(),
         analytics_service=AnalyticsService(db),
         learner_state_service=LearnerStateService(db),
         practice_service=practice_service,
+        interaction_repo=interaction_repo,
     )
 
 
@@ -98,7 +101,7 @@ async def get_category_stats(
 
 @router.get("/catalog")
 async def get_catalog():
-    return StdResp.success(data=load_catalog())
+    return StdResp.success(data=get_content_index().catalog)
 
 
 @router.get("/lessons/{slug}", response_model=StdResp[LessonDetail])

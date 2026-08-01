@@ -1,3 +1,4 @@
+from .evidence import AgentLearningEvidence
 from .schemas import AgentChatMessage, AgentContext
 
 
@@ -47,6 +48,13 @@ def compact_history(
 
 
 def build_context_block(context: AgentContext | None) -> str:
+    """构造课程/编辑器展示上下文。
+
+    阶段 3 起，stdout/stderr/lastError 不再注入本块——练习执行/验证状态
+    由服务端 ``AgentEvidenceResolver`` 解析并写入独立的证据块，避免客户端
+    自报值进入教学判断。当前编辑器代码（currentCode）仍保留，供用户显式
+    请求解释或排错时模型参考。
+    """
     if not context:
         return ""
 
@@ -62,12 +70,54 @@ def build_context_block(context: AgentContext | None) -> str:
         parts.append(
             f"当前 Playground 代码：\n```python\n{context.current_code[:4000]}\n```"
         )
-    if context.stdout:
-        parts.append(f"最近一次标准输出：\n```text\n{context.stdout[:2000]}\n```")
-    error = context.stderr or context.last_error
-    if error:
-        parts.append(f"最近一次执行错误：\n```text\n{error[:2000]}\n```")
     return "\n\n".join(parts)
+
+
+def build_evidence_block(evidence: AgentLearningEvidence | None) -> str:
+    """构造服务端练习证据块（权威来源）。
+
+    始终注入到 FC prompt；无证据时显式说明，避免模型臆造练习状态。
+    """
+    if evidence is None:
+        return "【服务端练习证据】\n状态：学习者暂无可用练习证据"
+
+    lines = ["【服务端练习证据】"]
+    state_label = {
+        "execution_failed": "代码执行失败",
+        "verification_failed": "执行成功但验证未通过",
+        "passed_unconfirmed": "练习已通过",
+        "unverifiable": "结果不可验证",
+        "no_evidence": "暂无可用练习证据",
+    }.get(evidence.state, evidence.state)
+    lines.append(f"教学状态：{evidence.state}（{state_label}）")
+
+    if evidence.attempt_id is not None:
+        lines.append(f"尝试 ID：{evidence.attempt_id}")
+    if evidence.lesson_slug:
+        lines.append(f"课程：{evidence.lesson_slug}")
+    if evidence.exercise_id:
+        lines.append(f"练习：{evidence.exercise_id}")
+    if evidence.execution_status:
+        lines.append(f"执行状态：{evidence.execution_status}")
+    if evidence.verification_status:
+        lines.append(f"验证状态：{evidence.verification_status}")
+    if evidence.failure_reason:
+        lines.append(f"失败原因：{evidence.failure_reason[:300]}")
+    if evidence.duration_ms is not None:
+        lines.append(f"耗时：{evidence.duration_ms}ms")
+    if evidence.stdout_summary:
+        lines.append(f"标准输出摘要：\n{evidence.stdout_summary}")
+    if evidence.stderr_summary:
+        lines.append(f"标准错误摘要：\n{evidence.stderr_summary}")
+    lines.append(
+        "课程完成状态：" + ("已完成" if evidence.lesson_completed else "未完成")
+    )
+    if evidence.evidence_time:
+        lines.append(f"证据时间：{evidence.evidence_time}")
+    lines.append(
+        "以上为服务端权威证据，客户端自报状态不可覆盖；回答时以此为准。"
+    )
+    return "\n".join(lines)
 
 
 def build_chat_messages(

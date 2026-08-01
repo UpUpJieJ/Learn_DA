@@ -5,7 +5,7 @@ from typing import Sequence
 
 from openai import AsyncOpenAI
 
-from app.core.content_loader import load_all_lessons
+from app.core.content_catalog import get_content_index
 from config.settings import settings
 
 from .embedding_cache import EmbeddingCache, embedding_content_hash
@@ -69,7 +69,7 @@ class KnowledgeRetriever:
         embedding_client: OpenAICompatibleEmbeddingClient | None = None,
         embedding_cache: EmbeddingCache | None = None,
     ) -> None:
-        self.lessons = lessons if lessons is not None else load_all_lessons()
+        self.lessons = lessons if lessons is not None else get_content_index().lessons
         self.chunks = self._build_chunks(self.lessons)
         self.embedding_config = embedding_config or EmbeddingConfig.from_settings()
         self.embedding_client = embedding_client

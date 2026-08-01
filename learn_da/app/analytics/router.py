@@ -219,12 +219,17 @@ async def get_practice_stats(
     visitor_id: str = Depends(get_anonymous_visitor_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取用户练习指标：验证通过数、最近尝试、可恢复练习、错误类别"""
+    """获取用户练习指标：验证通过数、最近尝试、可恢复练习、错误类别
+
+    阶段 3：新增 Agent 帮助后通过率与未解决失败聚合指标。
+    """
+    from app.agent.repository import AgentInteractionRepository
     from app.practice.repository import PracticeRepository
     from app.practice.service import PracticeService
 
     repo = PracticeRepository(db)
     service = PracticeService(db=db, practice_repo=repo)
+    interaction_repo = AgentInteractionRepository(db)
 
     # 验证通过数
     passed_count = await repo.count_passed_exercises(visitor_id)
@@ -264,6 +269,12 @@ async def get_practice_stats(
                 error_categories.get(a.failure_reason, 0) + 1
             )
 
+    # 阶段 3：Agent 帮助后通过率 / 未解决失败聚合
+    help_then_pass_rate = await _compute_help_then_pass_rate(
+        interaction_repo, repo, visitor_id
+    )
+    unresolved_failures = len(resumable)
+
     return StdResp.success(
         data={
             "passedExercises": passed_count,
@@ -271,5 +282,75 @@ async def get_practice_stats(
             "recentAttempts": [s.model_dump(by_alias=True) for s in recent_attempts],
             "resumableExercises": resumable,
             "errorCategories": error_categories,
+            "helpThenPassRate": help_then_pass_rate,
+            "unresolvedFailures": unresolved_failures,
         }
     )
+
+
+async def _compute_help_then_pass_rate(
+    interaction_repo, practice_repo, visitor_id: str
+) -> float | None:
+    """计算"获得 Agent 帮助（Level≥2）后最终通过"的比率。
+
+    分子：有 evidence_state ∈ {execution_failed, verification_failed}
+    且 hint_level ≥ 2 的 interaction，且对应 exercise 后续有通过 attempt。
+    分母：上述 interaction 涉及的 exercise 总数。
+    无数据时返回 None（前端降级显示）。
+    """
+    try:
+        from sqlalchemy import select
+        from app.agent.models import AgentInteraction
+
+        stmt = (
+            select(AgentInteraction)
+            .where(
+                AgentInteraction.visitor_id == visitor_id,
+                AgentInteraction.evidence_state.in_(
+                    ("execution_failed", "verification_failed")
+                ),
+                AgentInteraction.hint_level >= 2,
+                AgentInteraction.is_deleted == False,  # noqa: E712
+            )
+            .order_by(AgentInteraction.created_time.desc())
+            .limit(50)
+        )
+        result = await interaction_repo.db.execute(stmt)
+        interactions = list(result.scalars().all())
+    except Exception:
+        return None
+
+    if not interactions:
+        return None
+
+    # interaction 通过 attempt_id 关联具体练习；旧数据没有 attempt_id 时
+    # 无法计算可靠的帮助后通过率，应排除而不是按课程粗略猜测。
+    interaction_attempts: list[tuple[object, object]] = []
+    for it in interactions:
+        if it.attempt_id is None or it.created_time is None:
+            continue
+        try:
+            attempt = await practice_repo.get_by_id(it.attempt_id, visitor_id)
+        except Exception:
+            continue
+        if attempt is not None:
+            interaction_attempts.append((it, attempt))
+
+    if not interaction_attempts:
+        return None
+
+    passed = 0
+    total = len(interaction_attempts)
+    for interaction, attempt in interaction_attempts:
+        try:
+            passed_after = await practice_repo.get_passed_after(
+                visitor_id,
+                attempt.exercise_id,
+                interaction.created_time,
+            )
+            if passed_after is not None:
+                passed += 1
+        except Exception:
+            continue
+
+    return round(passed / total, 4) if total else None

@@ -32,7 +32,7 @@ class AnalyticsService:
         self.learner_state = LearnerStateService(db)
 
     async def track_event(
-        self, req: EventTrackRequest, visitor_id: str
+        self, req: EventTrackRequest, visitor_id: str, *, commit: bool = True
     ) -> EventTrackResponse:
         """记录学习行为事件，同时更新用户画像、每日统计和 Learner State
 
@@ -44,13 +44,13 @@ class AnalyticsService:
         重复上报不应该变成 500。
         """
         try:
-            return await self._track_event(req, visitor_id)
+            return await self._track_event(req, visitor_id, commit=commit)
         except IntegrityError:
             await self.db.rollback()
             return EventTrackResponse(recorded=True)
 
     async def _track_event(
-        self, req: EventTrackRequest, visitor_id: str
+        self, req: EventTrackRequest, visitor_id: str, *, commit: bool = True
     ) -> EventTrackResponse:
         # 幂等键：前端未提供时后端补一个 UUID，使每条事件都有稳定标识；
         # 但后端生成的 UUID 每次都不同，因此未带 event_id 的上报天然不参与去重。
@@ -101,7 +101,8 @@ class AnalyticsService:
                     visitor_id, req.lesson_slug, req.status or "success"
                 )
 
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return EventTrackResponse(recorded=True)
 
     async def save_snapshot(
