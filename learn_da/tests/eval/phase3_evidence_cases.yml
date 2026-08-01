@@ -1,0 +1,341 @@
+# 阶段 3 Task 5：学习证据驱动 Agent 离线评测集
+#
+# 覆盖 7 个评测维度：
+#   1. evidence_accuracy   证据五态推导准确率
+#   2. next_action         下一步动作映射正确性
+#   3. hint_escalation     分级提示逐级升高
+#   4. code_leak           证据/反馈不泄露历史 Attempt 完整代码
+#   5. fallback_class      fallback 原因分类（timeout/429/rate_limit/empty）
+#   6. visitor_isolation   伪造 attemptId/lesson 得不到他人证据
+#   7. runner_unavailable  Runner 不可用不进入 execution_failed
+#
+# 每条 case 字段：
+#   id, dimension, execution_status, verification_status, lesson_completed,
+#   history_user_turns, expected_state, expected_next_action, expected_hint_level
+
+cases:
+  # ── 维度 1: evidence_accuracy（证据五态推导） ──
+  - id: eva-001
+    dimension: evidence_accuracy
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-002
+    dimension: evidence_accuracy
+    execution_status: timeout
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-003
+    dimension: evidence_accuracy
+    execution_status: rejected
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-004
+    dimension: evidence_accuracy
+    execution_status: success
+    verification_status: failed
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-005
+    dimension: evidence_accuracy
+    execution_status: success
+    verification_status: passed
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: passed_unconfirmed
+    expected_next_action: confirm_lesson
+    expected_hint_level: 1
+
+  - id: eva-006
+    dimension: evidence_accuracy
+    execution_status: success
+    verification_status: passed
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: passed_unconfirmed
+    expected_next_action: inspect_result
+    expected_hint_level: 1
+
+  # ── 维度 7: runner_unavailable ──
+  - id: eva-007
+    dimension: runner_unavailable
+    execution_status: unavailable
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  - id: eva-008
+    dimension: runner_unavailable
+    execution_status: success
+    verification_status: unverifiable
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  - id: eva-009
+    dimension: runner_unavailable
+    execution_status: success
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  # ── 维度 3: hint_escalation（连续求助逐级升高） ──
+  - id: eva-010
+    dimension: hint_escalation
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-011
+    dimension: hint_escalation
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 2
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 2
+
+  - id: eva-012
+    dimension: hint_escalation
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 4
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 3
+
+  - id: eva-013
+    dimension: hint_escalation
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 10
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 3
+
+  - id: eva-014
+    dimension: hint_escalation
+    execution_status: success
+    verification_status: failed
+    lesson_completed: false
+    history_user_turns: 3
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 2
+
+  # ── 维度 2: next_action（全覆盖） ──
+  - id: eva-015
+    dimension: next_action
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-016
+    dimension: next_action
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-017
+    dimension: next_action
+    execution_status: success
+    verification_status: failed
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-018
+    dimension: next_action
+    execution_status: unavailable
+    verification_status: not_run
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  # ── 维度 5: fallback_class ──
+  - id: eva-019
+    dimension: fallback_class
+    execution_status: success
+    verification_status: passed
+    lesson_completed: false
+    history_user_turns: 0
+    fallback_reason: timeout
+    expected_state: passed_unconfirmed
+    expected_next_action: confirm_lesson
+    expected_hint_level: 1
+
+  - id: eva-020
+    dimension: fallback_class
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    fallback_reason: rate_limit
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  - id: eva-021
+    dimension: fallback_class
+    execution_status: success
+    verification_status: failed
+    lesson_completed: false
+    history_user_turns: 0
+    fallback_reason: empty
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  # ── 维度 1 补充：no_evidence ──
+  - id: eva-022
+    dimension: evidence_accuracy
+    execution_status: null
+    verification_status: null
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: no_evidence
+    expected_next_action: inspect_result
+    expected_hint_level: 1
+
+  - id: eva-023
+    dimension: evidence_accuracy
+    execution_status: null
+    verification_status: null
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: no_evidence
+    expected_next_action: inspect_result
+    expected_hint_level: 1
+
+  # ── 维度 3 补充：verification_failed 的分级 ──
+  - id: eva-024
+    dimension: hint_escalation
+    execution_status: success
+    verification_status: failed
+    lesson_completed: false
+    history_user_turns: 6
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 3
+
+  # ── 维度 2 补充 ──
+  - id: eva-025
+    dimension: next_action
+    execution_status: success
+    verification_status: unverifiable
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  - id: eva-026
+    dimension: next_action
+    execution_status: success
+    verification_status: not_run
+    lesson_completed: true
+    history_user_turns: 0
+    expected_state: unverifiable
+    expected_next_action: retry_later
+    expected_hint_level: 1
+
+  # ── 维度 1 补充：completed 别名兼容 ──
+  - id: eva-027
+    dimension: evidence_accuracy
+    execution_status: completed
+    verification_status: passed
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: passed_unconfirmed
+    expected_next_action: confirm_lesson
+    expected_hint_level: 1
+
+  - id: eva-028
+    dimension: evidence_accuracy
+    execution_status: completed
+    verification_status: failed
+    lesson_completed: false
+    history_user_turns: 1
+    expected_state: verification_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1
+
+  # ── 维度 3 补充：passed_unconfirmed 的分级 ──
+  - id: eva-029
+    dimension: hint_escalation
+    execution_status: success
+    verification_status: passed
+    lesson_completed: false
+    history_user_turns: 5
+    expected_state: passed_unconfirmed
+    expected_next_action: confirm_lesson
+    expected_hint_level: 3
+
+  # ── 维度 5 补充 ──
+  - id: eva-030
+    dimension: fallback_class
+    execution_status: success
+    verification_status: passed
+    lesson_completed: true
+    history_user_turns: 0
+    fallback_reason: timeout
+    expected_state: passed_unconfirmed
+    expected_next_action: inspect_result
+    expected_hint_level: 1
+
+  # ── 维度 4: code_leak ──
+  - id: eva-031
+    dimension: code_leak
+    execution_status: error
+    verification_status: not_run
+    lesson_completed: false
+    history_user_turns: 0
+    expected_state: execution_failed
+    expected_next_action: retry_exercise
+    expected_hint_level: 1

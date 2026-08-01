@@ -294,20 +294,16 @@ async def test_ai_help_recorded_by_agent_chat_endpoint(test_engine):
             )
             assert resp.status_code == 200
 
-            # 验证 ai_help 事件已记录
+            # 无服务端练习证据时，ai_help 只计入用户画像，不接受客户端
+            # currentLesson 作为课程归属事实。
+            profile_resp = await api_client.get("/api/v1/analytics/user-profile")
+            assert profile_resp.status_code == 200
+            assert profile_resp.json()["data"]["aiHelps"] == 1
+
             stats_resp = await api_client.get("/api/v1/analytics/user-lesson-stats")
             assert stats_resp.status_code == 200
-            body = stats_resp.json()["data"]
-            detail = next(
-                (
-                    d
-                    for d in body.get("lessonDetails", [])
-                    if d["slug"] == "polars-basics"
-                ),
-                None,
-            )
-            assert detail is not None
-            assert detail["aiHelps"] == 1
+            details = stats_resp.json()["data"].get("lessonDetails", [])
+            assert all(d["slug"] != "polars-basics" for d in details)
     finally:
         app.dependency_overrides.clear()
         await session.close()

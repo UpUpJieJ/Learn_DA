@@ -62,10 +62,12 @@ def test_context_block_includes_lesson_output_and_error():
     assert "当前课程：Polars 基础入门（polars-basics，polars）" in block
     assert "课程内容摘要：" in block
     assert "df.select('name')" in block
-    assert "最近一次标准输出" in block
-    assert "shape: (2, 1)" in block
-    assert "最近一次执行错误" in block
-    assert "ColumnNotFoundError" in block
+    # 阶段 3：stdout/stderr/lastError 不再注入 context block，
+    # 练习执行/验证状态由服务端证据块提供，避免客户端自报值进入教学判断
+    assert "最近一次标准输出" not in block
+    assert "shape: (2, 1)" not in block
+    assert "最近一次执行错误" not in block
+    assert "ColumnNotFoundError" not in block
 
 
 def test_agent_resolves_exercise_and_next_step_tools():

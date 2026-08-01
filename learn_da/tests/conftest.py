@@ -61,6 +61,9 @@ async def db_session(test_engine):
         expire_on_commit=False,
     )
     async with async_session() as session:
+        # HTTP client tests wrap multiple requests in one outer transaction.
+        # Services must participate in it instead of committing mid-request.
+        session.info["external_transaction"] = True
         async with session.begin():
             yield session
             await session.rollback()
