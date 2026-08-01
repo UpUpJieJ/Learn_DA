@@ -4,6 +4,9 @@ import type {
   AgentChatResponse,
   AgentContext,
   ChatMessage,
+  AgentFeedbackResponse,
+  AgentFeedbackValue,
+  TeachingFeedback,
 } from '@/types/api'
 
 // =====================================================
@@ -13,39 +16,58 @@ import type {
 interface StreamChatOptions {
   payload: AgentChatRequest
   onToken?: (token: string) => void
-  onDone?: (fullReply: string) => void
+  onDone?: (
+    fullReply: string,
+    feedback?: TeachingFeedback | null,
+    interactionId?: number | null,
+  ) => void
   onError?: (error: Error) => void
   signal?: AbortSignal
+  requestId?: string
 }
 
 interface AgentChatBackendData {
   content?: string
   model?: string
   usedFallback?: boolean
+  teachingFeedback?: TeachingFeedback | null
+  interactionId?: number | null
 }
 
 /**
- * 发送对话消息，兼容当前“伪流式”前端调用约定
+ * 发送对话消息，兼容当前"伪流式"前端调用约定
  * POST /agent/chat
  */
 export async function streamChatMessage(
   options: StreamChatOptions,
 ): Promise<AgentChatResponse> {
-  const { payload, onToken, onDone, onError, signal } = options
+  const {
+    payload,
+    onToken,
+    onDone,
+    onError,
+    signal,
+    requestId = crypto.randomUUID(),
+  } = options
 
   try {
-    const data = await post<AgentChatBackendData>('/agent/chat', payload, { signal })
+    const data = await post<AgentChatBackendData>('/agent/chat', payload, {
+      signal,
+      headers: { 'X-Request-ID': requestId },
+    })
     const reply = data.content ?? ''
     if (reply && onToken) {
       onToken(reply)
     }
     if (onDone) {
-      onDone(reply)
+      onDone(reply, data.teachingFeedback ?? null, data.interactionId ?? null)
     }
     return {
       reply,
       model: data.model,
       usedFallback: data.usedFallback,
+      teachingFeedback: data.teachingFeedback ?? null,
+      interactionId: data.interactionId ?? null,
     }
   } catch (error) {
     const err = error instanceof Error ? error : new Error('请求失败')
@@ -54,6 +76,16 @@ export async function streamChatMessage(
     }
     throw err
   }
+}
+
+export function recordAgentFeedback(
+  interactionId: number,
+  feedback: AgentFeedbackValue,
+): Promise<AgentFeedbackResponse> {
+  return post<AgentFeedbackResponse>('/agent/feedback', {
+    interactionId,
+    feedback,
+  })
 }
 
 /**

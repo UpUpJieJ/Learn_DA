@@ -3,9 +3,10 @@ import { computed, nextTick, onUnmounted, ref, watch } from "vue";
 import { useLocalStateStore } from "@/stores/localState";
 import { useLearnerStateStore } from "@/stores/learnerState";
 import { usePlaygroundStore } from "@/stores/playground";
-import { streamChatMessage, buildChatHistory } from "@/api/agent";
 import { renderMarkdown } from "@/lib/markdown";
-import type { ChatMessage, AgentContext } from "@/types/api";
+import type { AgentContext, TeachingFeedback, TeachingNextAction } from "@/types/api";
+import { useAgentConversation } from "@/composables/useAgentConversation";
+
 
 type QuickActionKey = "resolve_problem" | "next_step";
 
@@ -30,28 +31,55 @@ const localStateStore = useLocalStateStore();
 const learnerStateStore = useLearnerStateStore();
 const playgroundStore = usePlaygroundStore();
 
-// 状态
-const messages = ref<ChatMessage[]>([]);
-const inputText = ref("");
-const isLoading = ref(false);
-const copiedBlockId = ref<string | null>(null);
+// 阶段 3：教学反馈状态标签与下一步动作映射
+const STATE_META: Record<TeachingFeedback["state"], { label: string; tone: string }> = {
+    execution_failed: { label: "代码执行失败", tone: "rose" },
+    verification_failed: { label: "验证未通过", tone: "amber" },
+    passed_unconfirmed: { label: "练习已通过", tone: "emerald" },
+    unverifiable: { label: "结果不可验证", tone: "slate" },
+    no_evidence: { label: "暂无练习证据", tone: "slate" },
+};
 
+const ACTION_META: Record<TeachingNextAction, { label: string; action: string }> = {
+    inspect_result: { label: "查看结果", action: "inspect_result" },
+    retry_exercise: { label: "重试练习", action: "retry_exercise" },
+    confirm_lesson: { label: "确认完成课程", action: "confirm_lesson" },
+    retry_later: { label: "稍后重试", action: "retry_later" },
+};
+
+// 状态（消息与请求生命周期来自 useAgentConversation）
 const messagesContainerRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLTextAreaElement | null>(null);
-const streamingMessageId = ref<string | null>(null);
-let abortController: AbortController | null = null;
+
+const {
+    messages,
+    inputText,
+    isLoading,
+    copiedBlockId,
+    feedbackSubmittingId,
+    streamingMessageId,
+    messageCount,
+    sendMessage,
+    stopStreaming,
+    clearMessages,
+    copyCode,
+    submitFeedback,
+} = useAgentConversation({
+    context: () => agentContext.value,
+    scrollToBottom,
+});
 
 // Computed
 const isOpen = computed(() => localStateStore.isAgentOpen);
 
 const agentContext = computed<AgentContext>(() => ({
     currentCode: playgroundStore.code || undefined,
+    attemptId: playgroundStore.lastResponse?.attemptId,
     stdout: playgroundStore.stdout || undefined,
     stderr: playgroundStore.stderr || undefined,
     ...props.context,
 }));
 
-const messageCount = computed(() => messages.value.length);
 const hasCurrentCode = computed(() => !!agentContext.value.currentCode?.trim());
 const hasCurrentError = computed(
     () => !!agentContext.value.stderr?.trim(),
@@ -126,13 +154,6 @@ const inputPlaceholder = computed(() => {
 
 const quickActions = computed<QuickAction[]>(() => hasCurrentError.value ? [{ key: "resolve_problem", label: "解决当前报错", disabled: false, prompt: "请结合当前课程、代码和最近一次报错，帮我定位原因，并给出一个最小可验证的修复步骤。" }] : [{ key: "next_step", label: "下一步怎么做", disabled: false, prompt: "请结合我的当前课程、代码和学习进度，告诉我现在最值得做的一步。" }]);
 
-function formatAgentErrorMessage(message?: string) {
-    if (!message?.trim()) {
-        return "这次请求没有成功发出。\n\n建议你先重试一次，或者把问题缩小成“解释这段代码 / 为什么报错 / 下一步练什么”这样的单一步骤。";
-    }
-    return `这次请求失败了：${message}\n\n你可以重试一次，或者让我先围绕当前课程给一个更小的提示。`;
-}
-
 // 面板尺寸（支持自由拖拽调整）
 const panelWidth = ref(400);
 const panelHeight = ref(500);
@@ -185,126 +206,58 @@ async function scrollToBottom() {
     }
 }
 
-async function sendMessage(text?: string) {
-    const content = (text ?? inputText.value).trim();
-    if (!content || isLoading.value) return;
-
-    inputText.value = "";
-
-    const userMsg: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        content,
-        timestamp: Date.now(),
-    };
-    messages.value.push(userMsg);
-
-    const assistantId = `assistant-${Date.now()}`;
-    const assistantMsg: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-        isStreaming: true,
-    };
-    messages.value.push(assistantMsg);
-    streamingMessageId.value = assistantId;
-
-    isLoading.value = true;
-    await scrollToBottom();
-
-    const history = buildChatHistory(messages.value.filter(m => !m.isStreaming), userMsg.id);
-    abortController = new AbortController();
-
-    try {
-        await streamChatMessage({
-            payload: {
-                message: content,
-                history,
-                context: agentContext.value,
-            },
-            onToken: (token) => {
-                const msg = messages.value.find((m) => m.id === assistantId);
-                if (msg) {
-                    msg.content += token;
-                    scrollToBottom();
-                }
-            },
-            onDone: (fullReply) => {
-                const msg = messages.value.find((m) => m.id === assistantId);
-                if (msg) {
-                    msg.content = fullReply || msg.content;
-                    msg.isStreaming = false;
-                }
-                streamingMessageId.value = null;
-                isLoading.value = false;
-                scrollToBottom();
-            },
-            onError: (error) => {
-                const msg = messages.value.find((m) => m.id === assistantId);
-                if (msg) {
-                    msg.content = formatAgentErrorMessage(error.message);
-                    msg.isStreaming = false;
-                }
-                streamingMessageId.value = null;
-                isLoading.value = false;
-                scrollToBottom();
-            },
-            signal: abortController.signal,
-        });
-    } catch {
-        const msg = messages.value.find((m) => m.id === assistantId);
-        if (msg) {
-            msg.content = formatAgentErrorMessage();
-            msg.isStreaming = false;
-        }
-        streamingMessageId.value = null;
-        isLoading.value = false;
-    }
-}
-
 async function sendQuickAction(action: QuickAction) { if (!action.disabled && !isLoading.value) await sendMessage(action.prompt); }
-
-function stopStreaming() {
-    abortController?.abort();
-    abortController = null;
-
-    const msg = messages.value.find((m) => m.id === streamingMessageId.value);
-    if (msg) {
-        msg.content = msg.content || "已中断";
-        msg.isStreaming = false;
-    }
-    streamingMessageId.value = null;
-    isLoading.value = false;
-}
-
-function clearMessages() {
-    messages.value = [];
-}
 
 function extractFirstCodeBlock(content: string): string | null {
     const match = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
     return match && match[1] ? match[1].trim() : null;
 }
 
-async function copyCode(code: string, blockId: string) {
-    try {
-        await navigator.clipboard.writeText(code);
-        copiedBlockId.value = blockId;
-        setTimeout(() => {
-            if (copiedBlockId.value === blockId) copiedBlockId.value = null;
-        }, 2000);
-    } catch {
-        // silent
-    }
-}
-
 function injectToPlayground(code: string) {
     playgroundStore.loadAgentSuggestion(code);
 }
 
+
 function renderMessageContent(content: string): string {
     return renderMarkdown(content, { codeRunnable: true, newlineToBr: true });
+}
+
+function focusPlaygroundEditor() {
+    const editor = document.querySelector<HTMLTextAreaElement>("[data-playground-editor]");
+    if (editor) {
+        editor.focus();
+        return;
+    }
+    inputRef.value?.focus();
+}
+
+function focusPlaygroundResult() {
+    const result = document.querySelector<HTMLElement>("[data-playground-result]");
+    if (result) {
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+    }
+    inputRef.value?.focus();
+}
+
+// 阶段 3：下一步动作按钮处理
+function handleNextAction(action: string) {
+    switch (action) {
+        case "retry_exercise":
+            // 聚焦 Playground 编辑器，引导重试当前练习
+            focusPlaygroundEditor();
+            sendMessage("我要重试当前练习，请给一个更具体的提示。");
+            break;
+        case "confirm_lesson":
+            sendMessage("练习已通过，帮我确认这节课的完成状态。");
+            break;
+        case "inspect_result":
+            focusPlaygroundResult();
+            break;
+        case "retry_later":
+            // 无动作，仅关闭反馈卡片视觉强调
+            break;
+    }
 }
 
 function handleMessageClick(e: MouseEvent) {
@@ -354,7 +307,7 @@ watch(isOpen, async (opened) => {
 });
 
 onUnmounted(() => {
-    abortController?.abort();
+    stopStreaming();
 });
 </script>
 
@@ -499,16 +452,63 @@ onUnmounted(() => {
                                 />
                             </div>
 
-                            <!-- 操作 -->
-                            <div class="flex items-center gap-2 mt-1 px-1">
+                            <!-- 阶段 3：结构化教学反馈卡片 -->
+                            <div
+                                v-if="msg.teachingFeedback && !msg.isStreaming"
+                                class="mt-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs"
+                            >
+                                <div class="flex items-center gap-1.5 mb-1">
+                                    <span
+                                        class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                        :class="{
+                                            'bg-rose-500/15 text-rose-300': msg.teachingFeedback.state === 'execution_failed',
+                                            'bg-amber-500/15 text-amber-300': msg.teachingFeedback.state === 'verification_failed',
+                                            'bg-emerald-500/15 text-emerald-300': msg.teachingFeedback.state === 'passed_unconfirmed',
+                                            'bg-slate-500/15 text-slate-400': msg.teachingFeedback.state === 'unverifiable' || msg.teachingFeedback.state === 'no_evidence',
+                                        }"
+                                    >
+                                        {{ STATE_META[msg.teachingFeedback.state].label }}
+                                    </span>
+                                    <span class="text-[10px] text-slate-600">提示 L{{ msg.teachingFeedback.hintLevel }}</span>
+                                 </div>
+                                 <p class="text-slate-400 leading-relaxed">{{ msg.teachingFeedback.evidenceSummary }}</p>
+                                 <p class="mt-1 text-slate-500 leading-relaxed">{{ msg.teachingFeedback.diagnosis }}</p>
+                                 <div class="mt-1.5 flex items-center gap-1.5">
+                                    <button
+                                        class="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-blue-200 transition-colors"
+                                        @click="handleNextAction(ACTION_META[msg.teachingFeedback.nextAction].action)"
+                                    >
+                                        {{ ACTION_META[msg.teachingFeedback.nextAction].label }}
+                                    </button>
+                                </div>
+                             </div>
+
+                             <!-- 操作 -->
+                             <div class="flex items-center gap-2 mt-1 px-1">
                                 <button
                                     v-if="!msg.isStreaming"
                                     class="text-xs text-slate-600 hover:text-slate-400 transition-colors"
-                                    @click="copyCode(msg.content, msg.id)"
-                                >
-                                    {{ copiedBlockId === msg.id ? '已复制' : '复制回复' }}
-                                </button>
-                            </div>
+                                     @click="copyCode(msg.content, msg.id)"
+                                 >
+                                     {{ copiedBlockId === msg.id ? '已复制' : '复制回复' }}
+                                 </button>
+                                 <template v-if="msg.interactionId && !msg.isStreaming">
+                                     <button
+                                         class="text-xs text-slate-600 hover:text-emerald-400 transition-colors disabled:cursor-not-allowed"
+                                         :disabled="feedbackSubmittingId === msg.interactionId"
+                                         @click="submitFeedback(msg, 'helpful')"
+                                     >
+                                         {{ msg.feedback === 'helpful' ? '已标记有帮助' : '有帮助' }}
+                                     </button>
+                                     <button
+                                         class="text-xs text-slate-600 hover:text-rose-400 transition-colors disabled:cursor-not-allowed"
+                                         :disabled="feedbackSubmittingId === msg.interactionId"
+                                         @click="submitFeedback(msg, 'not_helpful')"
+                                     >
+                                         {{ msg.feedback === 'not_helpful' ? '已标记需改进' : '需改进' }}
+                                     </button>
+                                 </template>
+                             </div>
                         </div>
                     </div>
 
@@ -679,6 +679,37 @@ onUnmounted(() => {
                             />
                         </div>
 
+                        <!-- 阶段 3：结构化教学反馈卡片 -->
+                        <div
+                            v-if="msg.teachingFeedback && !msg.isStreaming"
+                            class="mt-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs"
+                        >
+                            <div class="flex items-center gap-1.5 mb-1">
+                                <span
+                                    class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                    :class="{
+                                        'bg-rose-500/15 text-rose-300': msg.teachingFeedback.state === 'execution_failed',
+                                        'bg-amber-500/15 text-amber-300': msg.teachingFeedback.state === 'verification_failed',
+                                        'bg-emerald-500/15 text-emerald-300': msg.teachingFeedback.state === 'passed_unconfirmed',
+                                        'bg-slate-500/15 text-slate-400': msg.teachingFeedback.state === 'unverifiable' || msg.teachingFeedback.state === 'no_evidence',
+                                    }"
+                                >
+                                    {{ STATE_META[msg.teachingFeedback.state].label }}
+                                </span>
+                                <span class="text-[10px] text-slate-600">提示 L{{ msg.teachingFeedback.hintLevel }}</span>
+                            </div>
+                            <p class="text-slate-400 leading-relaxed">{{ msg.teachingFeedback.evidenceSummary }}</p>
+                            <p class="mt-1 text-slate-500 leading-relaxed">{{ msg.teachingFeedback.diagnosis }}</p>
+                            <div class="mt-1.5 flex items-center gap-1.5">
+                                <button
+                                    class="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:border-blue-400/40 hover:bg-blue-500/10 hover:text-blue-200 transition-colors"
+                                    @click="handleNextAction(ACTION_META[msg.teachingFeedback.nextAction].action)"
+                                >
+                                    {{ ACTION_META[msg.teachingFeedback.nextAction].label }}
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- 操作 -->
                         <div class="flex items-center gap-2 mt-1 px-1">
                             <button
@@ -688,6 +719,22 @@ onUnmounted(() => {
                             >
                                 {{ copiedBlockId === msg.id ? '已复制' : '复制回复' }}
                             </button>
+                            <template v-if="msg.interactionId && !msg.isStreaming">
+                                <button
+                                    class="text-xs text-slate-600 hover:text-emerald-400 transition-colors disabled:cursor-not-allowed"
+                                    :disabled="feedbackSubmittingId === msg.interactionId"
+                                    @click="submitFeedback(msg, 'helpful')"
+                                >
+                                    {{ msg.feedback === 'helpful' ? '已标记有帮助' : '有帮助' }}
+                                </button>
+                                <button
+                                    class="text-xs text-slate-600 hover:text-rose-400 transition-colors disabled:cursor-not-allowed"
+                                    :disabled="feedbackSubmittingId === msg.interactionId"
+                                    @click="submitFeedback(msg, 'not_helpful')"
+                                >
+                                    {{ msg.feedback === 'not_helpful' ? '已标记需改进' : '需改进' }}
+                                </button>
+                            </template>
                         </div>
                     </div>
                 </div>

@@ -202,6 +202,11 @@ export interface ChatMessage {
     content: string;
     timestamp: number;
     isStreaming?: boolean;
+    /** 阶段 3：该 assistant 消息附带的结构化教学反馈 */
+    teachingFeedback?: TeachingFeedback | null;
+    /** AgentInteraction 主键，用于提交用户反馈 */
+    interactionId?: number | null;
+    feedback?: AgentFeedbackValue | null;
 }
 
 /** Agent 上下文（可携带当前代码 / 错误） */
@@ -214,6 +219,8 @@ export interface AgentContext {
     lessonContent?: string;
     stdout?: string;
     stderr?: string;
+    /** 阶段 3：可选 attempt 定位线索 */
+    attemptId?: number;
 }
 
 /** Agent 对话请求 */
@@ -223,6 +230,31 @@ export interface AgentChatRequest {
     context?: AgentContext;
 }
 
+/** 阶段 3：教学反馈五态 */
+export type TeachingState =
+    | "execution_failed"
+    | "verification_failed"
+    | "passed_unconfirmed"
+    | "unverifiable"
+    | "no_evidence";
+
+/** 阶段 3：下一步动作（服务端权威决定） */
+export type TeachingNextAction =
+    | "inspect_result"
+    | "retry_exercise"
+    | "confirm_lesson"
+    | "retry_later";
+
+/** 阶段 3：结构化教学反馈 */
+export interface TeachingFeedback {
+    state: TeachingState;
+    attemptId?: number | null;
+    evidenceSummary: string;
+    diagnosis: string;
+    hintLevel: number;
+    nextAction: TeachingNextAction;
+}
+
 /** Agent 对话响应 */
 export interface AgentChatResponse {
     reply: string;
@@ -230,6 +262,16 @@ export interface AgentChatResponse {
     references?: string[];
     model?: string;
     usedFallback?: boolean;
+    /** 阶段 3：结构化教学反馈 */
+    teachingFeedback?: TeachingFeedback | null;
+    interactionId?: number | null;
+}
+
+export type AgentFeedbackValue = "helpful" | "not_helpful";
+
+export interface AgentFeedbackResponse {
+    recorded: boolean;
+    interactionId: number;
 }
 
 // =====================================================
