@@ -8,19 +8,17 @@ from typing import Any
 
 import yaml
 
+from .content_schemas import (
+    ContentLintError,
+    ContentCatalog,
+    validate_lesson_frontmatter,
+)
+
 # Phase 2: 可验证练习判定器白名单
 ALLOWED_VALIDATOR_TYPES = frozenset(
     {"stdout_exact", "stdout_contains", "dataframe_rows"}
 )
 ALLOWED_EXERCISE_LANGUAGES = frozenset({"python", "sql"})
-
-
-class ContentLintError(Exception):
-    """内容校验错误（含文件名，fail closed）"""
-
-    def __init__(self, message: str, file_name: str = ""):
-        self.file_name = file_name
-        super().__init__(f"[{file_name}] {message}" if file_name else message)
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -114,14 +112,14 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             "is_branch_point": frontmatter.get("is_branch_point", False),
         }
 
-        # 验证必需字段
+        # 验证必需字段（fail closed：缺失即报错，不再静默跳过）
         required_fields = ["id", "slug", "title", "category", "difficulty"]
         for field in required_fields:
             if lesson.get(field) is None:
-                print(
-                    f"[ContentLoader] Warning: {file_path.name} 缺少必需字段 '{field}'"
-                )
-                return None
+                raise ContentLintError(f"缺少必需字段 '{field}'", file_path.name)
+
+        # Pydantic schema 校验（字段级错误）
+        validate_lesson_frontmatter(frontmatter, file_path.name)
 
         return lesson
 
@@ -194,12 +192,16 @@ def _parse_exercise(
 def lint_content(content_dir: Path | None = None) -> list[str]:
     """校验所有内容的合法性。
 
-    返回错误列表；空列表表示全部通过。
+    返回错误列表；空列表表示全部通过。错误格式 ``[file:field] message``。
     校验项：
     - 有 exercise 的课程必须完整合法
     - exercise.id 不能重复
     - 语言必须在允许列表
     - validator type 必须在白名单
+    - track 必须存在于 catalog（catalog.yml 存在时）
+    - category 必须与 track.category 一致（catalog.yml 存在时）
+    - prerequisite / recommended_next 引用必须存在
+    - prerequisites 课程图必须无环
     """
     if content_dir is None:
         content_dir = Path(__file__).parent.parent.parent / "content"
@@ -211,6 +213,11 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
     seen_exercise_ids: set[str] = set()
     seen_slugs: set[str] = set()
+    lessons: dict[str, dict[str, Any]] = {}
+
+    # 目录级问题检查优先于单文件字段级问题。
+    catalog = _load_catalog_safely(content_dir)
+    track_by_key = {t["key"]: t for t in catalog.get("tracks", [])}
 
     for md_file in sorted(lessons_dir.glob("*.md")):
         file_name = md_file.name
@@ -221,10 +228,16 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
             if not frontmatter:
                 continue
 
+            # 字段级 schema 校验（缺字段 / 类型错误都带文件名报出）
+            try:
+                validate_lesson_frontmatter(frontmatter, file_name)
+            except ContentLintError as e:
+                errors.append(str(e))
+
             slug = frontmatter.get("slug")
             if slug:
                 if slug in seen_slugs:
-                    errors.append(f"[{file_name}] slug '{slug}' 重复")
+                    errors.append(f"[{file_name}:slug] slug '{slug}' 重复")
                 seen_slugs.add(slug)
 
             # 有 exercise 字段时强制校验
@@ -234,15 +247,103 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
                     if exercise:
                         eid = exercise["id"]
                         if eid in seen_exercise_ids:
-                            errors.append(f"[{file_name}] exercise.id '{eid}' 重复")
+                            errors.append(
+                                f"[{file_name}:exercise.id] exercise.id '{eid}' 重复"
+                            )
                         seen_exercise_ids.add(eid)
                 except ContentLintError as e:
                     errors.append(str(e))
+
+            # 与 catalog 的一致性校验（catalog.yml 存在时）
+            if track_by_key:
+                track = frontmatter.get("track") or ""
+                if track and track not in track_by_key:
+                    errors.append(
+                        f"[{file_name}:track] track '{track}' 不在 catalog 中: "
+                        f"{sorted(track_by_key)}"
+                    )
+                elif track and track_by_key[track].get("category"):
+                    expected = track_by_key[track]["category"]
+                    actual = frontmatter.get("category")
+                    if actual != expected:
+                        errors.append(
+                            f"[{file_name}:category] 与 track '{track}' 的 category "
+                            f"'{expected}' 不一致（实际 '{actual}'）"
+                        )
+
+            if slug:
+                lessons[slug] = {
+                    "file": file_name,
+                    "prerequisites": frontmatter.get("prerequisites") or [],
+                    "recommended_next": frontmatter.get("recommended_next") or [],
+                }
 
         except ContentLintError as e:
             errors.append(str(e))
         except Exception as e:
             errors.append(f"[{file_name}] 读取失败: {e}")
+
+    # 引用图校验：引用必须存在，prerequisites 图必须无环
+    errors.extend(_lint_reference_graph(lessons))
+    return errors
+
+
+def _load_catalog_safely(content_dir: Path) -> dict[str, Any]:
+    """读取 catalog.yml；缺失或非法时返回空 dict（由调用方决定是否报错）。"""
+    catalog_file = content_dir / "catalog.yml"
+    if not catalog_file.exists():
+        return {}
+    try:
+        catalog = yaml.safe_load(catalog_file.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(catalog, dict):
+        return {}
+    try:
+        model = ContentCatalog.model_validate(catalog)
+    except Exception:
+        return {}
+    return model.model_dump(mode="json")
+
+
+def _lint_reference_graph(
+    lessons: dict[str, dict[str, Any]],
+) -> list[str]:
+    """校验 prerequisite/recommended_next 引用存在，且 prerequisites 图无环。"""
+    errors: list[str] = []
+
+    for slug, meta in lessons.items():
+        file_name = meta["file"]
+        for ref in meta["recommended_next"]:
+            if ref not in lessons:
+                errors.append(
+                    f"[{file_name}:recommended_next] 引用了不存在的课程 '{ref}'"
+                )
+        for ref in meta["prerequisites"]:
+            if ref not in lessons:
+                errors.append(
+                    f"[{file_name}:prerequisites] 引用了不存在的课程 '{ref}'"
+                )
+
+    # 沿 prerequisites 的 DFS 环检测
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(slug: str, path: list[str]) -> None:
+        if slug in visiting:
+            cycle = " -> ".join(path + [slug])
+            errors.append(f"[{lessons[slug]['file']}:prerequisites] 检测到课程图环: {cycle}")
+            return
+        if slug in visited or slug not in lessons:
+            return
+        visiting.add(slug)
+        for ref in lessons[slug]["prerequisites"]:
+            visit(ref, path + [slug])
+        visiting.discard(slug)
+        visited.add(slug)
+
+    for slug in lessons:
+        visit(slug, [])
 
     return errors
 

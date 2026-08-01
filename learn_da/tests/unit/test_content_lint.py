@@ -240,3 +240,108 @@ class TestLintContent:
         errors = lint_content(local_tmp)
         assert len(errors) == 1
         assert "not found" in errors[0]
+
+
+def _write_catalog(tmp_path: Path, tracks: list[dict]) -> None:
+    """写入 catalog.yml（用于 track/category 一致性校验）"""
+    import yaml
+
+    catalog = {"platform": {"name": "T"}, "topics": [], "tracks": tracks}
+    (tmp_path / "catalog.yml").write_text(
+        yaml.dump(catalog, allow_unicode=True), encoding="utf-8"
+    )
+
+
+class TestLintReferenceGraph:
+    """引用图与 catalog 一致性校验"""
+
+    def test_reference_to_missing_lesson_detected(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["prerequisites"] = ["does-not-exist"]
+        fm["recommended_next"] = ["also-missing"]
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert any("does-not-exist" in e for e in errors)
+        assert any("also-missing" in e for e in errors)
+
+    def test_prerequisite_cycle_detected(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+
+        fm1 = dict(VALID_EXERCISE_FRONTMATTER)
+        fm1["id"] = 1
+        fm1["slug"] = "a"
+        fm1["prerequisites"] = ["b"]
+        _write_lesson(lessons_dir, "01-a.md", fm1)
+
+        fm2 = dict(VALID_EXERCISE_FRONTMATTER)
+        fm2["id"] = 2
+        fm2["slug"] = "b"
+        fm2["prerequisites"] = ["a"]
+        _write_lesson(lessons_dir, "02-b.md", fm2)
+
+        errors = lint_content(local_tmp)
+        assert any("环" in e for e in errors)
+
+    def test_track_not_in_catalog_detected(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        _write_catalog(
+            local_tmp,
+            [{"key": "good_track", "topic": "t", "label": "Good", "category": "polars"}],
+        )
+
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["track"] = "unknown_track"
+        fm["category"] = "polars"
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert any("unknown_track" in e for e in errors)
+
+    def test_category_mismatch_with_track_detected(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        _write_catalog(
+            local_tmp,
+            [{"key": "good_track", "topic": "t", "label": "Good", "category": "duckdb"}],
+        )
+
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["track"] = "good_track"
+        fm["category"] = "polars"
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert any("不一致" in e for e in errors)
+
+    def test_valid_track_and_category_pass(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        _write_catalog(
+            local_tmp,
+            [{"key": "good_track", "topic": "t", "label": "Good", "category": "polars"}],
+        )
+
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["track"] = "good_track"
+        fm["category"] = "polars"
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert errors == []
+
+    def test_missing_required_field_detected_with_filename(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm.pop("title")
+        _write_lesson(lessons_dir, "01-bad.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert any("title" in e and "01-bad.md" in e for e in errors)
+

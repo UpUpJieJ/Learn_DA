@@ -31,6 +31,22 @@ tracks:
     category: duckdb
     color: yellow
 
+  - key: duckdb_advanced
+    topic: data-analysis
+    label: DuckDB 进阶
+    description: JOIN、CTE 与窗口函数
+    start_lesson: duckdb-joins-cte
+    category: duckdb
+    color: yellow
+
+  - key: polars_advanced
+    topic: data-analysis
+    label: Polars 进阶
+    description: 惰性执行与高效流水线
+    start_lesson: polars-lazy-pipeline
+    category: polars
+    color: blue
+
   - key: combined_workflow
     topic: data-analysis
     label: 组合实战

@@ -22,6 +22,12 @@ from config.settings import settings
 async def lifespan(app: FastAPI):
     log.info(f"{settings.APP_NAME} 启动中")
 
+    # 阶段 4：内容索引在启动时 lint 并构建一次；内容错误直接阻断启动
+    # （fail closed），避免运行时缺课或断链。
+    from app.core.content_catalog import preload_content_index
+
+    app.state.content_index = preload_content_index()
+
     # Runner client — lives for the entire application lifetime.
     http_client = httpx.AsyncClient()
     app.state.runner_client = RunnerClient(http_client)
@@ -51,27 +57,12 @@ async def lifespan(app: FastAPI):
                 base_url=settings.effective_llm_base_url,
             )
 
-    try:
-        if settings.REDIS_ENABLED:
-            from app.core.redis import AsyncRedisClient
-
-            redis_async = AsyncRedisClient()
-            await redis_async.ping()
-            log.info("Redis 连接检查成功")
-    except Exception as exc:
-        log.error(f"应用启动初始化失败: {exc}")
-
     yield
 
     await app.state.runner_client.close()
 
     if app.state.agent_llm_client is not None:
         await app.state.agent_llm_client.close()
-
-    if settings.REDIS_ENABLED:
-        from app.core.redis import redis_pool_manager
-
-        redis_pool_manager.close_all_pools()
 
     from app.core.database.database import engine
 
@@ -175,19 +166,6 @@ async def readiness(
     else:
         checks["runner"] = "unhealthy"
 
-    # Redis (optional)
-    if settings.REDIS_ENABLED:
-        try:
-            from app.core.redis import AsyncRedisClient
-
-            redis_client = AsyncRedisClient()
-            await redis_client.ping()
-            checks["redis"] = "healthy"
-        except Exception as exc:
-            checks["redis"] = f"unhealthy: {exc}"
-    else:
-        checks["redis"] = "disabled"
-
     all_ok = all(v == "healthy" or v == "disabled" for v in checks.values())
 
     if not all_ok:
@@ -210,24 +188,12 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     except Exception as exc:
         db_status = f"unhealthy: {exc}"
 
-    redis_status = "disabled"
-    if settings.REDIS_ENABLED:
-        try:
-            from app.core.redis import AsyncRedisClient
-
-            redis_client = AsyncRedisClient()
-            await redis_client.ping()
-            redis_status = "healthy"
-        except Exception as exc:
-            redis_status = f"unhealthy: {exc}"
-
     response_data = {
         "app": "healthy",
         "database": db_status,
-        "redis": redis_status,
     }
 
-    if "unhealthy" in db_status or "unhealthy" in redis_status:
+    if "unhealthy" in db_status:
         return StdResp.error(
             msg="Health check failed",
             code=503,

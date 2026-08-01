@@ -34,19 +34,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_SNAPSHOT_SAVE: str = "10/minute"
     RATE_LIMIT_ANALYTICS_READ: str = "60/minute"
 
-    REDIS_ENABLED: bool = False
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_PASSWORD: Optional[str] = None
-    REDIS_MAX_CONNECTIONS: int = 50
-    REDIS_SOCKET_CONNECT_TIMEOUT: int = 5
-    REDIS_SOCKET_TIMEOUT: int = 5
-    REDIS_RETRY_ON_TIMEOUT: bool = True
-    REDIS_HEALTH_CHECK_INTERVAL: int = 30
-    REDIS_CACHE_PREFIX: str = "learn-da"
-    REDIS_CACHE_NULL_EXPIRE: int = 180
-
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"

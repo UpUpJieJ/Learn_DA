@@ -15,7 +15,6 @@ async def test_health_check_success(client):
     assert body["code"] == 200
     assert body["data"]["app"] == "healthy"
     assert body["data"]["database"] == "healthy"
-    assert body["data"]["redis"] == "disabled"
 
 
 @pytest.mark.unit
