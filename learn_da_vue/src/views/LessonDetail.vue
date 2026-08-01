@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { fetchLessonBySlug } from "@/api/learning";
 import { saveCodeSnapshot } from "@/api/analytics";
-import { getRecommendations } from "@/api/recommendation";
-import type { LessonDetail, LessonDifficulty, RecommendationResponse } from "@/types/api";
-import { useLearnerStateStore } from "@/stores/learnerState";
+import type { LessonDetail, LessonDifficulty } from "@/types/api";
 import { usePlaygroundStore } from "@/stores/playground";
 import { renderMarkdown } from "@/lib/markdown";
+import { useLessonSession } from "@/composables/useLessonSession";
+import RecommendationPanel from "@/components/recommendation/RecommendationPanel.vue";
 
 // =====================================================
 // Props
@@ -22,17 +21,23 @@ const props = defineProps<{
 // =====================================================
 
 const router = useRouter();
-const learnerStateStore = useLearnerStateStore();
 const playgroundStore = usePlaygroundStore();
+
+// 阶段 4：课程工作流（加载 / 完成状态 / 推荐刷新 / lesson_start 上报）
+const {
+    lesson,
+    isLoading,
+    errorMsg,
+    recommendation,
+    isCompleted,
+    load: loadLessonSession,
+    toggleCompleted: toggleLessonCompleted,
+} = useLessonSession(() => props.slug);
 
 // =====================================================
 // 状态
 // =====================================================
 
-const lesson = ref<LessonDetail | null>(null);
-const isLoading = ref(false);
-const errorMsg = ref<string | null>(null);
-const recommendation = ref<RecommendationResponse | null>(null);
 const isSavingSnapshot = ref(false);
 const snapshotSaved = ref(false);
 
@@ -74,49 +79,19 @@ function formatCategoryLabel(category: string): string {
 // 数据加载
 // =====================================================
 
-async function loadLesson(slug: string) {
-    isLoading.value = true;
-    errorMsg.value = null;
-    lesson.value = null;
-    tocItems.value = [];
-    activeAnchor.value = "";
-    recommendation.value = null;
+async function loadPage() {
+    const loaded = await loadLessonSession();
+    if (!loaded) return;
 
-    try {
-        const [lessonData, recommendationData] = await Promise.all([
-            fetchLessonBySlug(slug),
-            getRecommendations({
-                currentLesson: slug,
-            }).catch(() => null),
-        ]);
-
-        lesson.value = lessonData;
-        recommendation.value = recommendationData;
-        // 阶段 1：唯一的 lesson_start 上报点。store 内部走 /analytics/track，
-        // 后端在同一事务内联动 LearnerState 投影。
-        learnerStateStore.recordLessonStart(slug);
-
-        // 等 DOM 渲染后提取目录
-        await nextTick();
-        extractToc();
-        setupScrollSpy();
-    } catch (err) {
-        errorMsg.value =
-            err instanceof Error ? err.message : "课程内容加载失败，请稍后重试";
-    } finally {
-        isLoading.value = false;
-    }
-}
-
-async function refreshRecommendation(slug: string) {
-    recommendation.value = await getRecommendations({
-        currentLesson: slug,
-    }).catch(() => null);
+    // 等 DOM 渲染后提取目录与滚动监听（页面级副作用）
+    await nextTick();
+    extractToc();
+    setupScrollSpy();
 }
 
 // slug 变化时重新加载
-watch(() => props.slug, loadLesson, { immediate: false });
-onMounted(() => loadLesson(props.slug));
+watch(() => props.slug, loadPage, { immediate: false });
+onMounted(loadPage);
 
 // =====================================================
 // 目录（TOC）提取
@@ -168,27 +143,14 @@ function setupScrollSpy() {
 // 完成标记
 // =====================================================
 
-const isCompleted = computed(() =>
-    lesson.value ? learnerStateStore.isLessonCompleted(lesson.value.slug) : false,
-);
-
 // ---- 完成动画控制 ----
 const showCompletionAnim = ref(false);
 
 async function toggleCompleted() {
-    if (!lesson.value) return;
-    const lessonSlug = lesson.value.slug;
-    const wasCompleted = learnerStateStore.isLessonCompleted(lessonSlug);
-
-    // store 内部通过 /analytics/track 上报事件，后端同事务联动 LearnerState 投影
-    if (wasCompleted) {
-        await learnerStateStore.uncompleteLesson(lessonSlug);
-    } else {
-        await learnerStateStore.completeLesson(lessonSlug);
+    await toggleLessonCompleted(() => {
         showCompletionAnim.value = true;
         setTimeout(() => (showCompletionAnim.value = false), 2000);
-    }
-    void refreshRecommendation(lessonSlug);
+    });
 }
 
 // =====================================================
@@ -281,60 +243,6 @@ const recommendationCta = computed(() => {
     return null;
 });
 
-function getRecommendationStyle(rec: any) {
-    const type = rec.type;
-
-    // 回补建议 - 橙色警示
-    if (type === "review_lesson") {
-        return {
-            containerClass: "bg-gradient-to-br from-orange-50 via-amber-50 to-orange-50 border-2 border-orange-200",
-            labelClass: "text-orange-800 font-semibold",
-            buttonClass: "bg-orange-600 hover:bg-orange-700 shadow-md hover:shadow-lg",
-            badgeClass: "bg-orange-100 border border-orange-200",
-            iconBgClass: "bg-orange-100 border-2 border-orange-200",
-            icon: "⚠️",
-            label: "建议回补前置课程",
-        };
-    }
-
-    // 分支建议 - 紫色高亮
-    if (type === "branch_path") {
-        return {
-            containerClass: "bg-gradient-to-br from-purple-50 via-indigo-50 to-purple-50 border-2 border-purple-200",
-            labelClass: "text-purple-800 font-semibold",
-            buttonClass: "bg-purple-600 hover:bg-purple-700 shadow-md hover:shadow-lg",
-            badgeClass: "bg-purple-100 border border-purple-200",
-            iconBgClass: "bg-purple-100 border-2 border-purple-200",
-            icon: "🔀",
-            label: "学习路径分支点",
-        };
-    }
-
-    // 回流建议 - 绿色温馨
-    if (type === "resume_session") {
-        return {
-            containerClass: "bg-gradient-to-br from-emerald-50 via-green-50 to-emerald-50 border-2 border-emerald-200",
-            labelClass: "text-emerald-800 font-semibold",
-            buttonClass: "bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg",
-            badgeClass: "bg-emerald-100 border border-emerald-200",
-            iconBgClass: "bg-emerald-100 border-2 border-emerald-200",
-            icon: "👋",
-            label: "欢迎回来继续学习",
-        };
-    }
-
-    // 顺学建议 - 蓝色默认
-    return {
-        containerClass: "bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 border-2 border-blue-200",
-        labelClass: "text-blue-800 font-semibold",
-        buttonClass: "bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg",
-        badgeClass: "bg-blue-100 border border-blue-200",
-        iconBgClass: "bg-blue-100 border-2 border-blue-200",
-        icon: "💡",
-        label: "学完本课后的建议",
-    };
-}
-
 </script>
 
 <template>
@@ -367,7 +275,7 @@ function getRecommendationStyle(rec: any) {
             <div class="flex gap-3">
                 <button
                     class="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-                    @click="loadLesson(props.slug)"
+                    @click="loadPage"
                 >
                     重新加载
                 </button>
@@ -630,82 +538,12 @@ function getRecommendationStyle(rec: any) {
                     <!-- ================================================
                Phase 3: 下一步学习建议
           ================================================= -->
-                    <div v-if="recommendation?.primary" class="mt-12 space-y-4">
-                        <!-- 主要建议 -->
-                        <div
-                            class="p-6 rounded-xl border shadow-sm hover:shadow-md transition-shadow"
-                            :class="getRecommendationStyle(recommendation.primary).containerClass"
-                        >
-                            <div class="flex items-start gap-4">
-                                <div
-                                    class="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-                                    :class="getRecommendationStyle(recommendation.primary).iconBgClass"
-                                >
-                                    <span class="text-3xl">{{ getRecommendationStyle(recommendation.primary).icon }}</span>
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <span
-                                            class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-                                            :class="getRecommendationStyle(recommendation.primary).badgeClass"
-                                        >
-                                            {{ getRecommendationStyle(recommendation.primary).label }}
-                                        </span>
-                                    </div>
-                                    <h4 class="text-xl font-bold text-slate-900 mb-2">{{ recommendation.primary.targetTitle }}</h4>
-                                    <p class="text-sm text-slate-700 leading-relaxed mb-5">{{ recommendation.primary.reason }}</p>
-                                    <button
-                                        class="inline-flex items-center gap-2 px-6 py-3 text-white text-sm font-semibold rounded-lg transition-all"
-                                        :class="getRecommendationStyle(recommendation.primary).buttonClass"
-                                        @click="router.push(`/learn/${recommendation.primary.targetSlug}`)"
-                                    >
-                                        <span>{{ recommendation.primary.actionLabel }}</span>
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 备选建议 -->
-                        <div
-                            v-if="recommendation.alternatives && recommendation.alternatives.length > 0"
-                            class="space-y-3"
-                        >
-                            <h5 class="text-sm font-semibold text-slate-600 px-1">其他选择</h5>
-                            <div
-                                v-for="(alt, idx) in recommendation.alternatives"
-                                :key="idx"
-                                class="p-4 rounded-lg border bg-white hover:border-slate-300 hover:shadow-sm transition-all cursor-pointer"
-                                @click="router.push(`/learn/${alt.targetSlug}`)"
-                            >
-                                <div class="flex items-start gap-3">
-                                    <div
-                                        class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                                        :class="getRecommendationStyle(alt).iconBgClass"
-                                    >
-                                        <span class="text-xl">{{ getRecommendationStyle(alt).icon }}</span>
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <h5 class="text-base font-bold text-slate-800">{{ alt.targetTitle }}</h5>
-                                            <span
-                                                class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                                                :class="getRecommendationStyle(alt).badgeClass"
-                                            >
-                                                {{ getRecommendationStyle(alt).label }}
-                                            </span>
-                                        </div>
-                                        <p class="text-xs text-slate-600 leading-relaxed">{{ alt.reason }}</p>
-                                    </div>
-                                    <svg class="w-5 h-5 text-slate-400 shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <RecommendationPanel
+                        v-if="recommendation?.primary"
+                        class="mt-12"
+                        :recommendation="recommendation"
+                        @navigate="goToLesson"
+                    />
 
                     <!-- 兜底：推荐系统无结果时，使用课程导航的下一课 -->
                     <div

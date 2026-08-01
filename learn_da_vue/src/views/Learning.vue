@@ -14,6 +14,7 @@ import type {
 import { useLearnerStateStore } from "@/stores/learnerState";
 import { currentTrackKeys, learningTrackMeta } from "@/lib/learningTracks";
 import { getRecommendationContextLesson } from "@/lib/recommendation";
+import RecommendationPanel from "@/components/recommendation/RecommendationPanel.vue";
 
 const router = useRouter();
 const route = useRoute();
@@ -346,61 +347,6 @@ function clearFilters() {
     searchKeyword.value = "";
 }
 
-function getRecommendationStyle(rec: any) {
-    const type = rec.type;
-    const priority = rec.priority || 1;
-
-    // 回补建议 - 橙色警示
-    if (type === "review_lesson") {
-        return {
-            containerClass: "bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 hover:border-orange-300 hover:shadow-md",
-            labelClass: "text-orange-700 font-semibold",
-            buttonClass: "bg-orange-600 hover:bg-orange-700 shadow-sm",
-            badgeClass: "bg-orange-100 text-orange-700",
-            icon: "⚠️",
-            label: "建议回补前置课程",
-            priorityBadge: priority >= 5 ? "高优先级" : null,
-        };
-    }
-
-    // 分支建议 - 紫色高亮
-    if (type === "branch_path") {
-        return {
-            containerClass: "bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 hover:border-purple-300 hover:shadow-md",
-            labelClass: "text-purple-700 font-semibold",
-            buttonClass: "bg-purple-600 hover:bg-purple-700 shadow-sm",
-            badgeClass: "bg-purple-100 text-purple-700",
-            icon: "🔀",
-            label: "学习路径分支点",
-            priorityBadge: priority >= 4 ? "推荐路径" : null,
-        };
-    }
-
-    // 回流建议 - 绿色温馨
-    if (type === "resume_session") {
-        return {
-            containerClass: "bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-200 hover:border-emerald-300 hover:shadow-md",
-            labelClass: "text-emerald-700 font-semibold",
-            buttonClass: "bg-emerald-600 hover:bg-emerald-700 shadow-sm",
-            badgeClass: "bg-emerald-100 text-emerald-700",
-            icon: "👋",
-            label: "欢迎回来继续学习",
-            priorityBadge: null,
-        };
-    }
-
-    // 顺学建议 - 蓝色默认
-    return {
-        containerClass: "bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-100 hover:border-blue-200 hover:shadow-md",
-        labelClass: "text-blue-700 font-semibold",
-        buttonClass: "bg-blue-600 hover:bg-blue-700 shadow-sm",
-        badgeClass: "bg-blue-100 text-blue-700",
-        icon: "💡",
-        label: "下一步学习建议",
-        priorityBadge: null,
-    };
-}
-
 </script>
 
 <template>
@@ -587,65 +533,15 @@ function getRecommendationStyle(rec: any) {
             </div>
 
             <!-- ================================================
-           下一步学习建议 (Phase 3)
+            下一步学习建议 (Phase 3)
       ================================================= -->
-            <div
+            <RecommendationPanel
                 v-if="recommendation?.primary"
-                class="mb-6 rounded-xl border transition-all"
-                :class="getRecommendationStyle(recommendation.primary).containerClass"
-            >
-                <div class="flex items-start gap-4 p-5">
-                    <div
-                        class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-                        :class="getRecommendationStyle(recommendation.primary).badgeClass"
-                    >
-                        <span class="text-2xl">{{ getRecommendationStyle(recommendation.primary).icon }}</span>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1.5">
-                            <p class="text-xs font-semibold" :class="getRecommendationStyle(recommendation.primary).labelClass">
-                                {{ getRecommendationStyle(recommendation.primary).label }}
-                            </p>
-                            <span
-                                v-if="getRecommendationStyle(recommendation.primary).priorityBadge"
-                                class="px-2 py-0.5 rounded-full text-xs font-medium"
-                                :class="getRecommendationStyle(recommendation.primary).badgeClass"
-                            >
-                                {{ getRecommendationStyle(recommendation.primary).priorityBadge }}
-                            </span>
-                        </div>
-                        <h3 class="text-base font-bold text-slate-800 mb-2">{{ recommendation.primary.targetTitle }}</h3>
-                        <p class="text-sm text-slate-600 leading-relaxed mb-4">{{ recommendation.primary.reason }}</p>
-                        <div class="flex items-center gap-3">
-                            <button
-                                class="px-5 py-2 text-white text-sm font-medium rounded-lg transition-all"
-                                :class="getRecommendationStyle(recommendation.primary).buttonClass"
-                                @click="goToLesson(recommendation.primary.targetSlug)"
-                            >
-                                {{ recommendation.primary.actionLabel }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                class="mb-6"
+                :recommendation="recommendation"
+                @navigate="goToLesson"
+            />
 
-                <!-- 备选建议（如果有） -->
-                <div
-                    v-if="recommendation.alternatives && recommendation.alternatives.length > 0"
-                    class="border-t border-slate-200/50 px-5 py-3 bg-white/30"
-                >
-                    <p class="text-xs text-slate-500 font-medium mb-2">其他选择：</p>
-                    <div class="flex flex-wrap gap-2">
-                        <button
-                            v-for="alt in recommendation.alternatives"
-                            :key="alt.targetSlug"
-                            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:shadow-sm transition-all"
-                            @click="goToLesson(alt.targetSlug)"
-                        >
-                            {{ alt.targetTitle }}
-                        </button>
-                    </div>
-                </div>
-            </div>
 
             <!-- 继续学习（兜底，无建议时显示）-->
             <div

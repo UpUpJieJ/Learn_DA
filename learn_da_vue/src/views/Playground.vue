@@ -3,19 +3,17 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
-import { useLearnerStateStore } from "@/stores/learnerState";
-import { fetchExamples, fetchExample, fetchLessonBySlug } from "@/api/learning";
+import { fetchExamples, fetchExample } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
-import { resumeExercise } from "@/api/playground";
-import type { DataFrameCell, ExampleSummary, LessonDetail, CodeSnapshotItem } from "@/types/api";
+import type { DataFrameCell, ExampleSummary, CodeSnapshotItem } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
+import { usePlaygroundSession } from "@/composables/usePlaygroundSession";
 
 const route = useRoute();
 const router = useRouter();
 const playgroundStore = usePlaygroundStore();
 const localStateStore = useLocalStateStore();
-const learnerStateStore = useLearnerStateStore();
 
 // =====================================================
 // 课程文档（左侧面板）
@@ -23,80 +21,41 @@ const learnerStateStore = useLearnerStateStore();
 
 const props = defineProps<{ slug?: string }>();
 
-const currentLesson = ref<LessonDetail | null>(null);
-const isLoadingLesson = ref(false);
+// 阶段 4：Playground 会话工作流（加载 / 草稿恢复 / 练习 / 完成 / 结果 Tab）
+const {
+    currentLesson,
+    isLoadingLesson,
+    hasLoadedDraft,
+    isCompletingLesson,
+    activeResultTab,
+    resultTabs,
+    draftKey,
+    load: loadLessonSession,
+    completeLesson: completeLessonSession,
+    setCodeAndSaveDraft,
+} = usePlaygroundSession(() => props.slug);
+
 const isDocPanelCollapsed = ref(false);
-const hasLoadedDraft = ref(false);
 
-const draftKey = computed(() => (props.slug ? `lesson:${props.slug}` : "default"));
-
-function loadDraftForContext(seedCode?: string) {
-  const draft = localStateStore.getPlaygroundDraft(draftKey.value);
-  hasLoadedDraft.value = false;
-
-  if (draft) {
-    playgroundStore.setLanguage(draft.language);
-    playgroundStore.setCode(draft.code);
-  } else if (seedCode !== undefined) {
-    playgroundStore.setLanguage("python");
-    playgroundStore.setCode(seedCode);
-  }
-
-  hasLoadedDraft.value = true;
-}
-
-async function loadLesson(slug: string) {
-  if (!slug) {
-    currentLesson.value = null;
-    return;
-  }
-  isLoadingLesson.value = true;
-  try {
-    currentLesson.value = await fetchLessonBySlug(slug);
-    learnerStateStore.recordLessonStart(slug);
-
-    // Phase 2: 结构化练习接入
-    const exercise = currentLesson.value.exercise;
-    if (exercise) {
-      // 尝试恢复上次未完成的练习
-      try {
-        const resumeData = await resumeExercise(exercise.id, slug);
-        if (resumeData.isResumed) {
-          // 有未通过的尝试，恢复代码
-          playgroundStore.startExercise(exercise, slug, resumeData.code);
-        } else {
-          // 无历史尝试，使用 starter code
-          playgroundStore.startExercise(exercise, slug, exercise.starterCode);
-        }
-      } catch {
-        // 恢复失败，fallback 到 starter code
-        playgroundStore.startExercise(exercise, slug, exercise.starterCode);
-      }
-    } else {
-      // 普通课程，加载草稿
-      loadDraftForContext(currentLesson.value.codeExample);
+async function loadLesson(slug: string | undefined) {
+    if (!slug) {
+        currentLesson.value = null;
+        return;
     }
-  } catch (err) {
-    console.error("加载课程失败:", err);
-    currentLesson.value = null;
-    loadDraftForContext();
-  } finally {
-    isLoadingLesson.value = false;
-  }
+    await loadLessonSession();
 }
 
 watch(
-  () => props.slug,
-  (slug) => {
-    hasLoadedDraft.value = false;
-    if (slug) {
-      loadLesson(slug);
-    } else {
-      currentLesson.value = null;
-      loadDraftForContext();
-    }
-  },
-  { immediate: true }
+    () => props.slug,
+    (slug) => {
+        hasLoadedDraft.value = false;
+        if (slug) {
+            loadLesson(slug);
+        } else {
+            currentLesson.value = null;
+        }
+    },
+    { immediate: true }
 );
 
 // ---- 自动触发 Agent 快捷操作（从课程页"让 AI 出题"跳转） ----
@@ -116,8 +75,7 @@ watch(
 );
 
 function loadLessonCode(code: string) {
-  playgroundStore.setCode(code);
-  localStateStore.savePlaygroundDraft(draftKey.value, code, playgroundStore.language);
+  setCodeAndSaveDraft(code);
 }
 
 function goToPrevLesson() {
@@ -195,12 +153,7 @@ async function loadExampleCode(slug: string) {
   try {
     const example = await fetchExample(slug);
     if (example?.code) {
-      playgroundStore.setCode(example.code);
-      localStateStore.savePlaygroundDraft(
-        draftKey.value,
-        example.code,
-        playgroundStore.language,
-      );
+      setCodeAndSaveDraft(example.code);
       showExampleSelector.value = false;
     }
   } catch (err) {
@@ -226,41 +179,20 @@ const isDragging = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 const lineNumbersRef = ref<HTMLElement | null>(null);
 
-const activeResultTab = ref<"output" | "dataframe" | "history" | "assistant" | "attempts">(
-  "assistant"
-);
-
-const resultTabs = ["output", "dataframe", "history", "attempts", "assistant"] as const;
-
 // =====================================================
 // 练习态上下文
 // =====================================================
 
 const isPracticeContextCollapsed = ref(false);
-const isCompletingLesson = ref(false);
 
 function togglePracticeContext() {
   isPracticeContextCollapsed.value = !isPracticeContextCollapsed.value;
   localStorage.setItem('playground:practiceContextCollapsed', String(isPracticeContextCollapsed.value));
 }
 
-/** Phase 2: 完成课程（通过 analytics/track 写入 lesson_complete） */
+// 完成课程：收口到 usePlaygroundSession（learnerState store 幂等写路径）
 async function completeLesson() {
-  if (!currentLesson.value || isCompletingLesson.value) return;
-  isCompletingLesson.value = true;
-  try {
-    await trackEvent({
-      eventType: 'lesson_complete',
-      lessonSlug: currentLesson.value.slug,
-      eventId: crypto.randomUUID(),
-    });
-    // 更新本地状态
-    await learnerStateStore.completeLesson(currentLesson.value.slug);
-  } catch (err) {
-    console.error('完成课程失败:', err);
-  } finally {
-    isCompletingLesson.value = false;
-  }
+  await completeLessonSession();
 }
 
 // =====================================================
@@ -288,8 +220,7 @@ async function loadSnapshots() {
 
 /** 恢复某个快照 */
 function restoreSnapshot(snapshot: CodeSnapshotItem) {
-  playgroundStore.setCode(snapshot.code);
-  localStateStore.savePlaygroundDraft(draftKey.value, snapshot.code, playgroundStore.language);
+  setCodeAndSaveDraft(snapshot.code);
   restoreMessage.value = `已恢复到 ${formatRelativeTime(snapshot.createdTime)} 的尝试`;
   setTimeout(() => {
     restoreMessage.value = "";
@@ -358,6 +289,7 @@ const statusClass = computed(() => {
 const currentDataFrame = computed(() => playgroundStore.lastResponse?.dataframe ?? null);
 const agentContext = computed(() => ({
   currentCode: playgroundStore.code || undefined,
+  attemptId: playgroundStore.lastResponse?.attemptId,
   currentLesson: currentLesson.value?.slug,
   lessonTitle: currentLesson.value?.title,
   lessonCategory: currentLesson.value?.category,
@@ -1158,6 +1090,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
               </div>
             </div>
             <textarea
+              data-playground-editor
               v-model="playgroundStore.code"
               class="flex-1 p-4 bg-[#0d1117] text-slate-300 font-mono resize-none outline-none leading-6 caret-blue-400 placeholder-slate-700 overflow-y-auto"
               :style="{ fontSize: `${localStateStore.editorFontSize}px` }"
@@ -1192,6 +1125,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
 
         <!-- 结果面板 -->
         <div
+          data-playground-result
           class="flex flex-col min-w-0 h-full overflow-hidden bg-[#0d1117]"
           :style="{ width: resultWidthStyle }"
         >
