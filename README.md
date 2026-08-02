@@ -28,7 +28,7 @@
 | 后端服务层 | FastAPI + Python 3.12 + Uvicorn | 接口中转、业务逻辑、数据持久化、Agent 调度、沙箱通信 |
 | AI Agent 层 | 原生 OpenAI API（Function Calling） | 概念解释、代码生成、代码校验、对比分析、实战案例推荐 |
 | 安全执行层 | 本地执行 / Docker 容器隔离 / 模拟执行 | 运行用户代码，开发环境快速反馈，生产环境可启用资源配额与超时控制 |
-| 数据存储层 | SQLite（默认）/ MySQL + Redis（可选） | 教程内容、运行数据与可选缓存 |
+| 数据存储层 | SQLite（默认）/ MySQL（可选） | 教程内容、学习事件、练习尝试与交互审计 |
 
 ---
 
@@ -47,13 +47,16 @@
 │   ├── Dockerfile.sandbox    # 代码沙箱镜像
 │   ├── config/               # 配置管理（Pydantic Settings）
 │   ├── app/                  # 业务模块
-│   │   ├── agent/            # AI Agent 核心（工具、提示词、服务、路由）
-│   │   ├── core/             # 数据库、Redis、异常处理
-│   │   ├── learning/         # 教程内容接口
-│   │   ├── playground/       # Playground 业务逻辑
-│   │   ├── sandbox/          # 沙箱执行调度
-│   │   ├── middleware/       # CORS、安全、访问日志、限流中间件
-│   │   └── utils/            # 通用工具、自动路由注册、标准响应
+│   │   ├── agent/            # AI Agent（证据解析、FC 工具、提示词、交互审计）
+│   │   ├── analytics/        # 学习事件追踪、画像投影、日统计
+│   │   ├── core/             # 数据库、内容索引、会话、异常处理
+│   │   ├── learner_state/    # 服务端学习进度投影（唯一权威状态源）
+│   │   ├── learning/         # 教程内容接口与规则推荐
+│   │   ├── playground/       # Playground 业务逻辑与练习执行
+│   │   ├── practice/         # 可验证练习（尝试模型、断言判定、恢复）
+│   │   ├── sandbox/          # 沙箱执行调度（Runner client）
+│   │   ├── middleware/       # CORS、安全头、访问日志中间件
+│   │   └── utils/            # 通用工具、自动路由注册、SlowAPI 限流
 │   ├── migrations/           # Alembic 数据库迁移
 │   ├── tests/                # 测试用例（pytest）
 │   └── content/              # 教程静态内容
@@ -66,8 +69,8 @@
         ├── main.ts           # 应用入口
         ├── App.vue           # 根组件
         ├── router/           # Vue Router 路由
-        ├── stores/           # Pinia 状态管理（本地学习进度、偏好、UI 状态）
-        ├── api/              # Axios API 封装（agent / learning / playground）
+        ├── stores/           # Pinia 状态管理（learnerState 服务端为准、localState 离线缓存）
+        ├── api/              # Axios API 封装（agent / learning / playground / analytics）
         ├── views/            # 页面级组件
         │   ├── Home.vue
         │   ├── Learning.vue
@@ -76,11 +79,10 @@
         │   └── NotFound.vue
         ├── components/       # 可复用组件
         │   ├── layout/       # 布局组件（Navbar 等）
-        │   ├── editor/       # 代码编辑器相关
         │   ├── playground/   # Playground 交互组件
         │   ├── agent/        # AI Agent 面板（AgentPanel.vue）
-        │   └── common/       # 通用组件
-        ├── composables/      # Vue 组合式函数
+        │   └── recommendation/ # 统一推荐卡片（RecommendationPanel.vue）
+        ├── composables/      # 工作流组合式函数（useLessonSession / usePlaygroundSession / useAgentConversation）
         ├── types/            # TypeScript 类型定义
         └── assets/           # 样式与静态资源
 ```
@@ -154,8 +156,6 @@ cp deploy/app.env.example deploy/app.env
 docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 ```
 
-可选：在应用服务器命令增加 `--profile redis` 启用 Redis。
-
 只有一台服务器时，可在同一条 Compose 命令中加载两份编排，并在
 `deploy/app.env` 设置 `RUNNER_URL=http://runner:8080`、在
 `deploy/runner.env` 设置 `RUNNER_BIND_ADDRESS=127.0.0.1`。Runner 不会
@@ -178,7 +178,6 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `OPENAI_BASE_URL` | — | 自定义 OpenAI 兼容接口地址 |
 | `OPENAI_MODEL` | `gpt-4o-mini` | 默认 LLM 模型 |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — | 备用 LLM 配置 |
-| `REDIS_ENABLED` | `false` | 是否启用 Redis |
 | `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
 | `RECOMMENDATION_CODE_RUNS_THRESHOLD` | `5` | 触发回补建议的代码运行次数阈值 |
 | `RECOMMENDATION_AI_HELPS_THRESHOLD` | `3` | 触发回补建议的 AI 求助次数阈值 |
@@ -218,6 +217,10 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 ### 3. AI Agent 助手
 
 - 悬浮于页面右下角，随时唤起。
+- **学习证据驱动**（阶段 3）：Agent 的练习判断完全基于服务端数据库证据
+  （ExerciseAttempt 执行/验证状态 + LearnerState 课程完成），客户端自报的
+  stdout/stderr 不作为事实来源。每次回答附带结构化 `teachingFeedback`
+  （五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
 - Agent 工具集：
   - **概念解释**：讲解 Polars / DuckDB 核心 API 与原理。
   - **代码生成**：生成可直接运行的示例代码。
@@ -226,11 +229,12 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
   - **实战案例**：数据分析、清洗、批量查询的实战代码推荐。
 - 对话上下文保留短期记忆，支持单轮深度问答。
 
-### 4. 本地学习状态
+### 4. 学习状态与匿名会话
 
-- 平台不提供账号、登录、注册或 JWT 认证。
-- 学习进度、最近访问课程、编辑器偏好、Playground 草稿等状态保存在当前浏览器本地。
-- 清理浏览器数据、更换浏览器或更换设备后，本地学习状态不会自动同步。
+- 平台不提供账号、登录、注册或 JWT 认证；使用签名匿名 session cookie 标识学习者。
+- 学习进度由服务端 `LearnerState` 模块统一管理（唯一写入口：`POST /analytics/track`），前端 localStorage 仅作离线缓存与重试队列。
+- 编辑器偏好、Playground 草稿等纯 UI 状态仍保存在当前浏览器本地。
+- 清理浏览器数据或更换设备后，服务端进度不受影响；离线缓存会丢失但可从服务端恢复。
 
 ---
 
@@ -268,7 +272,7 @@ is_branch_point: false
 ## 测试
 
 Phase 3 学习建议系统已经完成收口，整体设计、交付物与验证结果见
-[`learn_da/docs/phase3-completion-summary.md`](learn_da/docs/phase3-completion-summary.md)。
+[`learn_da/docs/phase3-evidence-agent-completion-summary.md`](learn_da/docs/phase3-evidence-agent-completion-summary.md)。
 
 ```bash
 cd learn_da
@@ -293,20 +297,20 @@ pytest --cov=app --cov=services --cov-report=html
 1. **开发环境**：按「快速开始」分别启动前后端，使用 SQLite 即可。
 2. **测试/预发布**：
    - 使用 Docker Compose 统一部署。
-   - 按需启用 Redis 提升缓存性能。
    - 迁移至 MySQL 以支持并发写入。
 3. **生产环境**：
    - 使用 `docker-compose.app.yml` 部署 Web 与 Backend，使用
      `docker-compose.runner.yml` 在专用主机部署 Runner。
    - 仅允许应用服务器通过私网访问 Runner 的 8080 端口；禁止公网暴露。
    - 配置 HTTPS 反向代理、限流策略和持久化数据卷。
-   - 多个 Backend 副本时使用独立 Redis 与 MySQL，勿共享 SQLite 文件。
+   - 多个 Backend 副本时使用独立 MySQL，勿共享 SQLite 文件。
 
 ---
 
 ## 技术亮点
 
 - **无 LangChain**：Agent 层完全基于原生 OpenAI Function Calling 实现（只读工具集、模型不参与推荐排序、硬步数上限），零冗余依赖，调用链路可控，成本更低；离线评测集验证意图准确率 90.2%（关键词基线 43.9%）。
+- **学习证据驱动**：Agent 练习判断基于服务端数据库证据（五态教学反馈），客户端自报状态不可影响教学结论；`AgentInteraction` 表以 request_id 幂等关联 ai_help，相同请求重放不重复计数，不持久化完整代码/prompt/token/cookie。
 - **安全沙箱**：用户代码不直接运行在主服务进程，Docker 容器隔离 + 白名单库 + 资源配额 + 超时销毁，保障服务安全。
 - **模块热插拔**：通过 `ENABLED_APP_MODULES` 按需启用 learning / playground / agent 模块，便于功能灰度与维护。
 - **自动路由注册**：后端基于约定自动扫描注册 APIRouter，减少手动维护路由表的成本。
