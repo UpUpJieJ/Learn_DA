@@ -68,12 +68,13 @@ openssl rand -hex 32
 启动应用：
 
 ```bash
-docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
+docker compose --env-file deploy/app.env -f docker-compose.app.yml build backend migrate web
+docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d
 docker compose --env-file deploy/app.env -f docker-compose.app.yml ps
 ```
 
-需要 Redis 时，在两条命令增加 `--profile redis`。Backend 完成迁移并通过
-`/ready` 后，Web 才会启动。浏览器访问 `PUBLIC_ORIGIN` 验证页面。
+Backend 完成迁移并通过 `/ready` 后，Web 才会启动。浏览器访问
+`PUBLIC_ORIGIN` 验证页面。
 
 ## 4. 验收与日常操作
 
