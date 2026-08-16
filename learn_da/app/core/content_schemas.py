@@ -56,7 +56,6 @@ class LessonFrontmatter(BaseModel):
     practice_objective: str = ""
     completion_criteria: list[str] = Field(default_factory=list)
     exercise: ExerciseFrontmatter | None = None
-    examples: list[str] = Field(default_factory=list)
 
 
 class CatalogTopic(BaseModel):
@@ -101,12 +100,11 @@ def validate_lesson_frontmatter(
 class ContentIndex:
     """启动时构建的不可变内容索引。
 
-    lessons/examples 为加载器产出的原始 dict 列表（保持既有消费方契约）；
+    lessons 为加载器产出的原始 dict 列表（保持既有消费方契约）；
     catalog 为目录配置；content_version 为全部内容文件的 sha256。
     """
 
     lessons: list[dict[str, Any]]
-    examples: list[dict[str, Any]]
     catalog: dict[str, Any]
     content_version: str
     issues: tuple[str, ...] = ()

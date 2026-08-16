@@ -23,7 +23,6 @@ track: polars_basics
 prerequisites: []
 recommended_next: [duckdb-analytics, polars-groupby]
 skill_tags: [dataframe_basics, column_selection, row_filtering, column_derivation]
-examples: [polars-filter, polars-select]
 is_review_friendly: true
 is_branch_point: false
 exercise:
@@ -48,11 +47,10 @@ exercise:
     - filter 选择行，select 选择列
     - 可以链式调用：df.filter(...).select(...)
   validator:
-    type: stdout_contains
+    type: dataframe_rows
     expected:
-      - "键盘"
-      - "显示器"
-      - "耳机"
+      columns: [product, price]
+      row_count: 3
 ---
 
 # Polars 基础入门

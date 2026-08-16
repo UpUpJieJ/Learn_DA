@@ -37,19 +37,6 @@ class LessonDetail(LessonSummary):
     is_branch_point: bool = False  # → isBranchPoint in JSON
     # Phase 2: 正式练习定义（可选，有则优先于 practice_objective）
     exercise: "ExerciseDefinition | None" = None
-    # 关联示例摘要（来自 frontmatter examples 引用）
-    examples: "list[ExampleSummary]" = []
-
-
-class ExampleSummary(BaseResponseModel):
-    slug: str
-    title: str
-    topic: str
-    summary: str
-
-
-class ExampleDetail(ExampleSummary):
-    code: str
 
 
 # =====================================================

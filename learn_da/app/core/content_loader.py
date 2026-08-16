@@ -110,8 +110,6 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             "skill_tags": frontmatter.get("skill_tags", []),
             "is_review_friendly": frontmatter.get("is_review_friendly", False),
             "is_branch_point": frontmatter.get("is_branch_point", False),
-            # 关联示例（slug 列表，引用必须存在于 content/examples）
-            "examples": frontmatter.get("examples", []),
         }
 
         # 验证必需字段（fail closed：缺失即报错，不再静默跳过）
@@ -204,7 +202,6 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     - category 必须与 track.category 一致（catalog.yml 存在时）
     - prerequisite / recommended_next 引用必须存在
     - prerequisites 课程图必须无环
-    - examples 引用的示例必须存在
     """
     if content_dir is None:
         content_dir = Path(__file__).parent.parent.parent / "content"
@@ -279,7 +276,6 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
                     "file": file_name,
                     "prerequisites": frontmatter.get("prerequisites") or [],
                     "recommended_next": frontmatter.get("recommended_next") or [],
-                    "examples": frontmatter.get("examples") or [],
                 }
 
         except ContentLintError as e:
@@ -289,18 +285,6 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
     # 引用图校验：引用必须存在，prerequisites 图必须无环
     errors.extend(_lint_reference_graph(lessons))
-    # 示例引用校验：课程 frontmatter 的 examples 必须存在于 content/examples
-    example_slugs = {
-        raw.get("slug")
-        for raw in load_all_examples(content_dir)
-        if raw.get("slug")
-    }
-    for slug, meta in lessons.items():
-        for ref in meta["examples"]:
-            if ref not in example_slugs:
-                errors.append(
-                    f"[{meta['file']}:examples] 引用了不存在的示例 '{ref}'"
-                )
     return errors
 
 
@@ -420,40 +404,6 @@ def load_catalog(content_dir: Path | None = None) -> dict[str, Any]:
     }
 
 
-def load_example_from_file(file_path: Path) -> dict[str, Any] | None:
-    """
-    从单个 Markdown 文件加载示例
-    """
-    try:
-        content = file_path.read_text(encoding="utf-8")
-        frontmatter, body = parse_frontmatter(content)
-
-        if not frontmatter:
-            return None
-
-        # 提取代码（第一个 python 代码块）
-        code_match = re.search(r"```python\s*\n(.*?)\n```", body, re.DOTALL)
-        code = code_match.group(1).strip() if code_match else ""
-
-        example = {
-            "slug": frontmatter.get("slug"),
-            "title": frontmatter.get("title"),
-            "topic": frontmatter.get("topic"),
-            "summary": frontmatter.get("summary", ""),
-            "code": code,
-        }
-
-        # 验证必需字段
-        if not example["slug"] or not example["title"]:
-            print(f"[ContentLoader] Warning: {file_path.name} 缺少 slug 或 title")
-            return None
-
-        return example
-
-    except Exception as e:
-        print(f"[ContentLoader] Error loading {file_path}: {e}")
-        return None
-
 
 def load_all_lessons(content_dir: Path | None = None) -> list[dict[str, Any]]:
     """
@@ -480,23 +430,3 @@ def load_all_lessons(content_dir: Path | None = None) -> list[dict[str, Any]]:
     return lessons
 
 
-def load_all_examples(content_dir: Path | None = None) -> list[dict[str, Any]]:
-    """
-    加载所有示例
-    """
-    if content_dir is None:
-        content_dir = Path(__file__).parent.parent.parent / "content"
-
-    examples_dir = content_dir / "examples"
-    if not examples_dir.exists():
-        print(f"[ContentLoader] Examples directory not found: {examples_dir}")
-        return []
-
-    examples = []
-    for md_file in sorted(examples_dir.glob("*.md")):
-        example = load_example_from_file(md_file)
-        if example:
-            examples.append(example)
-            print(f"[ContentLoader] Loaded example: {example['slug']}")
-
-    return examples

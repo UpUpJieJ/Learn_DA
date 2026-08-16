@@ -14,7 +14,6 @@ from typing import Any
 
 from .content_loader import (
     lint_content,
-    load_all_examples,
     load_all_lessons,
     load_catalog,
 )
@@ -51,12 +50,10 @@ def build_content_index(content_dir: Path | None = None) -> ContentIndex:
         )
 
     lessons = load_all_lessons(content_dir)
-    examples = load_all_examples(content_dir)
     catalog = load_catalog(content_dir)
 
     return ContentIndex(
         lessons=lessons,
-        examples=examples,
         catalog=catalog,
         content_version=_content_version(content_dir),
     )

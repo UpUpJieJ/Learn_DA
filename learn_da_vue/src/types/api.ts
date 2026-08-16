@@ -72,8 +72,6 @@ export interface LessonDetail extends LessonSummary {
     isBranchPoint?: boolean;
     /** Phase 2: 正式练习定义（可选，有则优先于 practiceObjective） */
     exercise?: ExerciseDefinition | null;
-    /** 课程关联示例摘要（来自 frontmatter examples 引用） */
-    examples?: ExampleSummary[];
 }
 
 export interface LessonNav {
@@ -298,18 +296,6 @@ export type PlaygroundDrafts = Record<string, PlaygroundDraft>;
 // 学习模块 - 示例代码相关
 // =====================================================
 
-export interface ExampleSummary {
-    slug: string;
-    title: string;
-    topic: string;
-    summary: string;
-}
-
-export interface ExampleDetail extends ExampleSummary {
-    code: string;
-    expectedOutput: string;
-}
-
 // =====================================================
 // Analytics 模块
 // =====================================================
@@ -347,38 +333,9 @@ export interface EventTrackResponse {
 }
 
 /** 代码快照请求 */
-export interface CodeSnapshotRequest {
-    lessonSlug?: string;
-    code: string;
-    language?: string;
-    description?: string;
-}
-
 /** 代码快照响应 */
-export interface CodeSnapshotResponse {
-    snapshotId: number;
-    version: number;
-}
-
 /** 代码快照列表项 */
-export interface CodeSnapshotItem {
-    id: number;
-    lessonSlug?: string;
-    code: string;
-    language: string;
-    version: number;
-    description?: string;
-    createdTime: string;
-}
-
 /** 代码快照分页响应 */
-export interface CodeSnapshotPage {
-    items: CodeSnapshotItem[];
-    total: number;
-    page: number;
-    pageSize: number;
-}
-
 /** 首页统计数据 */
 export interface HomeStats {
     totalLearners: number;

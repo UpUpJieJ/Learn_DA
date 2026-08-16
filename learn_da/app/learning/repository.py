@@ -2,7 +2,7 @@ from typing import Any
 
 from app.core.content_catalog import get_content_index
 from app.core.content_schemas import ContentIndex
-from .schemas import ExampleDetail, ExampleSummary, LessonDetail, LessonNav
+from .schemas import LessonDetail, LessonNav
 
 
 class LearningRepository:
@@ -13,7 +13,6 @@ class LearningRepository:
     def __init__(self, index: ContentIndex | None = None):
         self._index = index or get_content_index()
         self._lessons: list[LessonDetail] | None = None
-        self._examples: list[ExampleDetail] | None = None
 
     def _load_lessons(self) -> list[LessonDetail]:
         """懒加载课程数据（映射自共享索引，不扫描文件系统）"""
@@ -23,18 +22,6 @@ class LearningRepository:
 
             # 构建 slug -> lesson 映射，用于查找前后课程
             slug_map = {l["slug"]: l for l in raw_lessons}
-
-            # 构建 slug -> 示例摘要映射，用于课程关联示例
-            example_summaries = {
-                raw["slug"]: ExampleSummary(
-                    slug=raw["slug"],
-                    title=raw["title"],
-                    topic=raw["topic"],
-                    summary=raw.get("summary", ""),
-                )
-                for raw in self._index.examples
-                if raw.get("slug")
-            }
 
             for raw in raw_lessons:
                 # 处理 prev_lesson
@@ -75,33 +62,10 @@ class LearningRepository:
                     is_branch_point=raw.get("is_branch_point", False),
                     # Phase 2: 正式练习定义
                     exercise=raw.get("exercise"),
-                    # 关联示例（lint 已保证引用存在；异常数据下静默跳过缺失项）
-                    examples=[
-                        example_summaries[slug]
-                        for slug in raw.get("examples", [])
-                        if slug in example_summaries
-                    ],
                 )
                 self._lessons.append(lesson)
 
         return self._lessons
-
-    def _load_examples(self) -> list[ExampleDetail]:
-        """懒加载示例数据（映射自共享索引，不扫描文件系统）"""
-        if self._examples is None:
-            raw_examples = self._index.examples
-            self._examples = [
-                ExampleDetail(
-                    slug=raw["slug"],
-                    title=raw["title"],
-                    topic=raw["topic"],
-                    summary=raw.get("summary", ""),
-                    code=raw.get("code", ""),
-                )
-                for raw in raw_examples
-            ]
-
-        return self._examples
 
     def list_lessons(
         self,
@@ -153,18 +117,6 @@ class LearningRepository:
             None,
         )
 
-    def list_examples(self) -> list[ExampleDetail]:
-        """获取所有示例列表"""
-        return self._load_examples()
-
-    def get_example(self, slug: str) -> ExampleDetail | None:
-        """根据 slug 获取示例详情"""
-        examples = self._load_examples()
-        return next(
-            (example for example in examples if example.slug == slug),
-            None,
-        )
-
     def get_category_stats(self) -> list[dict[str, Any]]:
         """获取分类统计"""
         from collections import Counter
@@ -185,4 +137,3 @@ class LearningRepository:
     def reload(self):
         """重新加载内容（用于开发时热重载）"""
         self._lessons = None
-        self._examples = None

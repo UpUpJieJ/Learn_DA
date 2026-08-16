@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.learner_state.service import LearnerStateService
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.service import AnalyticsService
-from app.analytics.schemas import CodeSnapshotRequest, EventTrackRequest
+from app.analytics.schemas import EventTrackRequest
 from app.analytics.models import LearningRecord
 
 
@@ -224,86 +224,3 @@ async def test_lesson_uncomplete_event_linkage(test_engine):
         completed = await learner_svc.get_completed_lessons("visitor-1")
         assert "polars-basics" not in completed
 
-
-@pytest.mark.anyio
-async def test_code_save_recorded_with_snapshot_in_same_transaction(test_engine):
-    """保存快照时应同事务记录 code_save 事件"""
-    from sqlalchemy import select
-
-    async for session in _standalone_session(test_engine):
-        analytics_svc = AnalyticsService(session)
-
-        resp = await analytics_svc.save_snapshot(
-            CodeSnapshotRequest.model_validate(
-                {
-                    "lessonSlug": "polars-basics",
-                    "code": "print('hello')",
-                    "language": "python",
-                }
-            ),
-            visitor_id="visitor-snap",
-        )
-        assert resp.snapshot_id > 0
-
-        # 应存在一条 code_save 事件，关联同一课程
-        stmt = select(LearningRecord).where(
-            LearningRecord.visitor_id == "visitor-snap",
-            LearningRecord.event_type == "code_save",
-            LearningRecord.is_deleted == False,  # noqa: E712
-        )
-        result = await session.execute(stmt)
-        records = list(result.scalars().all())
-        assert len(records) == 1
-        assert records[0].lesson_slug == "polars-basics"
-
-
-@pytest.mark.anyio
-async def test_ai_help_recorded_by_agent_chat_endpoint(test_engine):
-    """Agent chat 成功受理后应记录 ai_help 事件（visitor_id 由 session 注入）"""
-    from httpx import ASGITransport, AsyncClient
-
-    from app.core import get_anonymous_visitor_id
-    from app.core.database.database import get_db
-    from main import app
-
-    factory = async_sessionmaker(
-        test_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    session = factory()
-
-    async def override_get_db():
-        yield session
-
-    visitor_id = "visitor-aihelp"
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_anonymous_visitor_id] = lambda: visitor_id
-    try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test",
-        ) as api_client:
-            resp = await api_client.post(
-                "/api/v1/agent/chat",
-                json={
-                    "message": "这节课的核心知识点是什么？",
-                    "history": [],
-                    "context": {"currentLesson": "polars-basics"},
-                },
-            )
-            assert resp.status_code == 200
-
-            # 无服务端练习证据时，ai_help 只计入用户画像，不接受客户端
-            # currentLesson 作为课程归属事实。
-            profile_resp = await api_client.get("/api/v1/analytics/user-profile")
-            assert profile_resp.status_code == 200
-            assert profile_resp.json()["data"]["aiHelps"] == 1
-
-            stats_resp = await api_client.get("/api/v1/analytics/user-lesson-stats")
-            assert stats_resp.status_code == 200
-            details = stats_resp.json()["data"].get("lessonDetails", [])
-            assert all(d["slug"] != "polars-basics" for d in details)
-    finally:
-        app.dependency_overrides.clear()
-        await session.close()

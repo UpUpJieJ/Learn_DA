@@ -38,7 +38,7 @@ def main() -> int:
     if errors:
         print(f"\n内容校验失败：{len(errors)} 个问题")
         return 1
-    print("内容校验通过：课程、示例与 catalog 一致。")
+    print("内容校验通过：课程与 catalog 一致。")
     return 0
 
 

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { saveCodeSnapshot } from "@/api/analytics";
 import type { LessonDetail, LessonDifficulty } from "@/types/api";
 import { usePlaygroundStore } from "@/stores/playground";
 import { renderMarkdown } from "@/lib/markdown";
@@ -38,8 +37,6 @@ const {
 // 状态
 // =====================================================
 
-const isSavingSnapshot = ref(false);
-const snapshotSaved = ref(false);
 
 // 目录锚点
 const activeAnchor = ref("");
@@ -165,30 +162,6 @@ function openInPlayground(code?: string) {
     router.push(`/playground/${lesson.value?.slug ?? ''}`);
 }
 
-async function saveLessonSnapshot() {
-    if (!lesson.value?.codeExample?.trim() || isSavingSnapshot.value) return;
-
-    isSavingSnapshot.value = true;
-    snapshotSaved.value = false;
-
-    try {
-        await saveCodeSnapshot({
-            lessonSlug: lesson.value.slug,
-            code: lesson.value.codeExample,
-            language: "python",
-            description: `课程示例起点：${lesson.value.title}`,
-        });
-        // code_save 事件由后端 save_snapshot 同事务记录，前端不再重复上报
-        snapshotSaved.value = true;
-        setTimeout(() => {
-            snapshotSaved.value = false;
-        }, 2200);
-    } catch {
-        console.warn("保存代码快照失败");
-    } finally {
-        isSavingSnapshot.value = false;
-    }
-}
 
 // =====================================================
 // 代码块复制
@@ -511,17 +484,6 @@ const recommendationCta = computed(() => {
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 立刻开始练习
-                            </button>
-                            <button
-                                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
-                                :disabled="isSavingSnapshot"
-                                @click="saveLessonSnapshot"
-                            >
-                                <svg class="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14v14H5z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5v4h6V5" />
-                                </svg>
-                                {{ snapshotSaved ? "已保存练习起点" : isSavingSnapshot ? "保存中..." : "保存当前示例" }}
                             </button>
                         </div>
                     </div>
@@ -987,17 +949,6 @@ const recommendationCta = computed(() => {
                                         />
                                     </svg>
                                     在 Playground 运行
-                                </button>
-                                <button
-                                    class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:text-slate-800"
-                                    :disabled="isSavingSnapshot"
-                                    @click="saveLessonSnapshot"
-                                >
-                                    <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5h14v14H5z" />
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5v4h6V5" />
-                                    </svg>
-                                    {{ snapshotSaved ? "已保存练习起点" : isSavingSnapshot ? "保存中..." : "保存当前示例" }}
                                 </button>
                                 <button
                                     class="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all"

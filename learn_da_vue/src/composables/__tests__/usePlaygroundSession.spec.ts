@@ -187,7 +187,7 @@ describe("usePlaygroundSession", () => {
     it("shows attempts tab only when an exercise is active", () => {
         const session = usePlaygroundSession(() => undefined);
         expect(session.resultTabs.value).not.toContain("attempts");
-        expect(session.resultTabs.value).toContain("snapshots");
+        expect(session.resultTabs.value).toContain("history");
 
         const store = usePlaygroundStore();
         store.startExercise(

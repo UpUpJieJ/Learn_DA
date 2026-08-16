@@ -27,7 +27,6 @@ track: duckdb_basics
 prerequisites: ['duckdb-analytics']
 recommended_next: ['duckdb-joins-cte']
 skill_tags: ['sql_basics', 'select', 'where', 'group_by', 'having', 'order_by']
-examples: [duckdb-create-table]
 is_review_friendly: true
 is_branch_point: false
 exercise:
@@ -62,10 +61,8 @@ exercise:
     - HAVING 用于过滤聚合结果，不是 WHERE
     - 使用 SUM(amount) AS total_amount 起别名
   validator:
-    type: stdout_contains
-    expected:
-      - "办公"
-      - "数码"
+    type: stdout_exact
+    expected: "[('数码', 1, 899), ('办公', 2, 360)]"
 ---
 
 # DuckDB SQL 分析基础

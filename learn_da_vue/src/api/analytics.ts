@@ -2,9 +2,6 @@ import { get, post } from "./index";
 import type {
     EventTrackRequest,
     EventTrackResponse,
-    CodeSnapshotRequest,
-    CodeSnapshotResponse,
-    CodeSnapshotPage,
     HomeStats,
     UserProfile,
     UserLessonStats,
@@ -20,20 +17,6 @@ import type {
 /** 上报学习行为事件 */
 export function trackEvent(data: EventTrackRequest) {
     return post<EventTrackResponse>("/analytics/track", data);
-}
-
-/** 保存代码快照 */
-export function saveCodeSnapshot(data: CodeSnapshotRequest) {
-    return post<CodeSnapshotResponse>("/analytics/snapshot", data);
-}
-
-/** 获取代码快照列表（分页） */
-export function fetchCodeSnapshots(lessonSlug?: string, page: number = 1, pageSize: number = 20) {
-    return get<CodeSnapshotPage>("/analytics/snapshots", {
-        ...(lessonSlug ? { lessonSlug } : {}),
-        page,
-        page_size: pageSize,
-    });
 }
 
 // =====================================================

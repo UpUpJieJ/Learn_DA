@@ -57,22 +57,3 @@ export function fetchCategoryStats() {
   return get<CategoryStat[]>('/lessons/categories')
 }
 
-// =====================================================
-// 示例代码 API
-// =====================================================
-
-import type { ExampleSummary, ExampleDetail } from '@/types/api'
-
-/**
- * 获取所有示例代码列表
- */
-export function fetchExamples() {
-  return get<ExampleSummary[]>('/examples')
-}
-
-/**
- * 根据 slug 获取示例代码详情
- */
-export function fetchExample(slug: string) {
-  return get<ExampleDetail>(`/examples/${slug}`)
-}

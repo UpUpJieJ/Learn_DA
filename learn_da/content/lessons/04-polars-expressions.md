@@ -26,7 +26,6 @@ track: polars_basics
 prerequisites: ['polars-basics', 'polars-groupby']
 recommended_next: ['polars-cleaning']
 skill_tags: ['expressions', 'with_columns', 'conditional_logic', 'pl_when']
-examples: [polars-select]
 is_review_friendly: true
 is_branch_point: false
 ---

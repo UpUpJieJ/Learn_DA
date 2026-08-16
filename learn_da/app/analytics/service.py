@@ -15,10 +15,6 @@ from app.learning.repository import LearningRepository
 
 from .repository import AnalyticsRepository
 from .schemas import (
-    CodeSnapshotItem,
-    CodeSnapshotPage,
-    CodeSnapshotRequest,
-    CodeSnapshotResponse,
     EventTrackRequest,
     EventTrackResponse,
     EventType,
@@ -104,76 +100,6 @@ class AnalyticsService:
         if commit:
             await self.db.commit()
         return EventTrackResponse(recorded=True)
-
-    async def save_snapshot(
-        self, req: CodeSnapshotRequest, visitor_id: str
-    ) -> CodeSnapshotResponse:
-        """保存代码快照，并在同一事务中记录 code_save 事件
-
-        快照与 code_save 事件共享同一事务：任一失败则整体回滚，避免出现“有快照
-        无事件”或“有事件无快照”的不一致。code_save 携带 event_id 以支持幂等。
-        """
-        snapshot = await self.repo.create_snapshot(
-            visitor_id=visitor_id,
-            code=req.code,
-            lesson_slug=req.lesson_slug,
-            language=req.language,
-            description=req.description,
-        )
-        # Enforce retention: 100 per session, 10 000 global
-        await self.repo.prune_snapshots(
-            visitor_id, per_session_limit=100, global_limit=10_000
-        )
-
-        # 同事务记录 code_save 事件（不单独 commit，由本方法末尾统一提交）
-        await self.repo.create_record(
-            visitor_id=visitor_id,
-            event_type=EventType.CODE_SAVE.value,
-            lesson_slug=req.lesson_slug,
-            event_id=f"code_save:{snapshot.id}",
-        )
-
-        await self.db.commit()
-        return CodeSnapshotResponse(snapshot_id=snapshot.id, version=snapshot.version)
-
-    async def list_snapshots(
-        self,
-        visitor_id: str,
-        lesson_slug: str | None = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> CodeSnapshotPage:
-        """Return paginated snapshots (newest-first)."""
-        snapshots, total = await self.repo.list_snapshots(
-            visitor_id,
-            lesson_slug,
-            page=page,
-            page_size=page_size,
-        )
-        items = [
-            CodeSnapshotItem(
-                id=s.id,
-                lesson_slug=s.lesson_slug,
-                code=s.code,
-                language=s.language,
-                version=s.version,
-                description=s.description,
-                created_time=(
-                    s.created_time.strftime("%Y-%m-%d %H:%M:%S")
-                    if s.created_time
-                    else ""
-                ),
-            )
-            for s in snapshots
-        ]
-        return CodeSnapshotPage(
-            items=items,
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
-
-    # ── 首页统计 ─────────────────────────────────────────
 
     async def get_home_stats(self) -> dict:
         """获取首页展示的统计数据"""

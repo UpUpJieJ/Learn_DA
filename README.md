@@ -202,7 +202,6 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
   - `GET /api/v1/lessons`：获取课程列表，支持 `category`、`difficulty`、`keyword` 查询参数。
   - `GET /api/v1/lessons/{slug}`：获取课程详情。
   - `GET /api/v1/lessons/categories`：获取课程分类统计。
-  - `GET /api/v1/examples` / `GET /api/v1/examples/{slug}`：获取示例代码列表与详情。
 
 ### 2. Playground 代码实操
 

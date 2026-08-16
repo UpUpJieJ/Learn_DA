@@ -21,7 +21,6 @@ export type ResultTab =
     | "output"
     | "dataframe"
     | "history"
-    | "snapshots"
     | "attempts"
     | "assistant";
 
@@ -29,7 +28,6 @@ export const RESULT_TABS: readonly ResultTab[] = [
     "output",
     "dataframe",
     "history",
-    "snapshots",
     "attempts",
     "assistant",
 ];

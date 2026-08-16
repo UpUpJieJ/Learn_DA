@@ -3,13 +3,10 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
-import { fetchExamples, fetchExample } from "@/api/learning";
-import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
+import { trackEvent } from "@/api/analytics";
 import { listExerciseAttempts } from "@/api/playground";
 import type {
   DataFrameCell,
-  ExampleSummary,
-  CodeSnapshotItem,
   ExerciseAttemptSummary,
 } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
@@ -116,80 +113,6 @@ function handleDocClick(e: MouseEvent) {
 }
 
 // =====================================================
-// 示例代码选择器
-// =====================================================
-
-const examples = ref<ExampleSummary[]>([]);
-const isLoadingExamples = ref(false);
-const showExampleSelector = ref(false);
-
-const groupedExamples = computed(() => {
-  const groups: Record<string, ExampleSummary[]> = {};
-  for (const ex of examples.value) {
-    const topic = ex.topic || "other";
-    if (!groups[topic]) groups[topic] = [];
-    groups[topic].push(ex);
-  }
-  return groups;
-});
-
-const topicLabels: Record<string, string> = {
-  polars: "Polars",
-  duckdb: "DuckDB",
-  integration: "组合",
-  python: "Python",
-};
-
-function formatTopicLabel(topic: string): string {
-  return topicLabels[topic] || topic;
-}
-
-async function loadExamples() {
-  isLoadingExamples.value = true;
-  try {
-    examples.value = await fetchExamples();
-  } catch (err) {
-    console.error("加载示例失败:", err);
-  } finally {
-    isLoadingExamples.value = false;
-  }
-}
-
-async function loadExampleCode(slug: string) {
-  if (!slug) return;
-  try {
-    const example = await fetchExample(slug);
-    if (example?.code) {
-      setCodeAndSaveDraft(example.code);
-      showExampleSelector.value = false;
-    }
-  } catch (err) {
-    console.error("加载示例代码失败:", err);
-  }
-}
-
-function toggleExampleSelector() {
-  showExampleSelector.value = !showExampleSelector.value;
-  if (showExampleSelector.value && examples.value.length === 0) {
-    // 课程模式优先展示本课关联示例；无关联示例或独立 Playground 回退到全量列表
-    const lessonExamples = currentLesson.value?.examples;
-    if (lessonExamples && lessonExamples.length > 0) {
-      examples.value = lessonExamples;
-    } else {
-      loadExamples();
-    }
-  }
-}
-
-// 切换课程时重置示例列表，让新课程的关联示例重新加载
-watch(
-  () => props.slug,
-  () => {
-    examples.value = [];
-  }
-);
-
-// =====================================================
 // 布局
 // =====================================================
 
@@ -217,30 +140,11 @@ async function completeLesson() {
 }
 
 // =====================================================
-// 代码快照 / 练习尝试记录
+// 练习尝试记录
 // =====================================================
-
-const snapshots = ref<CodeSnapshotItem[]>([]);
-const isLoadingSnapshots = ref(false);
-const showSaveDialog = ref(false);
-const saveDescription = ref("");
-const restoreMessage = ref("");
 
 const attempts = ref<ExerciseAttemptSummary[]>([]);
 const isLoadingAttempts = ref(false);
-
-/** 加载快照列表 */
-async function loadSnapshots() {
-  isLoadingSnapshots.value = true;
-  try {
-    const page = await fetchCodeSnapshots(props.slug);
-    snapshots.value = page.items;
-  } catch (err) {
-    console.error("加载快照失败:", err);
-  } finally {
-    isLoadingSnapshots.value = false;
-  }
-}
 
 /** 加载当前练习的尝试列表（真实 attempt，含验证状态） */
 async function loadAttempts() {
@@ -277,15 +181,6 @@ function verificationStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
-/** 恢复某个快照 */
-function restoreSnapshot(snapshot: CodeSnapshotItem) {
-  setCodeAndSaveDraft(snapshot.code);
-  restoreMessage.value = `已恢复到 ${formatRelativeTime(snapshot.createdTime)} 的快照`;
-  setTimeout(() => {
-    restoreMessage.value = "";
-  }, 3000);
-}
-
 /** 格式化相对时间 */
 function formatRelativeTime(timeStr: string): string {
   const time = new Date(timeStr).getTime();
@@ -303,11 +198,9 @@ function formatRelativeTime(timeStr: string): string {
   return new Date(time).toLocaleDateString("zh-CN");
 }
 
-// 监听 tab 切换：快照 tab 加载快照，尝试 tab 加载练习尝试
+// 监听 tab 切换：尝试 tab 加载练习尝试
 watch(activeResultTab, (newTab) => {
-  if (newTab === "snapshots" && snapshots.value.length === 0) {
-    loadSnapshots();
-  } else if (newTab === "attempts") {
+  if (newTab === "attempts") {
     loadAttempts();
   }
 });
@@ -422,78 +315,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
-  document.addEventListener("click", handleClickOutside);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
-  document.removeEventListener("click", handleClickOutside);
 });
 
-function handleClickOutside(e: MouseEvent) {
-  const target = e.target as HTMLElement;
-  if (!target.closest(".example-selector")) {
-    showExampleSelector.value = false;
-  }
-}
-
 // =====================================================
-// 代码保存 & 自动保存 & 事件追踪
-// =====================================================
-
-const isSaving = ref(false);
-const lastSaveTime = ref<number | null>(null);
-const saveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
-
-/** 手动保存代码快照 */
-async function saveCode() {
-  if (!playgroundStore.code.trim() || isSaving.value) return;
-
-  // 显示保存对话框
-  showSaveDialog.value = true;
-}
-
-/** 确认保存快照 */
-async function confirmSave() {
-  if (isSaving.value) return;
-  isSaving.value = true;
-  saveStatus.value = "saving";
-  try {
-    await saveCodeSnapshot({
-      lessonSlug: props.slug || undefined,
-      code: playgroundStore.code,
-      language: playgroundStore.language,
-      description: saveDescription.value.trim() || undefined,
-    });
-    lastSaveTime.value = Date.now();
-    saveStatus.value = "saved";
-    showSaveDialog.value = false;
-    saveDescription.value = "";
-
-    // 刷新快照列表
-    if (activeResultTab.value === "snapshots") {
-      loadSnapshots();
-    }
-
-    setTimeout(() => {
-      if (saveStatus.value === "saved") saveStatus.value = "idle";
-    }, 3000);
-  } catch {
-    saveStatus.value = "error";
-    setTimeout(() => {
-      if (saveStatus.value === "error") saveStatus.value = "idle";
-    }, 5000);
-  } finally {
-    isSaving.value = false;
-  }
-}
-
-/** 取消保存 */
-function cancelSave() {
-  showSaveDialog.value = false;
-  saveDescription.value = "";
-}
-
+// 事件追踪
 async function runCode() {
   const response = await playgroundStore.runCode();
   activeResultTab.value = response?.resultType === "dataframe" ? "dataframe" : "output";
@@ -602,72 +431,6 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
       </div>
 
       <div class="flex items-center gap-2">
-        <!-- 示例 -->
-        <div class="relative example-selector">
-          <button
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all"
-            @click="toggleExampleSelector"
-          >
-            <svg
-              class="w-3.5 h-3.5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-            示例
-          </button>
-
-          <div
-            v-if="showExampleSelector"
-            class="absolute top-full right-0 mt-2 w-72 bg-[#1c2128] border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden"
-          >
-            <div class="px-3 py-2 border-b border-white/10">
-              <span class="text-xs text-slate-400">选择示例</span>
-            </div>
-            <div
-              v-if="isLoadingExamples"
-              class="p-4 text-center text-slate-500 text-sm"
-            >
-              加载中...
-            </div>
-            <div
-              v-else-if="examples.length === 0"
-              class="p-4 text-center text-slate-500 text-sm"
-            >
-              暂无示例
-            </div>
-            <div v-else class="max-h-80 overflow-y-auto py-1">
-              <div
-                v-for="(group, topic) in groupedExamples"
-                :key="topic"
-                class="mb-1"
-              >
-                <div class="px-3 py-1.5 text-xs text-slate-500 bg-white/5">
-                  {{ formatTopicLabel(String(topic)) }}
-                </div>
-                <button
-                  v-for="ex in group"
-                  :key="ex.slug"
-                  class="w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
-                  @click="loadExampleCode(ex.slug)"
-                >
-                  <div class="font-medium">{{ ex.title }}</div>
-                  <div class="text-xs text-slate-500 mt-0.5">
-                    {{ ex.summary }}
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- 字体大小 -->
         <div class="flex items-center gap-1">
           <button
@@ -686,32 +449,6 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
             +
           </button>
         </div>
-
-        <!-- 保存状态 -->
-        <span
-          v-if="saveStatus === 'saved'"
-          class="text-xs text-emerald-400 flex items-center gap-1"
-        >
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          已保存快照
-        </span>
-        <span v-else-if="saveStatus === 'saving'" class="text-xs text-blue-400">保存中…</span>
-        <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
-
-        <!-- 保存 -->
-        <button
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all"
-          title="保存代码快照（可添加备注）"
-          @click="saveCode"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-          </svg>
-          保存代码快照
-        </button>
 
         <!-- 运行 -->
         <button
@@ -1151,8 +888,6 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                   ? "数据"
                   : tab === "history"
                   ? "历史"
-                  : tab === "snapshots"
-                  ? "快照"
                   : tab === "attempts"
                   ? "尝试"
                   : "助手"
@@ -1342,23 +1077,14 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                           <span>{{ criterion }}</span>
                         </li>
                       </ul>
-                      <p class="text-xs text-slate-400">
+                      <p class="text-xs text-slate-400" v-if="currentLesson.nextLesson">
                         完成后可以：
                         <button
                           class="text-blue-400 hover:text-blue-300 underline"
-                          @click="saveCode"
+                          @click="goToNextLesson"
                         >
-                          保存本次尝试
+                          继续下一节课
                         </button>
-                        <span v-if="currentLesson.nextLesson">
-                          或
-                          <button
-                            class="text-blue-400 hover:text-blue-300 underline"
-                            @click="goToNextLesson"
-                          >
-                            继续下一节课
-                          </button>
-                        </span>
                       </p>
                     </div>
                   </div>
@@ -1534,90 +1260,6 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 </div>
               </div>
             </div>
-            <!-- 快照面板（保存的代码版本） -->
-            <div
-              v-show="activeResultTab === 'snapshots'"
-              class="absolute inset-0 overflow-y-auto p-4"
-            >
-              <!-- 恢复成功提示 -->
-              <div
-                v-if="restoreMessage"
-                class="mb-3 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs"
-              >
-                {{ restoreMessage }}
-              </div>
-
-              <div
-                v-if="isLoadingSnapshots"
-                class="flex flex-col items-center justify-center h-full text-center"
-              >
-                <div
-                  class="w-8 h-8 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin"
-                />
-                <p class="text-sm text-slate-500 mt-3">加载中...</p>
-              </div>
-              <div
-                v-else-if="snapshots.length === 0"
-                class="flex flex-col items-center justify-center h-full text-center"
-              >
-                <p class="text-sm text-slate-600">暂无代码快照</p>
-                <p class="text-xs text-slate-700 mt-2">点击"保存代码快照"记录你的代码版本</p>
-              </div>
-              <div v-else>
-                <div class="flex items-center justify-between mb-3">
-                  <span class="text-xs text-slate-500"
-                    >最近 {{ snapshots.length }} 个快照</span
-                  >
-                </div>
-                <div class="space-y-2">
-                  <div
-                    v-for="snapshot in snapshots"
-                    :key="snapshot.id"
-                    class="p-3 rounded-lg bg-white/3 border border-white/5 hover:bg-white/5 cursor-pointer transition-colors"
-                    @click="restoreSnapshot(snapshot)"
-                  >
-                    <div class="flex items-start justify-between gap-2 mb-1">
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 mb-1">
-                          <span class="text-xs text-slate-400">{{
-                            formatRelativeTime(snapshot.createdTime)
-                          }}</span>
-                          <span
-                            v-if="snapshot.lessonSlug"
-                            class="text-xs text-slate-600"
-                          >
-                            · {{ snapshot.lessonSlug }}
-                          </span>
-                        </div>
-                        <p
-                          v-if="snapshot.description"
-                          class="text-sm text-slate-300 mb-1"
-                        >
-                          {{ snapshot.description }}
-                        </p>
-                      </div>
-                      <svg
-                        class="w-4 h-4 text-slate-600 shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                    </div>
-                    <code
-                      class="text-xs text-slate-500 font-mono block truncate"
-                      >{{ truncateCode(snapshot.code) }}</code
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
             <!-- 练习尝试面板（真实 attempt，含验证状态） -->
             <div
               v-show="activeResultTab === 'attempts'"
@@ -1704,49 +1346,6 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
       </div>
     </div>
 
-    <!-- 保存对话框 -->
-    <div
-      v-if="showSaveDialog"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="cancelSave"
-    >
-      <div class="bg-[#1c2128] border border-white/10 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div class="px-4 py-3 border-b border-white/10">
-          <h3 class="text-sm font-semibold text-slate-200">保存本次尝试</h3>
-        </div>
-        <div class="p-4">
-          <label class="block text-xs text-slate-400 mb-2">
-            添加描述（可选）
-          </label>
-          <textarea
-            v-model="saveDescription"
-            class="w-full px-3 py-2 bg-[#0d1117] border border-white/10 rounded-lg text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500/50 resize-none"
-            rows="3"
-            maxlength="100"
-            placeholder="例如：尝试用 filter 筛选数据"
-            @keydown.enter.ctrl="confirmSave"
-          />
-          <div class="text-xs text-slate-600 mt-1">
-            {{ saveDescription.length }}/100
-          </div>
-        </div>
-        <div class="px-4 py-3 border-t border-white/10 flex items-center justify-end gap-2">
-          <button
-            class="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-            @click="cancelSave"
-          >
-            取消
-          </button>
-          <button
-            class="px-3 py-1.5 rounded-lg text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-            :disabled="isSaving"
-            @click="confirmSave"
-          >
-            {{ isSaving ? "保存中..." : "确认保存" }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 

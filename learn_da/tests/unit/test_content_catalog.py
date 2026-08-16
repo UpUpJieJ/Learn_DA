@@ -44,7 +44,6 @@ def _write_lesson(tmp_path: Path, filename: str, frontmatter: dict) -> Path:
 def _make_content_dir(tmp_path: Path) -> Path:
     content_dir = tmp_path / "content"
     (content_dir / "lessons").mkdir(parents=True)
-    (content_dir / "examples").mkdir(parents=True)
     (content_dir / "catalog.yml").write_text(
         "platform:\n  name: T\n  title: T\ntopics: []\ntracks: []\n",
         encoding="utf-8",
@@ -65,10 +64,9 @@ def _make_content_dir(tmp_path: Path) -> Path:
 
 class TestBuildContentIndex:
     def test_real_content_builds(self):
-        """真实内容目录可构建索引，课程/示例/catalog 均可用。"""
+        """真实内容目录可构建索引，课程/catalog 均可用。"""
         index = build_content_index()
         assert len(index.lessons) >= 13
-        assert len(index.examples) >= 4
         assert index.catalog["platform"]["name"] == "Learn DA"
         assert len(index.catalog["tracks"]) >= 4
         assert index.content_version

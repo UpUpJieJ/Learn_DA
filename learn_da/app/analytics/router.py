@@ -12,10 +12,6 @@ from app.utils.limiter import limiter
 from config.settings import settings
 
 from .schemas import (
-    CodeSnapshotItem,
-    CodeSnapshotPage,
-    CodeSnapshotRequest,
-    CodeSnapshotResponse,
     EventTrackRequest,
     EventTrackResponse,
 )
@@ -40,40 +36,6 @@ async def track_event(
     result = await service.track_event(req, visitor_id)
     return StdResp.success(data=result)
 
-
-@router.post("/analytics/snapshot", response_model=StdResp[CodeSnapshotResponse])
-@limiter.limit(settings.RATE_LIMIT_SNAPSHOT_SAVE)
-async def save_snapshot(
-    request: Request,
-    req: CodeSnapshotRequest,
-    visitor_id: str = Depends(get_anonymous_visitor_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """保存代码快照"""
-    service = AnalyticsService(db)
-    result = await service.save_snapshot(req, visitor_id)
-    return StdResp.success(data=result)
-
-
-@router.get("/analytics/snapshots", response_model=StdResp[CodeSnapshotPage])
-@limiter.limit(settings.RATE_LIMIT_ANALYTICS_READ)
-async def list_snapshots(
-    request: Request,
-    visitor_id: str = Depends(get_anonymous_visitor_id),
-    lesson_slug: str | None = Query(None, alias="lessonSlug"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-):
-    """获取代码快照列表（分页）"""
-    service = AnalyticsService(db)
-    result = await service.list_snapshots(
-        visitor_id,
-        lesson_slug,
-        page=page,
-        page_size=page_size,
-    )
-    return StdResp.success(data=result)
 
 
 # ── Phase 3: 学习流优化 ─────────────────────────────────
