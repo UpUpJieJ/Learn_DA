@@ -109,7 +109,7 @@ uv sync --extra dev
 
 # 2. 配置环境变量（可选，也可使用默认值）
 cp .env.example .env       # 若存在示例文件
-# 编辑 .env 设置 OPENAI_API_KEY、LLM_API_KEY 等
+# 编辑 .env 设置 LLM_API_KEY、LLM_BASE_URL 等
 
 # 3. 运行数据库迁移（首次启动）
 alembic upgrade head
@@ -174,10 +174,10 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `APP_ENV` | `development` | 运行环境 |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./learn_da.db` | 数据库连接串 |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 前端跨域白名单 |
-| `OPENAI_API_KEY` | — | OpenAI API 密钥 |
-| `OPENAI_BASE_URL` | — | 自定义 OpenAI 兼容接口地址 |
-| `OPENAI_MODEL` | `gpt-4o-mini` | 默认 LLM 模型 |
-| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — | 备用 LLM 配置 |
+| `FALLBACK_LLM_API_KEY` | — | 兜底 LLM API 密钥（`LLM_API_KEY` 未设置时使用） |
+| `FALLBACK_LLM_BASE_URL` | — | 兜底 OpenAI 兼容接口地址 |
+| `FALLBACK_LLM_MODEL` | `gpt-4o-mini` | 兜底 LLM 模型 |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — | 主 LLM 配置（优先于 `FALLBACK_LLM_*`） |
 | `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
 | `RECOMMENDATION_CODE_RUNS_THRESHOLD` | `5` | 触发回补建议的代码运行次数阈值 |
 | `RECOMMENDATION_AI_HELPS_THRESHOLD` | `3` | 触发回补建议的 AI 求助次数阈值 |

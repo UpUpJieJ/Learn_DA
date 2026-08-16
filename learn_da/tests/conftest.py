@@ -29,7 +29,7 @@ def offline_llm_guard(monkeypatch):
     from config.settings import settings
 
     monkeypatch.setattr(settings, "LLM_API_KEY", None)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "FALLBACK_LLM_API_KEY", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_API_KEY", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_BASE_URL", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_MODEL", None)

@@ -342,7 +342,7 @@ async def test_chat_endpoint_uses_legacy_path_when_flag_disabled(
 ):
     monkeypatch.setattr(settings, "AGENT_FC_ENABLED", False)
     monkeypatch.setattr(settings, "LLM_API_KEY", None)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "FALLBACK_LLM_API_KEY", None)
 
     async def must_not_call(self, payload, visitor_id):
         raise AssertionError("flag 关闭时不得进入 FC 路径")
@@ -385,7 +385,7 @@ async def test_chat_endpoint_flag_on_without_key_uses_legacy(client, monkeypatch
     # 设计决策：无 key 时即使 flag 开启也走确定性降级旧路径
     monkeypatch.setattr(settings, "AGENT_FC_ENABLED", True)
     monkeypatch.setattr(settings, "LLM_API_KEY", None)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "FALLBACK_LLM_API_KEY", None)
 
     async def must_not_call(self, payload, visitor_id):
         raise AssertionError("无 key 时不得进入 FC 路径")

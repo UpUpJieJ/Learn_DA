@@ -34,9 +34,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_SNAPSHOT_SAVE: str = "10/minute"
     RATE_LIMIT_ANALYTICS_READ: str = "60/minute"
 
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_BASE_URL: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-4o-mini"
+    # LLM_* 为主配置；FALLBACK_LLM_* 仅在对应主配置未设置时生效（effective_llm_* 统一解析）
+    FALLBACK_LLM_API_KEY: Optional[str] = None
+    FALLBACK_LLM_BASE_URL: Optional[str] = None
+    FALLBACK_LLM_MODEL: str = "gpt-4o-mini"
     OPENAI_MAX_TURNS: int = 3
     LLM_API_KEY: Optional[str] = None
     LLM_BASE_URL: Optional[str] = None
@@ -94,15 +95,15 @@ class Settings(BaseSettings):
 
     @property
     def effective_llm_api_key(self) -> Optional[str]:
-        return self.LLM_API_KEY or self.OPENAI_API_KEY
+        return self.LLM_API_KEY or self.FALLBACK_LLM_API_KEY
 
     @property
     def effective_llm_base_url(self) -> Optional[str]:
-        return self.LLM_BASE_URL or self.OPENAI_BASE_URL
+        return self.LLM_BASE_URL or self.FALLBACK_LLM_BASE_URL
 
     @property
     def effective_llm_model(self) -> str:
-        return self.LLM_MODEL or self.OPENAI_MODEL
+        return self.LLM_MODEL or self.FALLBACK_LLM_MODEL
 
     @field_validator("API_PREFIX")
     @classmethod

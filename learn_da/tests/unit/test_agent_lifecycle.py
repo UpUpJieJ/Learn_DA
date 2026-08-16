@@ -13,7 +13,7 @@ from config.settings import settings
 def no_llm(monkeypatch):
     """屏蔽外部 LLM/embedding 调用，保证测试离线。"""
     monkeypatch.setattr(settings, "LLM_API_KEY", None)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "FALLBACK_LLM_API_KEY", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_API_KEY", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_BASE_URL", None)
     monkeypatch.setattr(settings, "LEARN_DA_EMBEDDING_MODEL", None)
