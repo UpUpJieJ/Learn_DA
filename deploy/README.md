@@ -121,3 +121,43 @@ docker compose --env-file deploy/app.env --env-file deploy/runner.env \
 
 同一次启动会使 `backend` 与 `runner` 处于同一个内部 Docker 网络，因此
 `http://runner:8080` 不需要公网 DNS 或端口映射。
+
+## 日常更新（仓库有新提交后同步到服务器）
+
+服务器端一条命令：
+
+```bash
+/app/Learn_DA/deploy/update.sh
+```
+
+脚本会拉取代码（优先 GitHub，不可达时回退 `/root/learnda.bundle`）、
+重建镜像、滚动更新容器并显示状态。数据卷不受影响。
+
+### 本地侧：把新提交送到服务器
+
+方式 A（GitHub 通畅，推荐）：
+
+```bash
+git push origin main
+ssh root@<服务器IP> /app/Learn_DA/deploy/update.sh
+```
+
+方式 B（GitHub 不可达，本地代理也失效时的兜底）：
+
+```bash
+git bundle create /tmp/learnda.bundle origin/main..main   # 未推送的提交
+scp /tmp/learnda.bundle root@<服务器IP>:/root/learnda.bundle
+ssh root@<服务器IP> /app/Learn_DA/deploy/update.sh
+```
+
+> 注意：方式 B 的 `origin/main..main` 假设已推送到 GitHub 的部分不需要
+> 打包；若不确定，用 `git bundle create /tmp/learnda.bundle main` 打全量。
+
+### 免密登录（可选，一次性配置）
+
+```bash
+ssh-keygen -t ed25519            # 本地无密钥时生成
+ssh root@<服务器IP> "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys" < ~/.ssh/id_ed25519.pub
+```
+
+配置后本地 scp/ssh 不再需要输密码，方式 A/B 可写成单条脚本自动执行。
