@@ -1,4 +1,5 @@
 import { post } from '@/api/index'
+import { randomId } from '@/lib/uuid'
 import type {
   AgentChatRequest,
   AgentChatResponse,
@@ -47,7 +48,7 @@ export async function streamChatMessage(
     onDone,
     onError,
     signal,
-    requestId = crypto.randomUUID(),
+    requestId = randomId(),
   } = options
 
   try {

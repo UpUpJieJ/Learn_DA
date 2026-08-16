@@ -8,6 +8,7 @@ import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytic
 import type { DataFrameCell, ExampleSummary, CodeSnapshotItem } from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
+import { randomId } from "@/lib/uuid";
 import { usePlaygroundSession } from "@/composables/usePlaygroundSession";
 
 const route = useRoute();
@@ -496,7 +497,7 @@ async function runCode() {
   trackEvent({
     eventType: "code_run",
     lessonSlug: props.slug || undefined,
-    eventId: crypto.randomUUID(),
+    eventId: randomId(),
     status: response.status,
   }).catch(() => {});
 }

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { executeCode, formatCode } from "@/api/playground";
+import { randomId } from "@/lib/uuid";
 import type {
     ExecuteResponse,
     ExecutionSource,
@@ -104,7 +105,7 @@ export const usePlaygroundStore = defineStore("playground", () => {
             const response = await executeCode({
                 code: code.value,
                 language: language.value,
-                requestId: crypto.randomUUID(),
+                requestId: randomId(),
                 source,
                 // Phase 2: 练习执行参数
                 lessonSlug: activeLessonSlug.value ?? undefined,

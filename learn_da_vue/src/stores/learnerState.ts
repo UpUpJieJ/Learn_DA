@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { EventType, LearnerProgressSummary } from '@/types/api'
 import { fetchLearnerProgress } from '@/api/learnerState'
 import { trackEvent } from '@/api/analytics'
+import { randomId } from '@/lib/uuid'
 
 // =====================================================
 // localStorage 缓存（降级存储）
@@ -29,12 +30,9 @@ function saveCache(data: LearnerProgressSummary): void {
   }
 }
 
-/** 幂等键。crypto.randomUUID 只在安全上下文可用，降级为时间戳 + 随机数。 */
+/** 幂等键。统一走 lib/uuid 的 randomId，兼容明文 HTTP 等非安全上下文。 */
 function newEventId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return randomId()
 }
 
 /** 待重试的状态变更事件。eventId 随 op 一起保存，重试不会重复计数。 */
