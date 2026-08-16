@@ -3,7 +3,6 @@ slug: polars-select
 title: Polars 选择列
 topic: polars
 summary: 使用 select 方法选择指定列
-expected_output: "shape: (3, 2)"
 ---
 
 使用 `select` 方法选择 DataFrame 的指定列：

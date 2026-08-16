@@ -17,12 +17,19 @@ import type { LessonDetail } from "@/types/api";
 // 页面只保留布局、示例选择器、快照 UI 与编辑器 DOM。
 // =====================================================
 
-export type ResultTab = "output" | "dataframe" | "history" | "assistant" | "attempts";
+export type ResultTab =
+    | "output"
+    | "dataframe"
+    | "history"
+    | "snapshots"
+    | "attempts"
+    | "assistant";
 
 export const RESULT_TABS: readonly ResultTab[] = [
     "output",
     "dataframe",
     "history",
+    "snapshots",
     "attempts",
     "assistant",
 ];
@@ -44,7 +51,12 @@ export function usePlaygroundSession(slugSource: PlaygroundSlugSource) {
     const isCompletingLesson = ref(false);
 
     const activeResultTab = ref<ResultTab>("assistant");
-    const resultTabs = RESULT_TABS;
+    // 「尝试」tab 只在结构化练习激活时展示（展示真实 attempt 记录）
+    const resultTabs = computed<readonly ResultTab[]>(() =>
+        playgroundStore.activeExercise
+            ? RESULT_TABS
+            : RESULT_TABS.filter((t) => t !== "attempts"),
+    );
 
     const draftKey = computed(() => {
         const slug = toSlug(slugSource);

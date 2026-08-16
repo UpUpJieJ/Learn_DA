@@ -26,6 +26,7 @@ track: duckdb_basics
 prerequisites: []
 recommended_next: [polars-groupby, duckdb-joins-cte]
 skill_tags: [sql_basics, group_by, aggregation, sorting]
+examples: [duckdb-aggregate]
 is_review_friendly: true
 is_branch_point: false
 ---

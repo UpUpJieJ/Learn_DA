@@ -110,6 +110,8 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
             "skill_tags": frontmatter.get("skill_tags", []),
             "is_review_friendly": frontmatter.get("is_review_friendly", False),
             "is_branch_point": frontmatter.get("is_branch_point", False),
+            # 关联示例（slug 列表，引用必须存在于 content/examples）
+            "examples": frontmatter.get("examples", []),
         }
 
         # 验证必需字段（fail closed：缺失即报错，不再静默跳过）
@@ -202,6 +204,7 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     - category 必须与 track.category 一致（catalog.yml 存在时）
     - prerequisite / recommended_next 引用必须存在
     - prerequisites 课程图必须无环
+    - examples 引用的示例必须存在
     """
     if content_dir is None:
         content_dir = Path(__file__).parent.parent.parent / "content"
@@ -276,6 +279,7 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
                     "file": file_name,
                     "prerequisites": frontmatter.get("prerequisites") or [],
                     "recommended_next": frontmatter.get("recommended_next") or [],
+                    "examples": frontmatter.get("examples") or [],
                 }
 
         except ContentLintError as e:
@@ -285,6 +289,18 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
     # 引用图校验：引用必须存在，prerequisites 图必须无环
     errors.extend(_lint_reference_graph(lessons))
+    # 示例引用校验：课程 frontmatter 的 examples 必须存在于 content/examples
+    example_slugs = {
+        raw.get("slug")
+        for raw in load_all_examples(content_dir)
+        if raw.get("slug")
+    }
+    for slug, meta in lessons.items():
+        for ref in meta["examples"]:
+            if ref not in example_slugs:
+                errors.append(
+                    f"[{meta['file']}:examples] 引用了不存在的示例 '{ref}'"
+                )
     return errors
 
 
@@ -425,7 +441,6 @@ def load_example_from_file(file_path: Path) -> dict[str, Any] | None:
             "topic": frontmatter.get("topic"),
             "summary": frontmatter.get("summary", ""),
             "code": code,
-            "expected_output": frontmatter.get("expected_output", ""),
         }
 
         # 验证必需字段

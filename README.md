@@ -181,7 +181,6 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
 | `RECOMMENDATION_CODE_RUNS_THRESHOLD` | `5` | 触发回补建议的代码运行次数阈值 |
 | `RECOMMENDATION_AI_HELPS_THRESHOLD` | `3` | 触发回补建议的 AI 求助次数阈值 |
-| `RECOMMENDATION_SNAPSHOTS_THRESHOLD` | `4` | 触发回补建议的代码快照数量阈值 |
 | `RECOMMENDATION_REVIEW_COOLDOWN_SECONDS` | `86400` | 同一用户同一课程重复触发回补建议的冷却时间 |
 | `RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS` | `3` | 触发回流建议的未学习天数阈值 |
 | `RUNNER_URL` | — | 专用 Runner 的私网 URL，生产环境必填 |

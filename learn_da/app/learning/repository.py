@@ -2,7 +2,7 @@ from typing import Any
 
 from app.core.content_catalog import get_content_index
 from app.core.content_schemas import ContentIndex
-from .schemas import ExampleDetail, LessonDetail, LessonNav
+from .schemas import ExampleDetail, ExampleSummary, LessonDetail, LessonNav
 
 
 class LearningRepository:
@@ -23,6 +23,18 @@ class LearningRepository:
 
             # 构建 slug -> lesson 映射，用于查找前后课程
             slug_map = {l["slug"]: l for l in raw_lessons}
+
+            # 构建 slug -> 示例摘要映射，用于课程关联示例
+            example_summaries = {
+                raw["slug"]: ExampleSummary(
+                    slug=raw["slug"],
+                    title=raw["title"],
+                    topic=raw["topic"],
+                    summary=raw.get("summary", ""),
+                )
+                for raw in self._index.examples
+                if raw.get("slug")
+            }
 
             for raw in raw_lessons:
                 # 处理 prev_lesson
@@ -63,6 +75,12 @@ class LearningRepository:
                     is_branch_point=raw.get("is_branch_point", False),
                     # Phase 2: 正式练习定义
                     exercise=raw.get("exercise"),
+                    # 关联示例（lint 已保证引用存在；异常数据下静默跳过缺失项）
+                    examples=[
+                        example_summaries[slug]
+                        for slug in raw.get("examples", [])
+                        if slug in example_summaries
+                    ],
                 )
                 self._lessons.append(lesson)
 
@@ -79,7 +97,6 @@ class LearningRepository:
                     topic=raw["topic"],
                     summary=raw.get("summary", ""),
                     code=raw.get("code", ""),
-                    expected_output=raw.get("expected_output", ""),
                 )
                 for raw in raw_examples
             ]

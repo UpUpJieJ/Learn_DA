@@ -23,6 +23,7 @@ track: polars_basics
 prerequisites: []
 recommended_next: [duckdb-analytics, polars-groupby]
 skill_tags: [dataframe_basics, column_selection, row_filtering, column_derivation]
+examples: [polars-filter, polars-select]
 is_review_friendly: true
 is_branch_point: false
 exercise:

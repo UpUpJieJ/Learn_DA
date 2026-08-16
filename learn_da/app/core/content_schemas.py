@@ -56,6 +56,7 @@ class LessonFrontmatter(BaseModel):
     practice_objective: str = ""
     completion_criteria: list[str] = Field(default_factory=list)
     exercise: ExerciseFrontmatter | None = None
+    examples: list[str] = Field(default_factory=list)
 
 
 class CatalogTopic(BaseModel):

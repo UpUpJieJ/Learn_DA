@@ -5,7 +5,13 @@ import { usePlaygroundStore } from "@/stores/playground";
 import { useLocalStateStore } from "@/stores/localState";
 import { fetchExamples, fetchExample } from "@/api/learning";
 import { trackEvent, saveCodeSnapshot, fetchCodeSnapshots } from "@/api/analytics";
-import type { DataFrameCell, ExampleSummary, CodeSnapshotItem } from "@/types/api";
+import { listExerciseAttempts } from "@/api/playground";
+import type {
+  DataFrameCell,
+  ExampleSummary,
+  CodeSnapshotItem,
+  ExerciseAttemptSummary,
+} from "@/types/api";
 import AgentPanel from "@/components/agent/AgentPanel.vue";
 import { renderMarkdown } from "@/lib/markdown";
 import { randomId } from "@/lib/uuid";
@@ -47,16 +53,16 @@ async function loadLesson(slug: string | undefined) {
 }
 
 watch(
-    () => props.slug,
-    (slug) => {
-        hasLoadedDraft.value = false;
-        if (slug) {
-            loadLesson(slug);
-        } else {
-            currentLesson.value = null;
-        }
-    },
-    { immediate: true }
+  () => props.slug,
+  (slug) => {
+    hasLoadedDraft.value = false;
+    if (slug) {
+      loadLesson(slug);
+    } else {
+      currentLesson.value = null;
+    }
+  },
+  { immediate: true }
 );
 
 // ---- 自动触发 Agent 快捷操作（从课程页"让 AI 出题"跳转） ----
@@ -165,9 +171,23 @@ async function loadExampleCode(slug: string) {
 function toggleExampleSelector() {
   showExampleSelector.value = !showExampleSelector.value;
   if (showExampleSelector.value && examples.value.length === 0) {
-    loadExamples();
+    // 课程模式优先展示本课关联示例；无关联示例或独立 Playground 回退到全量列表
+    const lessonExamples = currentLesson.value?.examples;
+    if (lessonExamples && lessonExamples.length > 0) {
+      examples.value = lessonExamples;
+    } else {
+      loadExamples();
+    }
   }
 }
+
+// 切换课程时重置示例列表，让新课程的关联示例重新加载
+watch(
+  () => props.slug,
+  () => {
+    examples.value = [];
+  }
+);
 
 // =====================================================
 // 布局
@@ -197,7 +217,7 @@ async function completeLesson() {
 }
 
 // =====================================================
-// 代码快照 / 尝试记录
+// 代码快照 / 练习尝试记录
 // =====================================================
 
 const snapshots = ref<CodeSnapshotItem[]>([]);
@@ -205,6 +225,9 @@ const isLoadingSnapshots = ref(false);
 const showSaveDialog = ref(false);
 const saveDescription = ref("");
 const restoreMessage = ref("");
+
+const attempts = ref<ExerciseAttemptSummary[]>([]);
+const isLoadingAttempts = ref(false);
 
 /** 加载快照列表 */
 async function loadSnapshots() {
@@ -219,10 +242,45 @@ async function loadSnapshots() {
   }
 }
 
+/** 加载当前练习的尝试列表（真实 attempt，含验证状态） */
+async function loadAttempts() {
+  const exercise = playgroundStore.activeExercise;
+  if (!exercise || !props.slug || isLoadingAttempts.value) return;
+  isLoadingAttempts.value = true;
+  try {
+    attempts.value = await listExerciseAttempts(exercise.id, props.slug);
+  } catch (err) {
+    console.error("加载尝试记录失败:", err);
+  } finally {
+    isLoadingAttempts.value = false;
+  }
+}
+
+function executionStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    success: "运行成功",
+    error: "运行出错",
+    timeout: "运行超时",
+    rejected: "已拒绝",
+    unavailable: "不可用",
+  };
+  return labels[status] ?? status;
+}
+
+function verificationStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    passed: "已通过",
+    failed: "未通过",
+    unverifiable: "不可验证",
+    not_run: "未运行",
+  };
+  return labels[status] ?? status;
+}
+
 /** 恢复某个快照 */
 function restoreSnapshot(snapshot: CodeSnapshotItem) {
   setCodeAndSaveDraft(snapshot.code);
-  restoreMessage.value = `已恢复到 ${formatRelativeTime(snapshot.createdTime)} 的尝试`;
+  restoreMessage.value = `已恢复到 ${formatRelativeTime(snapshot.createdTime)} 的快照`;
   setTimeout(() => {
     restoreMessage.value = "";
   }, 3000);
@@ -245,10 +303,12 @@ function formatRelativeTime(timeStr: string): string {
   return new Date(time).toLocaleDateString("zh-CN");
 }
 
-// 监听 attempts tab 切换，自动加载快照
+// 监听 tab 切换：快照 tab 加载快照，尝试 tab 加载练习尝试
 watch(activeResultTab, (newTab) => {
-  if (newTab === "attempts" && snapshots.value.length === 0) {
+  if (newTab === "snapshots" && snapshots.value.length === 0) {
     loadSnapshots();
+  } else if (newTab === "attempts") {
+    loadAttempts();
   }
 });
 
@@ -363,18 +423,11 @@ function handleKeydown(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
   document.addEventListener("click", handleClickOutside);
-  startAutoSave();
-});
-
-// 当用户切换自动保存间隔时，重启定时器
-watch(() => localStateStore.autoSaveInterval, () => {
-  startAutoSave();
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", handleKeydown);
   document.removeEventListener("click", handleClickOutside);
-  stopAutoSave();
 });
 
 function handleClickOutside(e: MouseEvent) {
@@ -391,11 +444,6 @@ function handleClickOutside(e: MouseEvent) {
 const isSaving = ref(false);
 const lastSaveTime = ref<number | null>(null);
 const saveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
-let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
-/** 记录上次成功保存时的代码内容，用于脏检测 */
-let lastSavedCode: string | null = null;
-/** 记录用户上次取消保存时的代码内容，避免反复弹窗 */
-let lastDismissedCode: string | null = null;
 
 /** 手动保存代码快照 */
 async function saveCode() {
@@ -418,14 +466,12 @@ async function confirmSave() {
       description: saveDescription.value.trim() || undefined,
     });
     lastSaveTime.value = Date.now();
-    lastSavedCode = playgroundStore.code;
-    lastDismissedCode = null; // 保存成功后清除取消记录
     saveStatus.value = "saved";
     showSaveDialog.value = false;
     saveDescription.value = "";
 
     // 刷新快照列表
-    if (activeResultTab.value === "attempts") {
+    if (activeResultTab.value === "snapshots") {
       loadSnapshots();
     }
 
@@ -444,42 +490,8 @@ async function confirmSave() {
 
 /** 取消保存 */
 function cancelSave() {
-  // 记住当前取消的代码内容，避免下次自动保存针对同样的代码再次弹窗
-  lastDismissedCode = playgroundStore.code;
   showSaveDialog.value = false;
   saveDescription.value = "";
-}
-
-/** 启动自动保存定时器 */
-function startAutoSave() {
-  stopAutoSave();
-  const interval = localStateStore.autoSaveInterval;
-  // 0 = 手动模式，不启动定时器
-  if (!interval || interval <= 0) {
-    autoSaveTimer = null;
-    return;
-  }
-  // 初始记录：将当前代码记为"已保存"状态，避免无修改时弹窗
-  lastSavedCode = playgroundStore.code || null;
-  lastDismissedCode = null;
-  autoSaveTimer = setInterval(() => {
-    // 条件：代码不为空 + 相比上次保存有变化 + 不是上次取消的代码 + 没在弹窗中
-    if (
-      playgroundStore.code.trim() &&
-      playgroundStore.code !== lastSavedCode &&
-      playgroundStore.code !== lastDismissedCode &&
-      !showSaveDialog.value
-    ) {
-      saveCode();
-    }
-  }, interval * 1000);
-}
-
-function stopAutoSave() {
-  if (autoSaveTimer) {
-    clearInterval(autoSaveTimer);
-    autoSaveTimer = null;
-  }
 }
 
 async function runCode() {
@@ -490,6 +502,11 @@ async function runCode() {
   // 此时不能上报 code_run，否则会凭空多出一次“成功运行”，污染 attempt 计数和
   // 推荐的 CODE_RUNS_THRESHOLD 判断。
   if (!response) return;
+
+  // 练习执行已落库为新 attempt；刷新尝试列表供查看
+  if (playgroundStore.activeExercise) {
+    loadAttempts();
+  }
 
   // 阶段 1：执行完成后如实上报执行状态。这里不再把 timeout / rejected /
   // unavailable 压成 error —— 压掉之后 learning_records.status 只剩两种取值，
@@ -678,7 +695,7 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
           <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          已保存本次尝试
+          已保存快照
         </span>
         <span v-else-if="saveStatus === 'saving'" class="text-xs text-blue-400">保存中…</span>
         <span v-else-if="saveStatus === 'error'" class="text-xs text-red-400">保存失败</span>
@@ -686,32 +703,15 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
         <!-- 保存 -->
         <button
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all"
-          title="保存本次练习尝试（可添加备注）"
+          title="保存代码快照（可添加备注）"
           @click="saveCode"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
-          保存本次尝试
+          保存代码快照
         </button>
-
-        <!-- 自动保存间隔选择 -->
-        <div class="relative">
-          <select
-            :value="localStateStore.autoSaveInterval"
-            class="appearance-none bg-transparent border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:border-white/20 focus:outline-none focus:border-emerald-500/50 cursor-pointer pr-6"
-            title="自动保存间隔"
-            @change="localStateStore.setAutoSaveInterval(Number(($event.target as HTMLSelectElement).value))"
-          >
-            <option :value="0" class="bg-[#1c2128]">手动</option>
-            <option :value="30" class="bg-[#1c2128]">30秒</option>
-            <option :value="60" class="bg-[#1c2128]">60秒</option>
-          </select>
-          <svg class="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
 
         <!-- 运行 -->
         <button
@@ -1151,6 +1151,8 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                   ? "数据"
                   : tab === "history"
                   ? "历史"
+                  : tab === "snapshots"
+                  ? "快照"
                   : tab === "attempts"
                   ? "尝试"
                   : "助手"
@@ -1532,9 +1534,9 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 </div>
               </div>
             </div>
-            <!-- 尝试记录面板 -->
+            <!-- 快照面板（保存的代码版本） -->
             <div
-              v-show="activeResultTab === 'attempts'"
+              v-show="activeResultTab === 'snapshots'"
               class="absolute inset-0 overflow-y-auto p-4"
             >
               <!-- 恢复成功提示 -->
@@ -1558,13 +1560,13 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                 v-else-if="snapshots.length === 0"
                 class="flex flex-col items-center justify-center h-full text-center"
               >
-                <p class="text-sm text-slate-600">暂无练习尝试记录</p>
-                <p class="text-xs text-slate-700 mt-2">点击"保存本次尝试"来记录你的练习</p>
+                <p class="text-sm text-slate-600">暂无代码快照</p>
+                <p class="text-xs text-slate-700 mt-2">点击"保存代码快照"记录你的代码版本</p>
               </div>
               <div v-else>
                 <div class="flex items-center justify-between mb-3">
                   <span class="text-xs text-slate-500"
-                    >最近 {{ snapshots.length }} 次尝试</span
+                    >最近 {{ snapshots.length }} 个快照</span
                   >
                 </div>
                 <div class="space-y-2">
@@ -1611,6 +1613,80 @@ function formatDataFrameCell(value: DataFrameCell | undefined): string {
                     <code
                       class="text-xs text-slate-500 font-mono block truncate"
                       >{{ truncateCode(snapshot.code) }}</code
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 练习尝试面板（真实 attempt，含验证状态） -->
+            <div
+              v-show="activeResultTab === 'attempts'"
+              class="absolute inset-0 overflow-y-auto p-4"
+            >
+              <div
+                v-if="isLoadingAttempts"
+                class="flex flex-col items-center justify-center h-full text-center"
+              >
+                <div
+                  class="w-8 h-8 rounded-full border-2 border-slate-700 border-t-slate-400 animate-spin"
+                />
+                <p class="text-sm text-slate-500 mt-3">加载中...</p>
+              </div>
+              <div
+                v-else-if="attempts.length === 0"
+                class="flex flex-col items-center justify-center h-full text-center"
+              >
+                <p class="text-sm text-slate-600">暂无练习尝试</p>
+                <p class="text-xs text-slate-700 mt-2">运行练习代码后，每次尝试会自动记录在这里</p>
+              </div>
+              <div v-else>
+                <div class="flex items-center justify-between mb-3">
+                  <span class="text-xs text-slate-500"
+                    >最近 {{ attempts.length }} 次尝试</span
+                  >
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="attempt in attempts"
+                    :key="attempt.attemptId"
+                    class="p-3 rounded-lg bg-white/3 border border-white/5"
+                  >
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span
+                        class="text-xs px-1.5 py-0.5 rounded"
+                        :class="
+                          attempt.executionStatus === 'success'
+                            ? 'bg-emerald-500/10 text-emerald-400'
+                            : attempt.executionStatus === 'timeout'
+                            ? 'bg-yellow-500/10 text-yellow-400'
+                            : 'bg-red-500/10 text-red-400'
+                        "
+                      >
+                        {{ executionStatusLabel(attempt.executionStatus) }}
+                      </span>
+                      <span
+                        class="text-xs px-1.5 py-0.5 rounded"
+                        :class="
+                          attempt.verificationStatus === 'passed'
+                            ? 'bg-emerald-500/10 text-emerald-400'
+                            : attempt.verificationStatus === 'failed'
+                            ? 'bg-red-500/10 text-red-400'
+                            : 'bg-slate-500/10 text-slate-400'
+                        "
+                      >
+                        验证{{ verificationStatusLabel(attempt.verificationStatus) }}
+                      </span>
+                      <span v-if="attempt.durationMs != null" class="text-xs text-slate-600"
+                        >{{ attempt.durationMs }}ms</span
+                      >
+                      <span class="ml-auto text-xs text-slate-600">{{
+                        formatRelativeTime(attempt.createdTime ?? "")
+                      }}</span>
+                    </div>
+                    <p
+                      v-if="attempt.failureReason"
+                      class="text-xs text-slate-500 mt-1.5 truncate"
+                      >{{ attempt.failureReason }}</p
                     >
                   </div>
                 </div>

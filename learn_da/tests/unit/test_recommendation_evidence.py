@@ -160,20 +160,22 @@ class TestAgentEvidenceInMainRecommendation:
         practice_repo.get_passed_after.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_ai_helps_with_snapshots_triggers_review(self):
-        """多次求助且有 snapshots > 0 触发回补。"""
+    async def test_ai_helps_without_code_runs_does_not_trigger_review(self):
+        """多次求助但无任何代码运行不触发回补——仅提问未实践不构成学习困难证据。
+
+        快照信号已移除：保存快照不再视为练习活动，回补以 code_run 为准。
+        """
         service = _make_service(
             stats={
                 "current": {
                     "codeRuns": 0,
                     "aiHelps": 5,
-                    "snapshots": 2,
                     "completed": False,
                 }
             }
         )
         result = await service.get_recommendation("v1", current_lesson_slug="current")
-        assert result.primary.type == "review_lesson"
+        assert result.primary is None
 
 
 # =====================================================

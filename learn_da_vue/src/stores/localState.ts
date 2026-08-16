@@ -44,7 +44,6 @@ const DEFAULT_PREFERENCES: LocalPreferences = {
   editorTheme: 'vs-dark',
   editorFontSize: 14,
   language: 'zh',
-  autoSaveInterval: 0, // 0 = 手动，不自动弹窗
 }
 
 // =====================================================
@@ -99,9 +98,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   /** 当前界面语言 */
   const uiLanguage = computed(() => preferences.value.language)
 
-  /** 自动保存间隔（秒），0 = 手动 */
-  const autoSaveInterval = computed(() => preferences.value.autoSaveInterval)
-
   // =====================================================
   // Actions - 偏好设置
   // =====================================================
@@ -147,13 +143,6 @@ export const useLocalStateStore = defineStore('localState', () => {
    */
   function setLanguage(lang: LocalPreferences['language']) {
     preferences.value.language = lang
-  }
-
-  /**
-   * 设置自动保存间隔（秒），0 表示手动
-   */
-  function setAutoSaveInterval(seconds: number) {
-    preferences.value.autoSaveInterval = seconds
   }
 
   /**
@@ -240,7 +229,6 @@ export const useLocalStateStore = defineStore('localState', () => {
     editorTheme,
     editorFontSize,
     uiLanguage,
-    autoSaveInterval,
 
     // actions - preferences
     toggleEditorTheme,
@@ -249,7 +237,6 @@ export const useLocalStateStore = defineStore('localState', () => {
     increaseFontSize,
     decreaseFontSize,
     setLanguage,
-    setAutoSaveInterval,
     resetPreferences,
 
     // actions - playground drafts

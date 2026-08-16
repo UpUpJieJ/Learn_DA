@@ -72,6 +72,8 @@ export interface LessonDetail extends LessonSummary {
     isBranchPoint?: boolean;
     /** Phase 2: 正式练习定义（可选，有则优先于 practiceObjective） */
     exercise?: ExerciseDefinition | null;
+    /** 课程关联示例摘要（来自 frontmatter examples 引用） */
+    examples?: ExampleSummary[];
 }
 
 export interface LessonNav {
@@ -282,8 +284,6 @@ export interface LocalPreferences {
     editorTheme: "vs-dark" | "light";
     editorFontSize: number;
     language: "zh" | "en";
-    /** 自动保存间隔（秒），0 表示手动保存 */
-    autoSaveInterval: number;
 }
 
 export interface PlaygroundDraft {

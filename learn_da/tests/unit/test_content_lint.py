@@ -302,6 +302,37 @@ class TestLintReferenceGraph:
         errors = lint_content(local_tmp)
         assert any("unknown_track" in e for e in errors)
 
+
+class TestLintExampleReferences:
+    """课程 frontmatter examples 引用校验"""
+
+    def test_reference_to_missing_example_detected(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["examples"] = ["no-such-example"]
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert any("no-such-example" in e and "examples" in e for e in errors)
+
+    def test_reference_to_existing_example_passes(self, local_tmp):
+        lessons_dir = local_tmp / "lessons"
+        lessons_dir.mkdir()
+        examples_dir = local_tmp / "examples"
+        examples_dir.mkdir()
+        (examples_dir / "demo.md").write_text(
+            "---\nslug: demo\ntitle: Demo\ntopic: polars\nsummary: s\n---\n\n"
+            "```python\nprint(1)\n```\n",
+            encoding="utf-8",
+        )
+        fm = dict(VALID_EXERCISE_FRONTMATTER)
+        fm["examples"] = ["demo"]
+        _write_lesson(lessons_dir, "01-a.md", fm)
+
+        errors = lint_content(local_tmp)
+        assert not any("examples" in e for e in errors)
+
     def test_category_mismatch_with_track_detected(self, local_tmp):
         lessons_dir = local_tmp / "lessons"
         lessons_dir.mkdir()

@@ -27,6 +27,7 @@ track: duckdb_basics
 prerequisites: ['duckdb-analytics']
 recommended_next: ['duckdb-joins-cte']
 skill_tags: ['sql_basics', 'select', 'where', 'group_by', 'having', 'order_by']
+examples: [duckdb-create-table]
 is_review_friendly: true
 is_branch_point: false
 exercise:

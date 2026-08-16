@@ -128,7 +128,6 @@ class RecommendationService:
     # 可配置阈值（类属性，方便子类覆盖或运行时修改）
     CODE_RUNS_THRESHOLD = 5
     AI_HELPS_THRESHOLD = 3
-    SNAPSHOTS_THRESHOLD = 4
     REVIEW_COOLDOWN_SECONDS = 86400  # 回补建议冷却期：24 小时
 
     # 分支点配置映射：branch_point_slug → 分支选项列表
@@ -184,7 +183,6 @@ class RecommendationService:
         self.interaction_repo = interaction_repo
         self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
         self.AI_HELPS_THRESHOLD = settings.RECOMMENDATION_AI_HELPS_THRESHOLD
-        self.SNAPSHOTS_THRESHOLD = settings.RECOMMENDATION_SNAPSHOTS_THRESHOLD
         self.REVIEW_COOLDOWN_SECONDS = settings.RECOMMENDATION_REVIEW_COOLDOWN_SECONDS
         self.resume_absence_threshold_days = (
             settings.RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS
@@ -515,8 +513,8 @@ class RecommendationService:
         触发条件：
         - 同一课多次运行失败（codeRuns >= CODE_RUNS_THRESHOLD）
         - 多次请求 AI 提示（aiHelps >= AI_HELPS_THRESHOLD）
-        - 在某个技能点保存了很多尝试仍未完成（snapshots >= SNAPSHOTS_THRESHOLD）
-        - 长时间停滞（距首次活动 >= 30 分钟但仍未完成）
+        - 练习连续失败（practice failures >= PRACTICE_FAILURES_THRESHOLD）
+        - 长时间停滞（有运行和求助的弱信号组合但均未达独立阈值）
 
         回补逻辑：
         1. 提取当前课程的前置课程列表
@@ -549,9 +547,6 @@ class RecommendationService:
         stats = await self.analytics_service.get_lesson_specific_stats(
             visitor_id, current_lesson_slug
         )
-        snapshots_count = await self.analytics_service.get_lesson_snapshots_count(
-            visitor_id, current_lesson_slug
-        )
 
         # 检查是否触发回补条件
         code_runs = stats.get("codeRuns", 0)
@@ -568,7 +563,7 @@ class RecommendationService:
         if (
             not completed
             and agent_help_summary["has_unresolved_failure"]
-            and (code_runs > 0 or snapshots_count > 0)
+            and code_runs > 0
         ):
             needs_review = True
             reason_template = (
@@ -581,18 +576,15 @@ class RecommendationService:
         elif (
             not completed
             and ai_helps >= self.AI_HELPS_THRESHOLD
-            and (code_runs > 0 or snapshots_count > 0)
+            and code_runs > 0
         ):
-            # 阶段 3：Agent 多次求助但无任何练习活动（code_runs/snapshots 均为 0）
+            # 阶段 3：Agent 多次求助但无任何练习活动（code_runs 为 0）
             # 不触发回补——仅提问未实践不构成学习困难证据
             needs_review = True
             reason_template = (
                 f"你请求了 {ai_helps} 次 AI 帮助，{{review_lesson}} 的内容可能需要复习"
             )
-        elif not completed and snapshots_count >= self.SNAPSHOTS_THRESHOLD:
-            needs_review = True
-            reason_template = f"你保存了 {snapshots_count} 个代码快照但未完成，建议先回顾 {{review_lesson}}"
-        elif not completed and self._check_long_stall(stats, snapshots_count):
+        elif not completed and self._check_long_stall(stats):
             needs_review = True
             reason_template = (
                 f"你在这节课停留了较长时间，建议先回顾 {{review_lesson}} 打好基础再继续"
@@ -681,7 +673,6 @@ class RecommendationService:
                 "current_lesson": current_lesson_slug,
                 "code_runs": code_runs,
                 "ai_helps": ai_helps,
-                "snapshots": snapshots_count,
             },
         )
 
@@ -759,13 +750,13 @@ class RecommendationService:
         }
 
     @staticmethod
-    def _check_long_stall(stats: dict, snapshots_count: int) -> bool:
+    def _check_long_stall(stats: dict) -> bool:
         """
         检查是否长时间停滞
 
         判断逻辑：有活动记录（code_runs 或 ai_helps > 0）且未完成，
         且最近一次活动距首次活动超过 30 分钟（基于 duration_seconds 推断）。
-        简化实现：code_runs >= 3 且 ai_helps >= 1 且 snapshots >= 2 时视为长时间停滞。
+        简化实现：code_runs >= 4 且 ai_helps >= 2 时视为长时间停滞。
         """
         code_runs = stats.get("codeRuns", 0)
         ai_helps = stats.get("aiHelps", 0)
@@ -775,7 +766,7 @@ class RecommendationService:
             return False
 
         # 长时间停滞的弱信号组合：有一定的运行和求助，但都没有达到独立阈值
-        return code_runs >= 3 and ai_helps >= 1 and snapshots_count >= 2
+        return code_runs >= 4 and ai_helps >= 2
 
     def _get_branch_recommendation(
         self,

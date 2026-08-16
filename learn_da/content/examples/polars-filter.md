@@ -3,7 +3,6 @@ slug: polars-filter
 title: Polars 筛选数据
 topic: polars
 summary: 使用 filter 方法根据条件筛选行数据
-expected_output: "shape: (2, 2)"
 ---
 
 使用 `filter` 方法根据条件筛选 DataFrame 的行：

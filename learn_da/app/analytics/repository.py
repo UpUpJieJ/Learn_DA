@@ -457,22 +457,6 @@ class AnalyticsRepository:
 
         return stats
 
-    async def get_lesson_snapshots_count(
-        self, visitor_id: str, lesson_slug: str
-    ) -> int:
-        """获取用户在特定课程的代码快照数量（用于回补建议）"""
-        stmt = (
-            select(func.count())
-            .select_from(CodeSnapshot)
-            .where(
-                CodeSnapshot.visitor_id == visitor_id,
-                CodeSnapshot.lesson_slug == lesson_slug,
-                CodeSnapshot.is_deleted == False,  # noqa: E712
-            )
-        )
-        result = await self.db.execute(stmt)
-        return result.scalar() or 0
-
     # ── 回流建议查询 ─────────────────────────────────────
 
     async def get_incomplete_lessons_with_activity(

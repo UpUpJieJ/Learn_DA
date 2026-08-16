@@ -183,4 +183,26 @@ describe("usePlaygroundSession", () => {
             "print(2)",
         );
     });
+
+    it("shows attempts tab only when an exercise is active", () => {
+        const session = usePlaygroundSession(() => undefined);
+        expect(session.resultTabs.value).not.toContain("attempts");
+        expect(session.resultTabs.value).toContain("snapshots");
+
+        const store = usePlaygroundStore();
+        store.startExercise(
+            {
+                id: "ex-1",
+                title: "Ex",
+                language: "python",
+                starterCode: "",
+                objective: "",
+                hints: [],
+                validator: { type: "stdout_exact", expected: "ok" },
+            },
+            "polars-basics",
+            "code",
+        );
+        expect([...session.resultTabs.value]).toEqual([...RESULT_TABS]);
+    });
 });

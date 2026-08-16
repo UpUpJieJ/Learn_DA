@@ -3,7 +3,6 @@ slug: duckdb-aggregate
 title: DuckDB 聚合查询
 topic: duckdb
 summary: 使用 GROUP BY 进行分组聚合统计
-expected_output: "[('A', 150.0), ('B', 120.0)]"
 ---
 
 使用 SQL 的 GROUP BY 进行分组聚合统计：

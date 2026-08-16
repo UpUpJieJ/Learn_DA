@@ -243,12 +243,6 @@ class AnalyticsService:
         """获取用户在特定课程的学习统计（用于回补建议）"""
         return await self.repo.get_lesson_specific_stats(visitor_id, lesson_slug)
 
-    async def get_lesson_snapshots_count(
-        self, visitor_id: str, lesson_slug: str
-    ) -> int:
-        """获取用户在特定课程的代码快照数量（用于回补建议）"""
-        return await self.repo.get_lesson_snapshots_count(visitor_id, lesson_slug)
-
     # ── 回流建议查询 ─────────────────────────────────────
 
     async def get_incomplete_lessons_with_activity(
