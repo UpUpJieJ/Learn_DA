@@ -106,11 +106,13 @@ setup_security_middleware(app)
 setup_access_log_middleware(app)
 
 # Signed anonymous session (HttpOnly cookie)
+# Secure 属性跟随对外协议（PUBLIC_SCHEME）：明文 HTTP 部署设 http，
+# 否则浏览器拒收 cookie，匿名访客身份无法保持。
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SESSION_SECRET,
     session_cookie=settings.SESSION_COOKIE_NAME,
-    https_only=settings.APP_ENV == "production",
+    https_only=settings.PUBLIC_SCHEME == "https",
     same_site="lax",
     max_age=31_536_000,  # 1 year
 )

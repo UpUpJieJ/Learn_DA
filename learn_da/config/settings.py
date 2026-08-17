@@ -8,6 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "Learn DA Backend"
     APP_ENV: str = "development"
+    # 对外访问协议（http/https）：决定会话 cookie 的 Secure 属性。
+    # 默认 http（本地/明文 HTTP 部署）；启用 HTTPS 的环境显式设为 https。
+    PUBLIC_SCHEME: str = "http"
     APP_HOST: str = "127.0.0.1"
     APP_PORT: int = 8000
     API_PREFIX: str = "/api"
@@ -102,6 +105,14 @@ class Settings(BaseSettings):
     @property
     def effective_llm_model(self) -> str:
         return self.LLM_MODEL or self.FALLBACK_LLM_MODEL
+
+    @field_validator("PUBLIC_SCHEME")
+    @classmethod
+    def validate_public_scheme(cls, value: str) -> str:
+        scheme = value.strip().lower()
+        if scheme not in ("http", "https"):
+            raise ValueError("PUBLIC_SCHEME must be 'http' or 'https'")
+        return scheme
 
     @field_validator("API_PREFIX")
     @classmethod

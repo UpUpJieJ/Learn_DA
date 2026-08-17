@@ -15,6 +15,34 @@ def anyio_backend():
 
 
 @pytest.mark.unit
+async def test_session_cookie_not_secure_on_plain_http(client):
+    """明文 HTTP 环境（PUBLIC_SCHEME=http）cookie 不得携带 Secure。
+
+    生产验收发现：Secure cookie 在明文 HTTP 下被浏览器拒收，
+    导致匿名访客身份逐请求丢失（进度/Attempt/反馈全部断链）。
+    """
+    from config.settings import settings
+
+    assert settings.PUBLIC_SCHEME == "http"
+    response = await client.get("/api/v1/analytics/user-profile")
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "learn_da_session=" in set_cookie
+    assert "secure" not in set_cookie.lower()
+
+
+@pytest.mark.unit
+def test_public_scheme_validator_rejects_invalid_value():
+    """PUBLIC_SCHEME 只接受 http/https，防止配错导致 cookie 行为异常。"""
+    from pydantic import ValidationError
+
+    from config.settings import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(PUBLIC_SCHEME="ftp", CORS_ORIGINS="http://localhost")
+
+
+@pytest.mark.unit
 async def test_first_request_creates_session_cookie(client):
     """A request without a cookie should receive a signed session cookie."""
     response = await client.get("/api/v1/analytics/user-profile")

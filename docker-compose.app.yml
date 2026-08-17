@@ -42,6 +42,9 @@ services:
       APP_ENV: production
       APP_HOST: 0.0.0.0
       APP_PORT: 8000
+      # 明文 HTTP 部署必须为 http（会话 cookie 不带 Secure，浏览器才能接受）；
+      # 启用 HTTPS 后在 deploy/app.env 改为 https。
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-http}
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/learn_da.db}
       CORS_ORIGINS: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in deploy/app.env}
       ENABLED_APP_MODULES: learning,playground,agent,analytics,learner_state,practice
