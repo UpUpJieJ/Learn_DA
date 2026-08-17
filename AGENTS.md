@@ -11,13 +11,14 @@
 ## 当前状态（截至 2026-08-16）
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
-- 测试基线：后端 **379 项** pytest、前端 **71 项** vitest 全绿；**无 CI**（Task 9 当时有意跳过），提交前需本地手动跑。
+- 测试基线：后端 **388 项** pytest、前端 **71 项** vitest 全绿；**无 CI**（Task 9 当时有意跳过），提交前需本地手动跑。
 - 最近一批重构（2026-08-16）：
   - LLM 兜底配置改名：`LLM_*` 为主配置，`FALLBACK_LLM_*` 为兜底（`effective_llm_*` 统一解析）。
   - 修复明文 HTTP 下 `crypto.randomUUID` 崩溃：前端统一走 `src/lib/uuid.ts` 的 `randomId()`（兼容非安全上下文）。
   - **删除示例体系**（`/examples` API、content/examples、Playground 示例选择器）；课程自带 `codeExample` 保留。
   - **删除快照功能**（保存按钮/快照 tab//analytics/snapshot(s) 端点）；`CodeSnapshot` 表保留（回流建议读历史数据）。
   - 练习 validator 加固：polars-basics 改 `dataframe_rows`、duckdb-sql-foundations 改 `stdout_exact`，堵住"全表输出也判通过"的漏洞。
+  - **内容 YAML fail-closed 加固**：frontmatter 坏 YAML / 缺失 / 根节点非映射、catalog.yml 损坏均显式报错并阻断启动（`parse_frontmatter` 不再静默返回空），修复坏课程被静默跳过"凭空消失"的问题。改课程 frontmatter 后仍建议跑 `scripts/content_lint.py` 确认课程数 = 13。
 
 ## 高频命令
 
@@ -37,7 +38,7 @@ npm run build                             # 生产构建
 - **学习状态唯一写入口**是 `POST /analytics/track`；`/learner-state/*` 只读。前端所有完成/撤销/开始带幂等 eventId。
 - **练习尝试（ExerciseAttempt）是教学证据核心**：练习执行自动落库（代码+验证结果），喂推荐与 Agent 五态教学反馈。本地草稿（localStorage，按 `lesson:{slug}`/`default`）是另一条独立持久化。
 - Agent 练习判断**只信服务端证据**，客户端自报 stdout/stderr 不作为事实来源；`teachingFeedback` 的 state/nextAction 由服务端决定。
-- 内容体系：`content/catalog.yml`（topics/tracks）+ `content/lessons/*.md` frontmatter；启动时构建共享 ContentIndex，**lint 错误 fail closed 阻断启动**；课程图（prerequisites）校验无环。
+- 内容体系：`content/catalog.yml`（topics/tracks）+ `content/lessons/*.md` frontmatter；启动时构建共享 ContentIndex，**lint 错误 fail closed 阻断启动**（含 frontmatter 坏 YAML、catalog.yml 损坏，均显式报错不静默跳过）；课程图（prerequisites）校验无环。
 - 练习 validator 白名单：`stdout_exact` / `stdout_contains` / `dataframe_rows`（`app/practice/validator.py`）。**不要用 stdout_contains 判定"必须排除某些行"的场景**——它无法发现多余行。
 - 生产执行 fail-closed：代码执行只走 Runner（`RUNNER_URL`），Runner 不可用时明确拒绝，不回退本地/mock。
 
@@ -50,13 +51,12 @@ npm run build                             # 生产构建
 
 ## 已知问题与坑
 
-1. **`parse_frontmatter` 对坏 YAML 静默返回空** → 该课程被 lint/加载静默跳过（曾导致一节课凭空消失）。改动课程 frontmatter 后务必跑 `content_lint.py` 并确认课程数 = 13。待修：解析失败应显式报错。
-2. black 对部分存量文件有格式意见（版本差异、不在近期改动行上）——**勿顺手重排**，避免污染 diff。
-3. 本地推 GitHub 经常被重置：可用本地代理 `git -c http.proxy=http://127.0.0.1:7897 push origin main`（代理没开就靠 bundle 路径）。
-4. Git Bash 会把 `/` 开头的命令行参数改写成 Windows 路径——传服务器绝对路径时加 `MSYS_NO_PATHCONV=1`。
-5. ZCode 内嵌浏览器（IAB）不持久化 cookie，每个请求都是新 visitor——**测身份相关功能（进度/尝试列表）用 curl 带 cookie jar 或真实浏览器**。
-6. 服务器内存 3.6G 无 swap：前端镜像构建是内存峰值点，其余容器同时跑时留意。
-7. 明文 HTTP 部署下浏览器安全上下文 API 受限（randomUUID、剪贴板等）——新前端代码生成 ID 一律用 `lib/uuid` 的 `randomId()`，勿直接调 `crypto.randomUUID`。
+1. black 对部分存量文件有格式意见（版本差异、不在近期改动行上）——**勿顺手重排**，避免污染 diff。
+2. 本地推 GitHub 经常被重置：可用本地代理 `git -c http.proxy=http://127.0.0.1:7897 push origin main`（代理没开就靠 bundle 路径）。
+3. Git Bash 会把 `/` 开头的命令行参数改写成 Windows 路径——传服务器绝对路径时加 `MSYS_NO_PATHCONV=1`。
+4. ZCode 内嵌浏览器（IAB）不持久化 cookie，每个请求都是新 visitor——**测身份相关功能（进度/尝试列表）用 curl 带 cookie jar 或真实浏览器**。
+5. 服务器内存 3.6G 无 swap：前端镜像构建是内存峰值点，其余容器同时跑时留意。
+6. 明文 HTTP 部署下浏览器安全上下文 API 受限（randomUUID、剪贴板等）——新前端代码生成 ID 一律用 `lib/uuid` 的 `randomId()`，勿直接调 `crypto.randomUUID`。
 
 ## 文档地图
 

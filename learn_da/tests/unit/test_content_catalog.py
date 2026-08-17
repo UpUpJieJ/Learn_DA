@@ -113,6 +113,17 @@ class TestBuildContentIndex:
         with pytest.raises(ContentLintError, match="missing-lesson"):
             build_content_index(content_dir)
 
+    def test_corrupt_frontmatter_yaml_fails_closed(self, local_tmp):
+        """frontmatter YAML 损坏时启动门禁直接抛出（不再静默缺课）。"""
+        content_dir = _make_content_dir(local_tmp)
+        (content_dir / "lessons" / "02-broken.md").write_text(
+            '---\nid: 2\nslug: broken\ntitle: "unclosed quote\n---\n\n# Body\n',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ContentLintError, match="02-broken.md"):
+            build_content_index(content_dir)
+
 
 class TestSharedIndex:
     def test_get_content_index_is_singleton(self):

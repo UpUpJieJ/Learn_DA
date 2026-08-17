@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from .content_schemas import (
     ContentLintError,
@@ -31,6 +32,10 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     ---
 
     返回: (frontmatter_dict, markdown_body)
+
+    fail closed：YAML 语法错误或根节点非映射时抛出 yaml.YAMLError，
+    由调用方带文件名上报；无 ``---`` 分隔块时返回 ({}, content)，
+    是否报错同样由调用方决定。
     """
     pattern = r"^---\s*\n(.*?)\n---\s*\n(.*)$"
     match = re.match(pattern, content, re.DOTALL)
@@ -41,10 +46,11 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     frontmatter_text = match.group(1)
     body = match.group(2)
 
-    try:
-        frontmatter = yaml.safe_load(frontmatter_text) or {}
-    except yaml.YAMLError:
-        frontmatter = {}
+    frontmatter = yaml.safe_load(frontmatter_text) or {}
+    if not isinstance(frontmatter, dict):
+        raise yaml.YAMLError(
+            f"frontmatter 根节点必须是映射（实际为 {type(frontmatter).__name__}）"
+        )
 
     return frontmatter, body.strip()
 
@@ -66,16 +72,21 @@ def extract_code_example(content: str) -> str | None:
     return None
 
 
-def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
+def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
     """
     从单个 Markdown 文件加载课程
+
+    fail closed：frontmatter 缺失、YAML 损坏或任何加载异常都抛出
+    ContentLintError（带文件名），不再返回 None 静默跳过。
     """
     try:
         content = file_path.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
 
         if not frontmatter:
-            return None
+            raise ContentLintError(
+                "缺少 frontmatter 或 frontmatter 为空", file_path.name
+            )
 
         # 提取代码示例
         code_example = extract_code_example(content)
@@ -125,9 +136,10 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any] | None:
 
     except ContentLintError:
         raise
+    except yaml.YAMLError as e:
+        raise ContentLintError(f"frontmatter YAML 解析失败: {e}", file_path.name) from e
     except Exception as e:
-        print(f"[ContentLoader] Error loading {file_path}: {e}")
-        return None
+        raise ContentLintError(f"课程文件加载失败: {e}", file_path.name) from e
 
 
 def _parse_exercise(
@@ -194,10 +206,12 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
     返回错误列表；空列表表示全部通过。错误格式 ``[file:field] message``。
     校验项：
+    - 每个课程文件必须有可解析的非空 frontmatter（YAML 损坏即报错，不跳过）
     - 有 exercise 的课程必须完整合法
     - exercise.id 不能重复
     - 语言必须在允许列表
     - validator type 必须在白名单
+    - catalog.yml 存在时必须自身合法（损坏即报错，不静默禁用一致性校验）
     - track 必须存在于 catalog（catalog.yml 存在时）
     - category 必须与 track.category 一致（catalog.yml 存在时）
     - prerequisite / recommended_next 引用必须存在
@@ -216,7 +230,8 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     lessons: dict[str, dict[str, Any]] = {}
 
     # 目录级问题检查优先于单文件字段级问题。
-    catalog = _load_catalog_safely(content_dir)
+    catalog, catalog_errors = _load_catalog_strict(content_dir)
+    errors.extend(catalog_errors)
     track_by_key = {t["key"]: t for t in catalog.get("tracks", [])}
 
     for md_file in sorted(lessons_dir.glob("*.md")):
@@ -226,6 +241,9 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
             frontmatter, _body = parse_frontmatter(content)
 
             if not frontmatter:
+                errors.append(
+                    f"[{file_name}] 缺少 frontmatter 或 frontmatter 为空"
+                )
                 continue
 
             # 字段级 schema 校验（缺字段 / 类型错误都带文件名报出）
@@ -280,6 +298,8 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
         except ContentLintError as e:
             errors.append(str(e))
+        except yaml.YAMLError as e:
+            errors.append(f"[{file_name}] frontmatter YAML 解析失败: {e}")
         except Exception as e:
             errors.append(f"[{file_name}] 读取失败: {e}")
 
@@ -288,22 +308,32 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     return errors
 
 
-def _load_catalog_safely(content_dir: Path) -> dict[str, Any]:
-    """读取 catalog.yml；缺失或非法时返回空 dict（由调用方决定是否报错）。"""
+def _load_catalog_strict(content_dir: Path) -> tuple[dict[str, Any], list[str]]:
+    """读取 catalog.yml 供 lint 使用。
+
+    fail closed：文件缺失 → ({}, [])（catalog 可选）；
+    存在但 YAML 损坏或 schema 非法 → 返回错误，不静默禁用一致性校验。
+    """
     catalog_file = content_dir / "catalog.yml"
     if not catalog_file.exists():
-        return {}
+        return {}, []
     try:
         catalog = yaml.safe_load(catalog_file.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        return {}
+    except yaml.YAMLError as e:
+        return {}, [f"[catalog.yml] YAML 解析失败: {e}"]
     if not isinstance(catalog, dict):
-        return {}
+        return {}, [
+            f"[catalog.yml] 根节点必须是映射（实际为 {type(catalog).__name__}）"
+        ]
     try:
         model = ContentCatalog.model_validate(catalog)
-    except Exception:
-        return {}
-    return model.model_dump(mode="json")
+    except ValidationError as e:
+        first = e.errors()[0]
+        field_path = ".".join(str(p) for p in first.get("loc", ()))
+        return {}, [
+            f"[catalog.yml:{field_path or 'root'}] {first.get('msg', 'invalid')}"
+        ]
+    return model.model_dump(mode="json"), []
 
 
 def _lint_reference_graph(
@@ -394,8 +424,8 @@ def load_catalog(content_dir: Path | None = None) -> dict[str, Any]:
 
     try:
         catalog = yaml.safe_load(catalog_file.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        catalog = {}
+    except yaml.YAMLError as e:
+        raise ContentLintError(f"YAML 解析失败: {e}", "catalog.yml") from e
 
     return {
         "platform": catalog.get("platform", {}),
@@ -420,9 +450,8 @@ def load_all_lessons(content_dir: Path | None = None) -> list[dict[str, Any]]:
     lessons = []
     for md_file in sorted(lessons_dir.glob("*.md")):
         lesson = load_lesson_from_file(md_file)
-        if lesson:
-            lessons.append(lesson)
-            print(f"[ContentLoader] Loaded lesson: {lesson['slug']}")
+        lessons.append(lesson)
+        print(f"[ContentLoader] Loaded lesson: {lesson['slug']}")
 
     # 按 order 排序
     lessons.sort(key=lambda x: x.get("order", 0))
