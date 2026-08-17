@@ -12,7 +12,8 @@
 - Agent 重构与受限 Function Calling（2026-07-28）：阶段 ①②③、Task 4.1/4.2 与 4.3 Step 1/2 已完成；FC 意图评测收尾复核 92.7%（vs 关键词基线 43.9%，见 [`agent-eval-baseline-2026-07.md`](agent-eval-baseline-2026-07.md)）后 `AGENT_FC_ENABLED` 已默认开启。用户界面及公开 API 已进一步收口为唯一 `POST /agent/chat` 和两项上下文快捷动作（有错误时"解决当前报错"，否则"下一步怎么做"）；旧 `/agent/fix`、`/agent/explain`、`/agent/recommendation-guidance` 及其前端契约已删除。会话 history、调用方 AbortSignal 传播和浏览器 Network abort 已完成验证。
 - 阶段 3 学习证据驱动 Agent（2026-07-31）：服务端证据解析器、结构化教学反馈契约、Agent 交互审计与 ai_help 关联、推荐证据聚合与 Dashboard 指标、离线评测与可靠性回归全部完成。Agent 的练习判断完全基于服务端数据库证据（五态：execution_failed / verification_failed / passed_unconfirmed / unverifiable / no_evidence），客户端自报 stdout/stderr/lastError 不再作为事实来源。`teachingFeedback` 的 state/attemptId/nextAction 由服务端决定，LLM 不得覆盖。`AgentInteraction` 表以 request_id 为幂等键，相同 ID 重放仅一条记录、一个 ai_help。完整总结见 [`phase3-evidence-agent-completion-summary.md`](phase3-evidence-agent-completion-summary.md)。
 - 阶段 3 证据闭环修复（2026-08-01）：推荐主流程实际消费 Agent 证据聚合（帮助后仍未通过才触发回补）、`helpThenPassRate` 按 Attempt/练习/时间精确计算、无证据时不再把客户端 lesson 当作课程事实、模型调用前预留 request_id（重放不重复调用模型）、前端反馈按钮与 interactionId 关联、部署 Compose 自动执行 Alembic 迁移。
-- 阶段 4 内容与界面规模化（2026-08-01）：Content Catalog 深模块（Pydantic schema 校验、引用图/无环校验、启动时一次构建的共享索引、`scripts/content_lint.py` 本地 lint、内容错误 fail closed）；前端核心工作流拆分为 `useLessonSession` / `usePlaygroundSession` / `useAgentConversation` 与 `RecommendationPanel`（三处建议统一）；删除失效基础设施（MinIO/Celery/邮件/Paramiko/Gevent/Redis、后端 ECharts package.json），限流保留 SlowAPI 单一实现。按决策跳过部署验收与 CI/CD 项。后端 387 项、前端 68 项测试通过。完整总结见 [`phase4-content-and-ui-completion-summary.md`](phase4-content-and-ui-completion-summary.md)。
+- 阶段 4 内容与界面规模化（2026-08-01）：Content Catalog 深模块（Pydantic schema 校验、引用图/无环校验、启动时一次构建的共享索引、`scripts/content_lint.py` 本地 lint、内容错误 fail closed）；前端核心工作流拆分为 `useLessonSession` / `usePlaygroundSession` / `useAgentConversation` 与 `RecommendationPanel`（三处建议统一）；删除失效基础设施（MinIO/Celery/邮件/Paramiko/Gevent/Redis、后端 ECharts package.json），限流保留 SlowAPI 单一实现。后端 390 项、前端 71 项测试通过。完整总结见 [`phase4-content-and-ui-completion-summary.md`](phase4-content-and-ui-completion-summary.md)。
+- 生产部署验收（2026-08-17）：三节样板课程真实 Runner 执行 → 练习判定 → Attempt 幂等 → Agent 五态反馈 → 事件幂等 → Dashboard 指标全链路验收通过（17/17，脚本 `deploy/acceptance.sh`）。验收中发现并修复明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失的缺陷（新增 `PUBLIC_SCHEME` 配置）。记录见 [`production-acceptance-2026-08-17.md`](production-acceptance-2026-08-17.md)。
 
 ## 写路径约定（阶段 1）
 
@@ -20,7 +21,7 @@
 
 ## 下一步
 
-阶段 0、1、2、3、4 均已完成代码与测试闭环。Task 9（CI/mypy baseline/安全验收文档）按当前决策不实施。剩余可选方向：服务器部署验收（三节样板课程真实 Runner 执行 + Agent 反馈 + Dashboard 指标）。
+阶段 0、1、2、3、4 均已完成代码与测试闭环；生产部署验收已于 2026-08-17 通过（见验收记录）。剩余事项：CI 门禁落地（`.github/workflows/ci.yml`）、结构化练习向其余课程扩面、浏览器/移动端人工目测项。
 
 ## 文档地图
 
@@ -35,6 +36,7 @@
 | [`phase3-evidence-agent-completion-summary.md`](phase3-evidence-agent-completion-summary.md) | 阶段 3 学习证据驱动 Agent 收口：证据解析器、教学反馈、审计、推荐、评测 |
 | [`superpowers/plans/2026-08-01-phase4-content-and-ui-scale.md`](superpowers/plans/2026-08-01-phase4-content-and-ui-scale.md) | 阶段 4 执行入口：Content Catalog、前端工作流拆分、失效基础设施清理（已完成） |
 | [`phase4-content-and-ui-completion-summary.md`](phase4-content-and-ui-completion-summary.md) | 阶段 4 收口：内容索引、composable 拆分、依赖清理与本地验证 |
+| [`production-acceptance-2026-08-17.md`](production-acceptance-2026-08-17.md) | 生产部署验收记录：17 项全链路检查、cookie 缺陷修复、遗留目测项 |
 
 ## 清理约定
 

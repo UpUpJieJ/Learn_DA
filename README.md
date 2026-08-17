@@ -172,6 +172,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `APP_ENV` | `development` | 运行环境 |
+| `PUBLIC_SCHEME` | `http` | 对外协议（http/https），决定会话 cookie 是否带 Secure；启用 HTTPS 时改 `https` |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./learn_da.db` | 数据库连接串 |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 前端跨域白名单 |
 | `FALLBACK_LLM_API_KEY` | — | 兜底 LLM API 密钥（`LLM_API_KEY` 未设置时使用） |

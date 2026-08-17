@@ -95,16 +95,22 @@ fi
 
 # ---------- A2 签名匿名会话 ----------
 echo "[A2] 签名匿名会话 cookie"
-if grep -q "learn_da_session" "$JAR"; then
-  ok "会话 cookie learn_da_session 已签发"
-else
-  bad "会话 cookie" "响应未设置 learn_da_session"
-fi
+# 注：/lessons 不依赖访客身份，不触发 cookie 签发；用需要身份的端点验证
 code=$(req GET /learner-state/progress "$JAR" "$WORK/progress0.json")
 if [ "$code" = "200" ] && [ "$(json_path "$WORK/progress0.json" code)" = "200" ]; then
   ok "GET /learner-state/progress 携带会话可读"
 else
   bad "GET /learner-state/progress" "http=$code body=$(head -c 200 "$WORK/progress0.json" 2>/dev/null)"
+fi
+if grep -q "learn_da_session" "$JAR"; then
+  if grep "learn_da_session" "$JAR" | grep -qi "secure"; then
+    # 明文 HTTP 部署下 Secure cookie 会被浏览器拒收（2026-08-17 验收发现的缺陷）
+    bad "会话 cookie" "cookie 带 Secure 属性，明文 HTTP 下浏览器将拒收"
+  else
+    ok "会话 cookie learn_da_session 已签发且未带 Secure（适配明文 HTTP）"
+  fi
+else
+  bad "会话 cookie" "响应未设置 learn_da_session"
 fi
 
 # ---------- A3 三节样板课程：正确答案 -> 验证通过 ----------
@@ -112,7 +118,7 @@ echo "[A3] 三节样板课程练习通过（真实 Runner 执行）"
 
 # 01 polars-basics（dataframe_rows）
 cat > "$WORK/ex01.json" <<'EOF'
-{"code":"import polars as pl\n\norders = pl.DataFrame({\n    'product': ['键盘', '鼠标', '显示器', '耳机'],\n    'price': [200, 80, 1500, 300],\n    'quantity': [3, 5, 1, 2],\n})\n\nresult = orders.filter(pl.col('price') > 100).select('product', 'price')\nprint(result)\n","language":"python","lessonSlug":"01-polars-basics","exerciseId":"polars-basics-filter-select-v1"}
+{"code":"import polars as pl\n\norders = pl.DataFrame({\n    'product': ['键盘', '鼠标', '显示器', '耳机'],\n    'price': [200, 80, 1500, 300],\n    'quantity': [3, 5, 1, 2],\n})\n\nresult = orders.filter(pl.col('price') > 100).select('product', 'price')\nprint(result)\n","language":"python","lessonSlug":"polars-basics","exerciseId":"polars-basics-filter-select-v1"}
 EOF
 RID01=$("$PY" -c "import uuid; print(uuid.uuid4())")
 "$PY" -c "
@@ -125,14 +131,14 @@ vstatus=$(json_path "$WORK/ex01r.json" data.verification.status)
 ATYPE01=$(json_path "$WORK/ex01r.json" data.attemptId)
 if [ "$code" = "200" ] && [ "$(json_path "$WORK/ex01r.json" data.status)" = "success" ] \
    && [ "$vstatus" = "passed" ] && [ -n "$ATYPE01" ]; then
-  ok "01-polars-basics 验证通过（dataframe_rows，attemptId=$ATYPE01）"
+  ok "polars-basics 验证通过（dataframe_rows，attemptId=$ATYPE01）"
 else
-  bad "01-polars-basics 通过执行" "http=$code status=$(json_path "$WORK/ex01r.json" data.status) verification=$vstatus body=$(head -c 300 "$WORK/ex01r.json")"
+  bad "polars-basics 通过执行" "http=$code status=$(json_path "$WORK/ex01r.json" data.status) verification=$vstatus body=$(head -c 300 "$WORK/ex01r.json")"
 fi
 
 # 07 duckdb-sql-foundations（stdout_exact）
 cat > "$WORK/ex07.json" <<'EOF'
-{"code":"import duckdb\n\ncon = duckdb.connect()\ncon.execute(\"\"\"\n    CREATE TABLE orders AS\n    SELECT * FROM (VALUES\n        (1, '华东', '办公', 120),\n        (2, '华东', '数码', 899),\n        (3, '华南', '办公', 240),\n        (4, '华北', '配件', 59)\n    ) AS t(order_id, region, category, amount)\n\"\"\")\n\nresult = con.execute(\"\"\"\n    SELECT category, COUNT(*) AS order_count, SUM(amount) AS total_amount\n    FROM orders\n    GROUP BY category\n    HAVING SUM(amount) > 200\n    ORDER BY total_amount DESC\n\"\"\").fetchall()\n\nprint(result)\n","language":"python","lessonSlug":"07-duckdb-sql-foundations","exerciseId":"duckdb-sql-groupby-having-v1"}
+{"code":"import duckdb\n\ncon = duckdb.connect()\ncon.execute(\"\"\"\n    CREATE TABLE orders AS\n    SELECT * FROM (VALUES\n        (1, '华东', '办公', 120),\n        (2, '华东', '数码', 899),\n        (3, '华南', '办公', 240),\n        (4, '华北', '配件', 59)\n    ) AS t(order_id, region, category, amount)\n\"\"\")\n\nresult = con.execute(\"\"\"\n    SELECT category, COUNT(*) AS order_count, SUM(amount) AS total_amount\n    FROM orders\n    GROUP BY category\n    HAVING SUM(amount) > 200\n    ORDER BY total_amount DESC\n\"\"\").fetchall()\n\nprint(result)\n","language":"python","lessonSlug":"duckdb-sql-foundations","exerciseId":"duckdb-sql-groupby-having-v1"}
 EOF
 RID07=$("$PY" -c "import uuid; print(uuid.uuid4())")
 "$PY" -c "
@@ -144,14 +150,14 @@ code=$(post_json /playground/execute "$(cat "$WORK/ex07.json")" "$JAR" "$WORK/ex
 vstatus=$(json_path "$WORK/ex07r.json" data.verification.status)
 ATYPE07=$(json_path "$WORK/ex07r.json" data.attemptId)
 if [ "$code" = "200" ] && [ "$vstatus" = "passed" ] && [ -n "$ATYPE07" ]; then
-  ok "07-duckdb-sql-foundations 验证通过（stdout_exact，attemptId=$ATYPE07）"
+  ok "duckdb-sql-foundations 验证通过（stdout_exact，attemptId=$ATYPE07）"
 else
-  bad "07-duckdb-sql-foundations 通过执行" "http=$code verification=$vstatus stdout=$(head -c 200 "$WORK/ex07r.json")"
+  bad "duckdb-sql-foundations 通过执行" "http=$code verification=$vstatus stdout=$(head -c 200 "$WORK/ex07r.json")"
 fi
 
 # 12 python-functions（stdout_exact）
 cat > "$WORK/ex12.json" <<'EOF'
-{"code":"def add_bonus(score):\n    return score + 5\nprint(add_bonus(95))\n","language":"python","lessonSlug":"12-python-functions","exerciseId":"python-functions-add-bonus-v1"}
+{"code":"def add_bonus(score):\n    return score + 5\nprint(add_bonus(95))\n","language":"python","lessonSlug":"python-functions","exerciseId":"python-functions-add-bonus-v1"}
 EOF
 RID12=$("$PY" -c "import uuid; print(uuid.uuid4())")
 "$PY" -c "
@@ -163,15 +169,15 @@ code=$(post_json /playground/execute "$(cat "$WORK/ex12.json")" "$JAR" "$WORK/ex
 vstatus=$(json_path "$WORK/ex12r.json" data.verification.status)
 ATYPE12=$(json_path "$WORK/ex12r.json" data.attemptId)
 if [ "$code" = "200" ] && [ "$vstatus" = "passed" ] && [ -n "$ATYPE12" ]; then
-  ok "12-python-functions 验证通过（stdout_exact，attemptId=$ATYPE12）"
+  ok "python-functions 验证通过（stdout_exact，attemptId=$ATYPE12）"
 else
-  bad "12-python-functions 通过执行" "http=$code verification=$vstatus body=$(head -c 200 "$WORK/ex12r.json")"
+  bad "python-functions 通过执行" "http=$code verification=$vstatus body=$(head -c 200 "$WORK/ex12r.json")"
 fi
 
 # ---------- A4 错误答案必须判失败（validator 加固回归） ----------
 echo "[A4] 全表输出不得判通过（validator 加固）"
 cat > "$WORK/exbad.json" <<EOF
-{"requestId":"$("$PY" -c "import uuid; print(uuid.uuid4())")","code":"import polars as pl\n\norders = pl.DataFrame({\n    'product': ['键盘', '鼠标', '显示器', '耳机'],\n    'price': [200, 80, 1500, 300],\n    'quantity': [3, 5, 1, 2],\n})\n\nresult = orders\nprint(result)\n","language":"python","lessonSlug":"01-polars-basics","exerciseId":"polars-basics-filter-select-v1"}
+{"requestId":"$("$PY" -c "import uuid; print(uuid.uuid4())")","code":"import polars as pl\n\norders = pl.DataFrame({\n    'product': ['键盘', '鼠标', '显示器', '耳机'],\n    'price': [200, 80, 1500, 300],\n    'quantity': [3, 5, 1, 2],\n})\n\nresult = orders\nprint(result)\n","language":"python","lessonSlug":"polars-basics","exerciseId":"polars-basics-filter-select-v1"}
 EOF
 code=$(post_json /playground/execute "$(cat "$WORK/exbad.json")" "$JAR" "$WORK/exbadr.json")
 vstatus=$(json_path "$WORK/exbadr.json" data.verification.status)
@@ -196,22 +202,22 @@ fi
 echo "[A6] /analytics/track 幂等与进度投影"
 EID_S=$("$PY" -c "import uuid; print(uuid.uuid4())")
 EID_C=$("$PY" -c "import uuid; print(uuid.uuid4())")
-code=$(post_json /analytics/track "{\"eventType\":\"lesson_start\",\"lessonSlug\":\"01-polars-basics\",\"eventId\":\"$EID_S\"}" "$JAR" "$WORK/track1.json")
+code=$(post_json /analytics/track "{\"eventType\":\"lesson_start\",\"lessonSlug\":\"polars-basics\",\"eventId\":\"$EID_S\"}" "$JAR" "$WORK/track1.json")
 [ "$code" = "200" ] && ok "lesson_start 上报成功" || bad "lesson_start" "http=$code body=$(head -c 200 "$WORK/track1.json")"
-code=$(post_json /analytics/track "{\"eventType\":\"lesson_complete\",\"lessonSlug\":\"01-polars-basics\",\"eventId\":\"$EID_C\"}" "$JAR" "$WORK/track2.json")
+code=$(post_json /analytics/track "{\"eventType\":\"lesson_complete\",\"lessonSlug\":\"polars-basics\",\"eventId\":\"$EID_C\"}" "$JAR" "$WORK/track2.json")
 [ "$code" = "200" ] && ok "lesson_complete 上报成功" || bad "lesson_complete" "http=$code body=$(head -c 200 "$WORK/track2.json")"
 
 code=$(req GET /learner-state/progress "$JAR" "$WORK/progress1.json")
 completed=$(json_path "$WORK/progress1.json" data.completedLessons)
 total1=$(json_path "$WORK/progress1.json" data.totalCompleted)
-if [ "$code" = "200" ] && echo "$completed" | grep -q "01-polars-basics"; then
+if [ "$code" = "200" ] && echo "$completed" | grep -q "polars-basics"; then
   ok "进度投影包含已完成课程（totalCompleted=$total1）"
 else
   bad "进度投影" "http=$code completedLessons=$completed"
 fi
 
 # 相同 eventId 重放，不得重复计数
-post_json /analytics/track "{\"eventType\":\"lesson_complete\",\"lessonSlug\":\"01-polars-basics\",\"eventId\":\"$EID_C\"}" "$JAR" "$WORK/track3.json" > /dev/null
+post_json /analytics/track "{\"eventType\":\"lesson_complete\",\"lessonSlug\":\"polars-basics\",\"eventId\":\"$EID_C\"}" "$JAR" "$WORK/track3.json" > /dev/null
 req GET /learner-state/progress "$JAR" "$WORK/progress2.json" > /dev/null
 total2=$(json_path "$WORK/progress2.json" data.totalCompleted)
 if [ -n "$total1" ] && [ "$total1" = "$total2" ] && [ "$total1" = "1" ]; then
@@ -233,7 +239,7 @@ else
 fi
 
 # A7b 通过 attempt -> passed_unconfirmed
-code=$(post_json /agent/chat "{\"message\":\"我的练习结果对吗？下一步做什么？\",\"history\":[],\"context\":{\"currentLesson\":\"01-polars-basics\",\"attemptId\":$ATYPE01}}" "$JAR" "$WORK/chat1.json")
+code=$(post_json /agent/chat "{\"message\":\"我的练习结果对吗？下一步做什么？\",\"history\":[],\"context\":{\"currentLesson\":\"polars-basics\",\"attemptId\":$ATYPE01}}" "$JAR" "$WORK/chat1.json")
 state1=$(json_path "$WORK/chat1.json" data.teachingFeedback.state)
 next1=$(json_path "$WORK/chat1.json" data.teachingFeedback.nextAction)
 if [ "$code" = "200" ] && [ "$state1" = "passed_unconfirmed" ] && [ -n "$next1" ]; then
@@ -243,7 +249,7 @@ else
 fi
 
 # A7c 失败 attempt -> verification_failed
-code=$(post_json /agent/chat "{\"message\":\"为什么我的练习没通过？\",\"history\":[],\"context\":{\"currentLesson\":\"01-polars-basics\",\"attemptId\":$ATYPEBAD}}" "$JAR" "$WORK/chat2.json")
+code=$(post_json /agent/chat "{\"message\":\"为什么我的练习没通过？\",\"history\":[],\"context\":{\"currentLesson\":\"polars-basics\",\"attemptId\":$ATYPEBAD}}" "$JAR" "$WORK/chat2.json")
 state2=$(json_path "$WORK/chat2.json" data.teachingFeedback.state)
 if [ "$code" = "200" ] && [ "$state2" = "verification_failed" ]; then
   ok "失败 Attempt -> state=verification_failed"

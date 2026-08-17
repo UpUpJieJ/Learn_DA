@@ -1,6 +1,6 @@
 # AGENTS.md — Learn DA 项目上下文
 
-> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-16。
+> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-17。
 
 ## 项目是什么
 
@@ -8,10 +8,13 @@
 技术栈：Vue 3 + Vite + TS + Pinia（`learn_da_vue`）、FastAPI + Python 3.12（`learn_da`）、独立 Runner 沙箱服务（`learn_da_runner`）。
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
-## 当前状态（截至 2026-08-16）
+## 当前状态（截至 2026-08-17）
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
-- 测试基线：后端 **388 项** pytest、前端 **71 项** vitest 全绿；**无 CI**（Task 9 当时有意跳过），提交前需本地手动跑。
+- **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
+- **CI 已建立**：`.github/workflows/ci.yml`（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build）。此前 Task 9 有意跳过，现已补上；但本地推 GitHub 不稳定，合入前仍建议本地跑一遍。
+- 测试基线：后端 **390 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
+- 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
   - LLM 兜底配置改名：`LLM_*` 为主配置，`FALLBACK_LLM_*` 为兜底（`effective_llm_*` 统一解析）。
   - 修复明文 HTTP 下 `crypto.randomUUID` 崩溃：前端统一走 `src/lib/uuid.ts` 的 `randomId()`（兼容非安全上下文）。
@@ -31,6 +34,9 @@ cd learn_da && .venv/Scripts/python.exe -m pytest -q          # 全部测试
 cd learn_da_vue && npm test -- --run      # vitest
 npm run type-check                        # vue-tsc
 npm run build                             # 生产构建
+
+# 生产验收（服务器上或任何能访问目标主机的机器，需 curl + python3）
+bash deploy/acceptance.sh                 # 会写入一批验收数据
 ```
 
 ## 关键架构约定（改动前必读）
@@ -44,7 +50,7 @@ npm run build                             # 生产构建
 
 ## 部署与运维
 
-- 生产：**单机双 compose 模式**（`docker-compose.app.yml` + `docker-compose.runner.yml` 一起加载），项目在服务器 `/app/Learn_DA`，数据卷 `learn_da_data`（SQLite），migrate 容器自动跑 Alembic。
+- 生产：**单机双 compose 模式**（`docker-compose.app.yml` + `docker-compose.runner.yml` 一起加载），项目在服务器 `/app/Learn_DA`，数据卷 `learn_da_data`（SQLite），migrate 容器自动跑 Alembic。对外协议由 `PUBLIC_SCHEME` 声明（当前明文 HTTP=http；上 HTTPS 后改 https，cookie 自动加 Secure）。
 - **日常更新一句话**：本地 `bash deploy/push-deploy.sh`（推 GitHub→上传 bundle 兜底→ssh 触发服务器 `deploy/update.sh`）。只更服务器：`ssh root@<ip> /app/Learn_DA/deploy/update.sh`。
 - 服务器地址与凭据**不入库**：IP 见本地 `~/.ssh/config` 的 Host 条目（root 免密已配）；密钥在服务器上的 `deploy/app.env` / `runner.env`（未跟踪）。
 - 同机还有用户其他容器（agent-customer 全家桶、redis01/02）——**部署操作不得触碰**，只操作 learn_da compose 项目。
@@ -62,4 +68,4 @@ npm run build                             # 生产构建
 
 - 迭代路线图与阶段验收标准：`learn_da/docs/iteration-roadmap-2026-07-14.md`
 - 阶段完成总结：`learn_da/docs/phase3-evidence-agent-completion-summary.md`、`phase4-content-and-ui-completion-summary.md`
-- 部署细节：`deploy/README.md`；配置项：根 `README.md` 配置表
+- 部署细节：`deploy/README.md`；配置项：根 `README.md` 配置表；生产验收记录：`learn_da/docs/production-acceptance-2026-08-17.md`
