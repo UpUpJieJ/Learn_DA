@@ -28,6 +28,39 @@ recommended_next: [polars-groupby, duckdb-joins-cte]
 skill_tags: [sql_basics, group_by, aggregation, sorting]
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: duckdb-analytics-region-groupby-v1
+  title: 按区域分组统计订单
+  language: python
+  starter_code: |
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE orders AS
+        SELECT * FROM (VALUES
+            (1, '华东', '办公', 120),
+            (2, '华东', '数码', 899),
+            (3, '华南', '办公', 240),
+            (4, '华北', '配件', 59)
+        ) AS t(order_id, region, category, amount)
+    """)
+
+    result = con.execute("""
+        # TODO: 按 region 分组，统计订单数和总金额，按总金额降序排列
+    """).fetchall()
+
+    print(result)
+  objective: |
+    使用 GROUP BY 按 region 分组，用 COUNT(*) 和 SUM(amount) 聚合并起别名，
+    用 ORDER BY 按总金额降序排列。
+  hints:
+    - COUNT(*) AS order_count 统计订单数
+    - SUM(amount) AS total_amount 计算总金额
+    - ORDER BY total_amount DESC 降序排列
+  validator:
+    type: stdout_exact
+    expected: "[('华东', 2, 1019), ('华南', 1, 240), ('华北', 1, 59)]"
 ---
 
 # DuckDB 查询分析

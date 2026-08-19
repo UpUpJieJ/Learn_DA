@@ -24,6 +24,36 @@ recommended_next: [polars-expressions, polars-cleaning]
 skill_tags: [group_by, aggregation, window_functions, over]
 is_review_friendly: false
 is_branch_point: false
+exercise:
+  id: polars-groupby-region-agg-v1
+  title: 按区域分组统计销售额
+  language: python
+  starter_code: |
+    import polars as pl
+
+    sales = pl.DataFrame({
+        'region': ['华东', '华东', '华南', '华南', '华北', '华北'],
+        'product': ['A', 'B', 'A', 'B', 'A', 'B'],
+        'amount': [120, 80, 200, 150, 90, 300],
+        'quantity': [3, 2, 5, 4, 2, 8],
+    })
+
+    # TODO: 按 region 分组，计算总销售额 total_amount 和订单数 order_count，
+    # 并按 total_amount 降序排列
+    result = sales
+    print(result)
+  objective: |
+    用 group_by('region').agg(...) 计算每组的总销售额与订单数，
+    用 alias 命名聚合列，最后按总销售额降序排序。
+  hints:
+    - pl.col('amount').sum().alias('total_amount') 计算总额
+    - pl.col('amount').count().alias('order_count') 统计订单数
+    - .sort('total_amount', descending=True) 降序排列
+  validator:
+    type: dataframe_rows
+    expected:
+      columns: [region, total_amount, order_count]
+      row_count: 3
 ---
 
 # Polars 分组聚合

@@ -25,6 +25,6 @@ RUN groupadd -g 65532 sandbox && useradd -r -u 65532 -g sandbox sandbox
 
 RUN pip install --upgrade pip -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
     pip install --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
-    polars duckdb pandas
+    polars duckdb pandas pyarrow
 
 USER 65532:65532

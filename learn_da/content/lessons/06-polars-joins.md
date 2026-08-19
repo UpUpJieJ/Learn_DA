@@ -28,6 +28,47 @@ recommended_next: ['duckdb-sql-foundations', 'polars-lazy-pipeline']
 skill_tags: ['join', 'left_join', 'anti_join', 'data_modeling']
 is_review_friendly: false
 is_branch_point: true
+exercise:
+  id: polars-joins-order-wide-table-v1
+  title: 拼接订单宽表并计算金额
+  language: python
+  starter_code: |
+    import polars as pl
+
+    orders = pl.DataFrame({
+        "order_id": [101, 102, 103, 104, 105],
+        "user_id": [1, 2, 1, 3, 99],
+        "product_id": [1, 2, 1, 3, 2],
+        "quantity": [2, 1, 5, 3, 1],
+    })
+
+    users = pl.DataFrame({
+        "user_id": [1, 2, 3],
+        "city": ["北京", "上海", "深圳"],
+    })
+
+    products = pl.DataFrame({
+        "product_id": [1, 2, 3],
+        "category": ["办公", "数码", "配件"],
+        "unit_price": [120, 899, 59],
+    })
+
+    # TODO: 用 left join 依次连接 users 和 products，
+    # 再用 with_columns 计算每笔订单的 amount（quantity × unit_price）
+    result = orders
+    print(result)
+  objective: |
+    用两次 how="left" 的 join 给订单补充城市和商品信息，
+    保持 5 行订单不丢失，并派生出金额列 amount。
+  hints:
+    - orders.join(users, on='user_id', how='left') 保留左表所有订单
+    - 链式再 .join(products, on='product_id', how='left')
+    - (pl.col('quantity') * pl.col('unit_price')).alias('amount')
+  validator:
+    type: dataframe_rows
+    expected:
+      columns: [order_id, city, category, amount]
+      row_count: 5
 ---
 
 # Polars 连接与合并

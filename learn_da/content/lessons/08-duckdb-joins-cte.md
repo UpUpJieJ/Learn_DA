@@ -28,6 +28,48 @@ recommended_next: ['duckdb-window-functions']
 skill_tags: ['join', 'cte', 'with_clause', 'multi_table']
 is_review_friendly: false
 is_branch_point: false
+exercise:
+  id: duckdb-joins-cte-amount-filter-v1
+  title: 用 CTE 筛选高金额订单
+  language: python
+  starter_code: |
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE orders AS
+        SELECT * FROM (VALUES
+            (101, 1, 2),
+            (102, 2, 1),
+            (103, 1, 3),
+            (104, 3, 4)
+        ) AS t(order_id, product_id, quantity)
+    """)
+    con.execute("""
+        CREATE TABLE products AS
+        SELECT * FROM (VALUES
+            (1, '办公', 120),
+            (2, '数码', 899),
+            (3, '配件', 59)
+        ) AS t(product_id, category, unit_price)
+    """)
+
+    result = con.execute("""
+        # TODO: 用 CTE 先算出每笔订单的金额（quantity × unit_price），
+        # 再筛出金额 > 250 的订单，输出 order_id 和 amount，按金额降序
+    """).fetchall()
+
+    print(result)
+  objective: |
+    用 WITH 定义 CTE 完成 LEFT JOIN 与金额计算，
+    外层查询用 WHERE 过滤金额 > 250 的订单并降序排列。
+  hints:
+    - WITH order_amounts AS (SELECT ...) 先算每单金额
+    - LEFT JOIN products p USING (product_id)
+    - 外层 WHERE amount > 250 ORDER BY amount DESC
+  validator:
+    type: stdout_exact
+    expected: "[(102, 899), (103, 360)]"
 ---
 
 # DuckDB JOIN 与 CTE

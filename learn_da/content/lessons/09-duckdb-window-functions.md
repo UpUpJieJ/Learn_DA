@@ -28,6 +28,41 @@ recommended_next: ['polars-lazy-pipeline']
 skill_tags: ['window_functions', 'rank', 'row_number', 'partition_by']
 is_review_friendly: false
 is_branch_point: false
+exercise:
+  id: duckdb-window-top-per-region-v1
+  title: 找出每个区域金额最高的订单
+  language: python
+  starter_code: |
+    import duckdb
+
+    con = duckdb.connect()
+    con.execute("""
+        CREATE TABLE orders AS
+        SELECT * FROM (VALUES
+            (1, '华东', '2026-01-01', 120),
+            (2, '华东', '2026-01-02', 300),
+            (3, '华东', '2026-01-03', 180),
+            (4, '华南', '2026-01-01', 90),
+            (5, '华南', '2026-01-02', 260)
+        ) AS t(order_id, region, order_date, amount)
+    """)
+
+    result = con.execute("""
+        # TODO: 用 CTE + RANK() OVER (PARTITION BY region ORDER BY amount DESC)
+        # 给每个区域内的订单排名，只保留排名第 1 的订单，
+        # 输出 order_id、region、amount，按 order_id 升序
+    """).fetchall()
+
+    print(result)
+  objective: |
+    在 CTE 中用窗口函数做组内排名，外层查询过滤出每个区域排名第 1 的订单。
+  hints:
+    - RANK() OVER (PARTITION BY region ORDER BY amount DESC) AS amount_rank
+    - WHERE 不能直接过滤窗口函数，要用 CTE 包一层
+    - 外层 WHERE amount_rank = 1 ORDER BY order_id
+  validator:
+    type: stdout_exact
+    expected: "[(2, '华东', 300), (5, '华南', 260)]"
 ---
 
 # DuckDB 窗口函数

@@ -29,6 +29,36 @@ recommended_next: ['polars-joins']
 skill_tags: ['data_cleaning', 'missing_values', 'fill_null', 'cast', 'deduplication']
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: polars-cleaning-user-dedup-v1
+  title: 清洗重复用户与脏字段
+  language: python
+  starter_code: |
+    import polars as pl
+
+    raw = pl.DataFrame({
+        "user_id": [1, 2, 2, 3, 4, 5],
+        "name": ["张三", "李四", "李四", "王五", "赵六", "钱七"],
+        "city": ["北京", None, None, "上海", "深圳", None],
+        "age": ["25", "30", "30", "22", "unknown", "28"],
+    })
+
+    # TODO: 按 user_id 去重（保留第一条），把缺失的 city 填为"未知"，
+    # 并把 age 列的 "unknown" 替换为 None 后转为 Int32
+    result = raw
+    print(result)
+  objective: |
+    用 unique(subset=["user_id"], keep="first") 去重，
+    用 fill_null 填充缺失城市，用 replace + cast 把 age 转为整数。
+  hints:
+    - raw.unique(subset=['user_id'], keep='first') 按关键字段去重
+    - pl.col('city').fill_null('未知') 填充缺失值
+    - pl.col('age').replace('unknown', None).cast(pl.Int32) 先替换再转型
+  validator:
+    type: dataframe_rows
+    expected:
+      columns: [user_id, city, age]
+      row_count: 5
 ---
 
 # Polars 数据清洗

@@ -25,6 +25,41 @@ recommended_next: []
 skill_tags: [polars_duckdb_integration, data_pipeline, arrow, workflow]
 is_review_friendly: false
 is_branch_point: false
+exercise:
+  id: polars-duckdb-clean-then-sql-v1
+  title: Polars 清洗后交给 DuckDB 汇总
+  language: python
+  starter_code: |
+    import duckdb
+    import polars as pl
+
+    orders = pl.DataFrame({
+        "order_id": [1, 2, 3, 4, 5, 6],
+        "region": ["华东", "华东", "华南", "华南", "华北", None],
+        "category": ["办公", "数码", "办公", "配件", "办公", "数码"],
+        "amount": [120, 899, 240, 59, 180, 620],
+    })
+
+    # TODO: 先用 Polars 把缺失的 region 填为"未知"，
+    # 再用 to_arrow() + con.register() 注册到 DuckDB，
+    # 最后用 SQL 按 region 汇总总金额并降序排列
+    clean_orders = orders
+
+    con = duckdb.connect()
+    result = con.execute("""
+    """).fetchall()
+
+    print(result)
+  objective: |
+    完成“Polars 清洗 → 注册到 DuckDB → SQL 分组汇总”的完整链路：
+    填充缺失区域后注册，用 GROUP BY + SUM 汇总并按总金额降序。
+  hints:
+    - pl.col('region').fill_null('未知') 先清洗再交给 SQL
+    - con.register('orders', clean_orders.to_arrow())
+    - SELECT region, SUM(amount) AS total_amount ... GROUP BY region ORDER BY total_amount DESC
+  validator:
+    type: stdout_exact
+    expected: "[('华东', 1019), ('未知', 620), ('华南', 299), ('华北', 180)]"
 ---
 
 # Polars 与 DuckDB 组合工作流

@@ -14,6 +14,7 @@
 - 阶段 3 证据闭环修复（2026-08-01）：推荐主流程实际消费 Agent 证据聚合（帮助后仍未通过才触发回补）、`helpThenPassRate` 按 Attempt/练习/时间精确计算、无证据时不再把客户端 lesson 当作课程事实、模型调用前预留 request_id（重放不重复调用模型）、前端反馈按钮与 interactionId 关联、部署 Compose 自动执行 Alembic 迁移。
 - 阶段 4 内容与界面规模化（2026-08-01）：Content Catalog 深模块（Pydantic schema 校验、引用图/无环校验、启动时一次构建的共享索引、`scripts/content_lint.py` 本地 lint、内容错误 fail closed）；前端核心工作流拆分为 `useLessonSession` / `usePlaygroundSession` / `useAgentConversation` 与 `RecommendationPanel`（三处建议统一）；删除失效基础设施（MinIO/Celery/邮件/Paramiko/Gevent/Redis、后端 ECharts package.json），限流保留 SlowAPI 单一实现。后端 390 项、前端 71 项测试通过。完整总结见 [`phase4-content-and-ui-completion-summary.md`](phase4-content-and-ui-completion-summary.md)。
 - 生产部署验收（2026-08-17）：三节样板课程真实 Runner 执行 → 练习判定 → Attempt 幂等 → Agent 五态反馈 → 事件幂等 → Dashboard 指标全链路验收通过（17/17，脚本 `deploy/acceptance.sh`）。验收中发现并修复明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失的缺陷（新增 `PUBLIC_SCHEME` 配置）。记录见 [`production-acceptance-2026-08-17.md`](production-acceptance-2026-08-17.md)。
+- 练习扩面（2026-08-20）：结构化练习从 3 节样板课扩展到全部 13 门课（每课 1 题）；validator 只用白名单（Polars 课 `dataframe_rows`、DuckDB/Python 课 `stdout_exact`），答案与 starter 均经本地真实判定链路双向验证（答案 passed、starter 不静默通过）。顺带修复沙箱镜像缺 `pyarrow` 导致第 11 课 Polars→DuckDB 桥（`to_arrow()`）无法运行的问题（`Dockerfile.sandbox` 新增 pyarrow；`deploy/update.sh` 会自动检测并重建沙箱镜像）。
 
 ## 写路径约定（阶段 1）
 
@@ -21,7 +22,7 @@
 
 ## 下一步
 
-阶段 0、1、2、3、4 均已完成代码与测试闭环；生产部署验收已于 2026-08-17 通过（见验收记录）。剩余事项：CI 门禁落地（`.github/workflows/ci.yml`）、结构化练习向其余课程扩面、浏览器/移动端人工目测项。
+阶段 0、1、2、3、4 均已完成代码与测试闭环；生产部署验收已于 2026-08-17 通过（见验收记录）；结构化练习已于 2026-08-20 覆盖全部 13 门课。剩余事项：CI 首次运行因 GitHub 账户账单锁定未跑通（需人工处理账单）、浏览器/移动端人工目测项、练习扩面后的生产部署（含沙箱镜像重建）。
 
 ## 文档地图
 

@@ -22,6 +22,26 @@ recommended_next: []
 skill_tags: [list, loop, iteration, function]
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: python-collections-double-loop-v1
+  title: 用循环给每个分数翻倍
+  language: python
+  starter_code: |
+    def double_score(score):
+        # TODO: 返回 score 的 2 倍
+        pass
+
+    scores = [80, 92, 76]
+
+    # TODO: 用 for 循环遍历 scores，调用 double_score 并打印每个结果
+  objective: 实现 double_score 返回分数的 2 倍，用 for 循环逐个处理列表并打印。
+  hints:
+    - return score * 2 返回计算结果
+    - "for score in scores: 逐个取出分数"
+    - 在循环内 print(double_score(score))
+  validator:
+    type: stdout_exact
+    expected: "160\n184\n152"
 ---
 
 # Python 集合与循环
@@ -49,4 +69,4 @@ for score in scores:
 
 ## 练习
 
-把 `scores` 改成你自己的 3 个数字，并把 `add_bonus` 改成 `double_score`，让它返回分数的 2 倍。
+把 `add_bonus` 改成 `double_score`，让它返回分数的 2 倍，并用 `for` 循环逐个处理 `scores` 列表中的 3 个分数（80、92、76），打印每个结果。

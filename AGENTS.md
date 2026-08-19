@@ -1,6 +1,6 @@
 # AGENTS.md — Learn DA 项目上下文
 
-> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-17。
+> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-20。
 
 ## 项目是什么
 
@@ -8,9 +8,10 @@
 技术栈：Vue 3 + Vite + TS + Pinia（`learn_da_vue`）、FastAPI + Python 3.12（`learn_da`）、独立 Runner 沙箱服务（`learn_da_runner`）。
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
-## 当前状态（截至 2026-08-17）
+## 当前状态（截至 2026-08-20）
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
+- **练习已覆盖全部 13 门课**（2026-08-20，每课 1 题）：validator 只用白名单（dataframe_rows / stdout_exact），答案与 starter 均经本地真实判定链路双向验证；沙箱镜像新增 pyarrow（`Dockerfile.sandbox`，支撑第 11 课 to_arrow 桥），**部署时需重建沙箱镜像**。
 - **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
 - **CI 已建立**：`.github/workflows/ci.yml`（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build）。此前 Task 9 有意跳过，现已补上；但本地推 GitHub 不稳定，合入前仍建议本地跑一遍。
 - 测试基线：后端 **390 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
@@ -63,6 +64,7 @@ bash deploy/acceptance.sh                 # 会写入一批验收数据
 4. ZCode 内嵌浏览器（IAB）不持久化 cookie，每个请求都是新 visitor——**测身份相关功能（进度/尝试列表）用 curl 带 cookie jar 或真实浏览器**。
 5. 服务器内存 3.6G 无 swap：前端镜像构建是内存峰值点，其余容器同时跑时留意。
 6. 明文 HTTP 部署下浏览器安全上下文 API 受限（randomUUID、剪贴板等）——新前端代码生成 ID 一律用 `lib/uuid` 的 `randomId()`，勿直接调 `crypto.randomUUID`。
+7. 课程 frontmatter 的标量字段（如 hints 条目）含“冒号+空格”会被 YAML 解析成 mapping 而被 fail-closed 拦截——此类条目整体加双引号；改完跑 `scripts/content_lint.py`。
 
 ## 文档地图
 

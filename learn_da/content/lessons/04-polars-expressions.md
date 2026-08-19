@@ -28,6 +28,36 @@ recommended_next: ['polars-cleaning']
 skill_tags: ['expressions', 'with_columns', 'conditional_logic', 'pl_when']
 is_review_friendly: true
 is_branch_point: false
+exercise:
+  id: polars-expressions-revenue-band-v1
+  title: 计算收入并给价格分层
+  language: python
+  starter_code: |
+    import polars as pl
+
+    products = pl.DataFrame({
+        "product": ["键盘", "鼠标", "显示器", "耳机", "音箱"],
+        "price": [199, 89, 1299, 299, 450],
+        "cost": [120, 45, 800, 150, 280],
+        "quantity": [5, 12, 2, 7, 3],
+    })
+
+    # TODO: 用 with_columns 添加 revenue（price × quantity），
+    # 并用 pl.when().then().otherwise() 添加 price_band（price ≥ 500 为"高价"，其余为"平价"）
+    result = products
+    print(result)
+  objective: |
+    用 with_columns 一次添加两个派生列：revenue 为 price 乘 quantity，
+    price_band 用条件表达式按 price 是否 ≥ 500 分层。
+  hints:
+    - (pl.col('price') * pl.col('quantity')).alias('revenue')
+    - pl.when(pl.col('price') >= 500).then(pl.lit('高价')).otherwise(pl.lit('平价')).alias('price_band')
+    - 多个派生列可以写在同一个 with_columns 中
+  validator:
+    type: dataframe_rows
+    expected:
+      columns: [product, revenue, price_band]
+      row_count: 5
 ---
 
 # Polars 表达式与列计算

@@ -28,6 +28,36 @@ recommended_next: [polars-duckdb-workflow]
 skill_tags: [lazy_evaluation, query_optimization, pipeline, performance]
 is_review_friendly: false
 is_branch_point: true
+exercise:
+  id: polars-lazy-filter-band-v1
+  title: 用惰性流水线过滤并分层
+  language: python
+  starter_code: |
+    import polars as pl
+
+    orders = pl.DataFrame({
+        "order_id": [1, 2, 3, 4, 5, 6],
+        "region": ["华东", "华东", "华南", "华南", "华北", "华北"],
+        "category": ["办公", "数码", "办公", "配件", "办公", "数码"],
+        "amount": [120, 899, 240, 59, 180, 620],
+    })
+
+    # TODO: 用 .lazy() 进入惰性模式，过滤掉金额 < 100 的订单，
+    # 添加 amount_band 列（amount ≥ 500 为"大额"，其余为"普通"），
+    # 最后 .collect() 触发计算
+    result = orders
+    print(result)
+  objective: |
+    把 filter 与 with_columns 写成一条 lazy 链，最后用 collect() 得到 DataFrame。
+  hints:
+    - orders.lazy().filter(pl.col('amount') >= 100)
+    - pl.when(pl.col('amount') >= 500).then(pl.lit('大额')).otherwise(pl.lit('普通')).alias('amount_band')
+    - 链尾 .collect() 才真正执行计算
+  validator:
+    type: dataframe_rows
+    expected:
+      columns: [order_id, amount, amount_band]
+      row_count: 5
 ---
 
 # Polars 惰性流水线
