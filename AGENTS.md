@@ -13,7 +13,7 @@
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **练习已覆盖全部 13 门课**（2026-08-20，每课 1 题）：validator 只用白名单（dataframe_rows / stdout_exact），答案与 starter 均经本地真实判定链路双向验证；沙箱镜像新增 pyarrow（`Dockerfile.sandbox`，支撑第 11 课 to_arrow 桥），**部署时需重建沙箱镜像**。
 - **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
-- **CI 已建立**：`.github/workflows/ci.yml`（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build）。此前 Task 9 有意跳过，现已补上；但本地推 GitHub 不稳定，合入前仍建议本地跑一遍。
+- **CI 暂缓**（2026-08-21）：最小 CI 门禁已编写并本地验证（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build），但 GitHub 账户因账单锁定无法运行 Actions，workflow 文件已暂时移除；账单解锁后用 `git checkout ac779dc -- .github/workflows/ci.yml` 恢复。在此之前，**提交前必须本地手动跑全部测试**（回到阶段 4 时的约定）。
 - 测试基线：后端 **390 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
