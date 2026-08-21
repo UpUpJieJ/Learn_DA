@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import CodeSnapshot, DailyStats, LearningRecord, UserProfile
+from .models import DailyStats, LearningRecord, UserProfile
 
 
 class AnalyticsRepository:
@@ -359,11 +359,13 @@ class AnalyticsRepository:
                 "lesson_slug": str,
                 "code_runs": int,
                 "ai_helps": int,
-                "snapshots_count": int,
                 "last_activity_time": datetime,
             },
             ...
         ]
+
+        注：快照功能已下线（CodeSnapshot 表保留仅供历史回流），
+        回流信号不再读取快照数据。
         """
         # 子查询：获取每个课程的最后活动时间
         last_activity_subq = (
@@ -428,23 +430,6 @@ class AnalyticsRepository:
         if not incomplete_with_activity:
             return []
 
-        # 获取快照数量
-        snapshot_stmt = (
-            select(
-                CodeSnapshot.lesson_slug,
-                func.count().label("snapshots_count"),
-            )
-            .where(
-                CodeSnapshot.visitor_id == visitor_id,
-                CodeSnapshot.lesson_slug.in_(incomplete_with_activity),
-                CodeSnapshot.is_deleted == False,  # noqa: E712
-            )
-            .group_by(CodeSnapshot.lesson_slug)
-        )
-        snapshot_result = await self.db.execute(snapshot_stmt)
-        snapshot_rows = snapshot_result.all()
-        snapshot_map = {row.lesson_slug: row.snapshots_count for row in snapshot_rows}
-
         # 获取最后活动时间
         last_activity_stmt = select(last_activity_subq).where(
             last_activity_subq.c.lesson_slug.in_(incomplete_with_activity)
@@ -464,7 +449,6 @@ class AnalyticsRepository:
                     "lesson_slug": slug,
                     "code_runs": stats["code_runs"],
                     "ai_helps": stats["ai_helps"],
-                    "snapshots_count": snapshot_map.get(slug, 0),
                     "last_activity_time": last_activity_map.get(slug),
                 }
             )

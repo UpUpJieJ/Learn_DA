@@ -128,6 +128,24 @@ class AgentInteractionRepository:
         result = await self.db.execute(stmt)
         return result.scalar() or 0
 
+    async def count_by_visitor_and_lesson(
+        self, visitor_id: str, lesson_slug: str
+    ) -> int:
+        """统计 visitor 在某课程上的求助交互数（供 hint level 分级用）。
+
+        包含当前已预留但未回填指标的交互（同事务内已 flush），
+        因此首次求助计为 1。
+        """
+        from sqlalchemy import func
+
+        stmt = select(func.count(AgentInteraction.id)).where(
+            AgentInteraction.visitor_id == visitor_id,
+            AgentInteraction.lesson_slug == lesson_slug,
+            AgentInteraction.is_deleted == False,  # noqa: E712
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar() or 0
+
     async def get_recent_by_lesson(
         self,
         visitor_id: str,

@@ -1,7 +1,7 @@
 """阶段 3 Task 4：推荐读取证据聚合 + Dashboard 指标测试。
 
 覆盖计划要求：
-- Agent 多次求助但无 Attempt（code_runs=0/snapshots=0）不触发回补推荐；
+- Agent 多次求助但无 Attempt（code_runs=0）不触发回补推荐；
 - 验证失败 + 后续通过可计算"帮助后通过"；
 - 同一 Interaction 重放不改变推荐或 Dashboard 聚合（幂等保证）；
 - RecommendationService 仍是唯一排序来源，Agent 只提供证据。
@@ -33,9 +33,6 @@ class FakeAnalyticsService:
         return self._stats.get(
             lesson_slug, {"codeRuns": 0, "aiHelps": 0, "completed": False}
         )
-
-    async def get_lesson_snapshots_count(self, visitor_id, lesson_slug):
-        return self._stats.get(lesson_slug, {}).get("snapshots", 0)
 
     async def get_user_profile(self, visitor_id):
         return {}
@@ -88,7 +85,7 @@ def _make_service(stats=None, interaction_repo=None):
 class TestAiHelpWithoutPracticeNoReview:
     @pytest.mark.asyncio
     async def test_ai_helps_without_code_runs_no_review(self):
-        """多次求助但 code_runs=0/snapshots=0 不触发回补。"""
+        """多次求助但 code_runs=0 不触发回补。"""
         service = _make_service(
             stats={"current": {"codeRuns": 0, "aiHelps": 5, "completed": False}}
         )

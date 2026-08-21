@@ -97,8 +97,9 @@ class AgentService:
         interaction_id, created = await self._reserve_interaction(
             visitor_id=visitor_id or "", evidence=evidence
         )
+        hint_level = await self._resolve_hint_level(payload, visitor_id, evidence)
         if not created:
-            return self._duplicate_response(evidence, payload, interaction_id)
+            return self._duplicate_response(evidence, interaction_id, hint_level)
         result = await self._complete(messages)
         # 单次请求的路由/检索/LLM 指标通过 request_id 与 [llm] 日志串联
         log.info(
@@ -124,14 +125,14 @@ class AgentService:
                 input_tokens=result.prompt_tokens,
                 output_tokens=result.completion_tokens,
                 fallback_reason=None,
-                hint_level=self._estimate_hint_level(payload),
+                hint_level=hint_level,
             )
             return AgentChatData(
                 content=result.content,
                 model=self.model,
                 used_fallback=False,
                 interaction_id=interaction_id,
-                teaching_feedback=self._maybe_feedback(evidence, payload),
+                teaching_feedback=self._maybe_feedback(evidence, hint_level),
             )
         fallback_content = get_agent_tool(tool_name).fallback_content
         interaction_id = await self._persist_interaction(
@@ -142,7 +143,7 @@ class AgentService:
                 self.knowledge_retriever, "last_retrieval_mode", None
             ),
             fallback_reason=result.error_reason,
-            hint_level=self._estimate_hint_level(payload),
+            hint_level=hint_level,
         )
         return AgentChatData(
             content=fallback_content,
@@ -150,7 +151,7 @@ class AgentService:
             used_fallback=True,
             fallback_reason=result.error_reason,
             interaction_id=interaction_id,
-            teaching_feedback=self._maybe_feedback(evidence, payload),
+            teaching_feedback=self._maybe_feedback(evidence, hint_level),
         )
 
     async def chat_with_tools(
@@ -192,8 +193,9 @@ class AgentService:
         interaction_id, created = await self._reserve_interaction(
             visitor_id=visitor_id, evidence=evidence
         )
+        hint_level = await self._resolve_hint_level(payload, visitor_id, evidence)
         if not created:
-            return self._duplicate_response(evidence, payload, interaction_id)
+            return self._duplicate_response(evidence, interaction_id, hint_level)
 
         max_rounds = settings.AGENT_FC_MAX_TOOL_ROUNDS
         fallback_reason: str = "upstream_error"
@@ -254,14 +256,14 @@ class AgentService:
                     input_tokens=result.prompt_tokens,
                     output_tokens=result.completion_tokens,
                     fallback_reason=None,
-                    hint_level=self._estimate_hint_level(payload),
+                    hint_level=hint_level,
                 )
                 return AgentChatData(
                     content=result.content,
                     model=self.model,
                     used_fallback=False,
                     interaction_id=interaction_id,
-                    teaching_feedback=self._maybe_feedback(evidence, payload),
+                    teaching_feedback=self._maybe_feedback(evidence, hint_level),
                 )
             # 强制直答轮仍返回 tool_calls / 无有效内容：不再给机会
             break
@@ -285,7 +287,7 @@ class AgentService:
             ),
             tool_names=executor.called_tools,
             fallback_reason=fallback_reason,
-            hint_level=self._estimate_hint_level(payload),
+            hint_level=hint_level,
         )
         return AgentChatData(
             content=fallback_content,
@@ -293,7 +295,7 @@ class AgentService:
             used_fallback=True,
             fallback_reason=fallback_reason,
             interaction_id=interaction_id,
-            teaching_feedback=self._maybe_feedback(evidence, payload),
+            teaching_feedback=self._maybe_feedback(evidence, hint_level),
         )
 
     @staticmethod
@@ -435,32 +437,54 @@ class AgentService:
 
     @staticmethod
     def _estimate_hint_level(payload: AgentChatRequest) -> int:
-        """根据对话历史估算分级提示层级（连续求助逐级升高）。
+        """降级路径：用客户端 history 的 user 消息数估算分级提示层级。
 
-        Task 3 将持久化 AgentInteraction 后可改为按真实连续求助计数；
-        此处以当前请求 history 中的 user 消息数作为近似代理：
+        仅在服务端连续求助计数不可用（无 repo/身份/课程，或查询失败）
+        时作为近似；权威来源见 _resolve_hint_level。
         0-1 条 -> Level 1，2-3 条 -> Level 2，4+ 条 -> Level 3。
         """
         user_turns = sum(1 for m in payload.history if m.role == "user")
         return max(1, min(3, 1 + user_turns // 2))
 
+    async def _resolve_hint_level(
+        self,
+        payload: AgentChatRequest,
+        visitor_id: str | None,
+        evidence: AgentLearningEvidence | None,
+    ) -> int:
+        """分级提示层级：优先服务端真实连续求助计数。
+
+        AgentInteraction 已持久化，按当前课程统计服务端求助次数（含本次
+        已预留的交互）：1-2 次 -> Level 1，3-4 次 -> Level 2，5+ -> Level 3。
+        不再信任客户端 history（可被伪造/清空）。
+        """
+        lesson_slug = evidence.lesson_slug if evidence else None
+        if self.interaction_repo is not None and visitor_id and lesson_slug:
+            try:
+                helps = await self.interaction_repo.count_by_visitor_and_lesson(
+                    visitor_id, lesson_slug
+                )
+                if helps > 0:
+                    return max(1, min(3, 1 + (helps - 1) // 2))
+            except Exception:
+                log.exception("[agent] 求助计数查询失败，降级为 history 估算")
+        return self._estimate_hint_level(payload)
+
     def _maybe_feedback(
         self,
         evidence: AgentLearningEvidence | None,
-        payload: AgentChatRequest,
+        hint_level: int | None,
     ) -> "TeachingFeedback | None":
         """有证据时构造结构化教学反馈；无证据时返回 None。"""
         if evidence is None:
             return None
-        return build_teaching_feedback(
-            evidence, hint_level=self._estimate_hint_level(payload)
-        )
+        return build_teaching_feedback(evidence, hint_level=hint_level or 1)
 
     def _duplicate_response(
         self,
         evidence: AgentLearningEvidence | None,
-        payload: AgentChatRequest,
         interaction_id: int | None,
+        hint_level: int | None,
     ) -> AgentChatData:
         """避免同一 request ID 重放时再次调用模型。
 
@@ -473,7 +497,7 @@ class AgentService:
             used_fallback=True,
             fallback_reason="duplicate_request",
             interaction_id=interaction_id,
-            teaching_feedback=self._maybe_feedback(evidence, payload),
+            teaching_feedback=self._maybe_feedback(evidence, hint_level),
         )
 
     # ── 阶段 3 Task 3：交互审计与 ai_help 关联 ───────────────

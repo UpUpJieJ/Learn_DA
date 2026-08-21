@@ -993,10 +993,9 @@ class RecommendationService:
             lesson_meta = metadata_map[lesson_slug]
 
             # 计算 base_engagement_score (0-100, 越低越好)
-            engagement_level = (
-                lesson_data["code_runs"]
-                + (lesson_data["ai_helps"] * 2)
-                + (lesson_data["snapshots_count"] * 3)
+            # 快照信号已移除：CodeSnapshot 表不再增长，只保留 code_runs / ai_helps
+            engagement_level = lesson_data["code_runs"] + (
+                lesson_data["ai_helps"] * 2
             )
             base_engagement_score = max(0, 100 - engagement_level * 5)
 
@@ -1033,7 +1032,6 @@ class RecommendationService:
                     "resume_cost": resume_cost,
                     "code_runs": lesson_data["code_runs"],
                     "ai_helps": lesson_data["ai_helps"],
-                    "snapshots_count": lesson_data["snapshots_count"],
                     "days_since_activity": (
                         days_since_activity
                         if lesson_data["last_activity_time"]
@@ -1050,25 +1048,20 @@ class RecommendationService:
 
         # 选择推荐理由模板
         reason_templates = [
-            "你在《{lesson_title}》中已经运行了 {code_runs} 次代码，写了 {snapshots_count} 个版本，继续完成它只需要一小步！",
+            "你在《{lesson_title}》中已经运行了 {code_runs} 次代码，继续完成它只需要一小步！",
             "《{lesson_title}》是你 {days_ago} 天前尝试的，当时已经运行了 {code_runs} 次代码，趁记忆还新鲜，现在是完成它的好时机。",
             "你在《{lesson_title}》中使用了 {ai_helps} 次 AI 助手，说明你对这个主题很感兴趣。现在回来完成它，之前的努力不会白费！",
             "《{lesson_title}》是你最近尝试但未完成的课程，已经有 {code_runs} 次代码运行记录。从这里继续，成本最低、效果最好。",
-            "你在《{lesson_title}》中保存了 {snapshots_count} 个代码快照，说明你已经投入了不少精力。现在是收获成果的时候了！",
             "距离上次学习《{lesson_title}》已经 {days_ago} 天了，但你之前的 {code_runs} 次尝试还历历在目。现在回来，轻松拿下它！",
             "《{lesson_title}》是你尝试过但未完成的课程中，恢复成本最低的一个。你已经运行了 {code_runs} 次代码，继续下去就能完成！",
             "你在《{lesson_title}》中的学习轨迹显示：{code_runs} 次代码运行、{ai_helps} 次 AI 求助。这些努力值得一个完美的结局。",
-            "《{lesson_title}》是你 {days_ago} 天前开始的，虽然还没完成，但你已经保存了 {snapshots_count} 个版本。现在是时候画上句号了！",
             "根据你的学习数据，《{lesson_title}》是最容易恢复的课程：难度适中、记忆新鲜、已有 {code_runs} 次实践基础。",
         ]
 
         # 根据数据特征选择最合适的模板（确定性选择，不用 random）
-        if best_candidate["snapshots_count"] >= 3:
-            # 强调快照的模板
-            reason_template = reason_templates[4]
-        elif best_candidate["ai_helps"] >= 2:
+        if best_candidate["ai_helps"] >= 2:
             # 强调 AI 助手的模板
-            reason_template = reason_templates[7]
+            reason_template = reason_templates[6]
         elif (
             best_candidate["days_since_activity"]
             and best_candidate["days_since_activity"] <= 7
@@ -1084,7 +1077,6 @@ class RecommendationService:
             lesson_title=best_candidate["lesson_meta"].title,
             code_runs=best_candidate["code_runs"],
             ai_helps=best_candidate["ai_helps"],
-            snapshots_count=best_candidate["snapshots_count"],
             days_ago=best_candidate["days_since_activity"] or days_since_last_active,
         )
 
@@ -1100,7 +1092,6 @@ class RecommendationService:
                 "resume_cost": best_candidate["resume_cost"],
                 "code_runs": best_candidate["code_runs"],
                 "ai_helps": best_candidate["ai_helps"],
-                "snapshots_count": best_candidate["snapshots_count"],
                 "days_since_last_active": days_since_last_active,
             },
         )

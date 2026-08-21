@@ -1,6 +1,6 @@
 # AGENTS.md — Learn DA 项目上下文
 
-> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-20。
+> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-08-21。
 
 ## 项目是什么
 
@@ -8,19 +8,20 @@
 技术栈：Vue 3 + Vite + TS + Pinia（`learn_da_vue`）、FastAPI + Python 3.12（`learn_da`）、独立 Runner 沙箱服务（`learn_da_runner`）。
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
-## 当前状态（截至 2026-08-20）
+## 当前状态（截至 2026-08-21）
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **练习已覆盖全部 13 门课**（2026-08-20，每课 1 题）：validator 只用白名单（dataframe_rows / stdout_exact），答案与 starter 均经本地真实判定链路双向验证；沙箱镜像新增 pyarrow（`Dockerfile.sandbox`，支撑第 11 课 to_arrow 桥），**部署时需重建沙箱镜像**。
 - **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
 - **CI 暂缓**（2026-08-21）：最小 CI 门禁已编写并本地验证（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build），但 GitHub 账户因账单锁定无法运行 Actions，workflow 文件已暂时移除；账单解锁后用 `git checkout ac779dc -- .github/workflows/ci.yml` 恢复。在此之前，**提交前必须本地手动跑全部测试**（回到阶段 4 时的约定）。
-- 测试基线：后端 **390 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
+- **P1 收尾完成**（2026-08-21）：① 回流建议信号移除对 CodeSnapshot 表的读取（快照功能已删，死表不再参与推荐打分，只留 code_runs/ai_helps）；② Agent 分级提示 hint_level 改为**服务端真实连续求助计数**（按课程统计 AgentInteraction，1-2 次 L1 / 3-4 次 L2 / 5+ L3），不再信任客户端 history（可伪造/清空）；无 repo/身份/课程或查询失败时降级为 history 估算。
+- 测试基线：后端 **399 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
   - LLM 兜底配置改名：`LLM_*` 为主配置，`FALLBACK_LLM_*` 为兜底（`effective_llm_*` 统一解析）。
   - 修复明文 HTTP 下 `crypto.randomUUID` 崩溃：前端统一走 `src/lib/uuid.ts` 的 `randomId()`（兼容非安全上下文）。
   - **删除示例体系**（`/examples` API、content/examples、Playground 示例选择器）；课程自带 `codeExample` 保留。
-  - **删除快照功能**（保存按钮/快照 tab//analytics/snapshot(s) 端点）；`CodeSnapshot` 表保留（回流建议读历史数据）。
+  - **删除快照功能**（保存按钮/快照 tab//analytics/snapshot(s) 端点）；`CodeSnapshot` 表保留。回流建议信号已于 2026-08-21 移除对该表的读取，表仅供历史数据留存。
   - 练习 validator 加固：polars-basics 改 `dataframe_rows`、duckdb-sql-foundations 改 `stdout_exact`，堵住"全表输出也判通过"的漏洞。
   - **内容 YAML fail-closed 加固**：frontmatter 坏 YAML / 缺失 / 根节点非映射、catalog.yml 损坏均显式报错并阻断启动（`parse_frontmatter` 不再静默返回空），修复坏课程被静默跳过"凭空消失"的问题。改课程 frontmatter 后仍建议跑 `scripts/content_lint.py` 确认课程数 = 13。
 

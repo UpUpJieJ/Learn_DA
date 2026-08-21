@@ -21,12 +21,10 @@ class FakeAnalyticsService:
         *,
         profile: dict | None = None,
         stats_by_lesson: dict[str, dict] | None = None,
-        snapshots_by_lesson: dict[str, int] | None = None,
         incomplete_lessons: list[dict] | None = None,
     ):
         self.profile = profile or {}
         self.stats_by_lesson = stats_by_lesson or {}
-        self.snapshots_by_lesson = snapshots_by_lesson or {}
         self.incomplete_lessons = incomplete_lessons or []
 
     async def get_lesson_specific_stats(self, visitor_id: str, lesson_slug: str):
@@ -34,9 +32,6 @@ class FakeAnalyticsService:
             lesson_slug,
             {"codeRuns": 0, "aiHelps": 0, "completed": False},
         )
-
-    async def get_lesson_snapshots_count(self, visitor_id: str, lesson_slug: str):
-        return self.snapshots_by_lesson.get(lesson_slug, 0)
 
     async def get_user_profile(self, visitor_id: str):
         return self.profile
@@ -270,14 +265,12 @@ async def test_resume_recommendation_selects_lowest_resume_cost():
                 "lesson_slug": "intro",
                 "code_runs": 1,
                 "ai_helps": 0,
-                "snapshots_count": 0,
                 "last_activity_time": datetime.now(timezone.utc) - timedelta(days=1),
             },
             {
                 "lesson_slug": "current",
-                "code_runs": 6,
+                "code_runs": 10,
                 "ai_helps": 2,
-                "snapshots_count": 2,
                 "last_activity_time": datetime.now(timezone.utc) - timedelta(days=8),
             },
         ],

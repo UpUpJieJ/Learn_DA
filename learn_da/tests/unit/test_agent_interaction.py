@@ -423,3 +423,110 @@ class TestServiceFeedbackAndAiHelp:
             assert event_req.lesson_slug == "evidence-lesson"
         finally:
             request_id_var.reset(token)
+
+
+# =====================================================
+# hint level：服务端真实连续求助计数
+# =====================================================
+
+
+class TestResolveHintLevel:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("helps,expected", [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (9, 3)])
+    async def test_level_from_server_help_count(
+        self, interaction_setup, helps, expected
+    ):
+        """1-2 次求助 -> L1，3-4 次 -> L2，5+ -> L3（以服务端计数为准）。"""
+        from app.agent.evidence import AgentLearningEvidence
+        from app.agent.schemas import AgentChatRequest
+        from app.agent.service import AgentService
+
+        repo, db = interaction_setup
+        for i in range(helps):
+            await repo.get_or_create(
+                visitor_id="v1", request_id=f"req-{i}", lesson_slug="l1"
+            )
+
+        service = AgentService(interaction_repo=repo)
+        evidence = AgentLearningEvidence(state="execution_failed", lesson_slug="l1")
+        payload = AgentChatRequest(message="帮我")
+        assert await service._resolve_hint_level(payload, "v1", evidence) == expected
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_history_without_lesson(self, interaction_setup):
+        """无课程证据时降级为 history 估算（4 条 user -> L3）。"""
+        from app.agent.schemas import AgentChatMessage, AgentChatRequest
+        from app.agent.service import AgentService
+
+        repo, _ = interaction_setup
+        service = AgentService(interaction_repo=repo)
+        payload = AgentChatRequest(
+            message="帮我",
+            history=[
+                AgentChatMessage(role="user", content=f"q{i}") for i in range(4)
+            ],
+        )
+        assert await service._resolve_hint_level(payload, "v1", None) == 3
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_count_query_fails(self):
+        """计数查询失败时不阻断对话，降级为 history 估算。"""
+        from app.agent.evidence import AgentLearningEvidence
+        from app.agent.schemas import AgentChatRequest
+        from app.agent.service import AgentService
+
+        repo = MagicMock()
+        repo.count_by_visitor_and_lesson = AsyncMock(side_effect=RuntimeError("db"))
+        service = AgentService(interaction_repo=repo)
+        evidence = AgentLearningEvidence(state="execution_failed", lesson_slug="l1")
+        payload = AgentChatRequest(message="帮我")
+        assert await service._resolve_hint_level(payload, "v1", evidence) == 1
+
+    @pytest.mark.asyncio
+    async def test_chat_persists_server_side_hint_level(self):
+        """chat() 写入的 hint_level 来自服务端计数，而非客户端 history。"""
+        from app.agent.llm_client import LLMResult
+        from app.agent.schemas import AgentChatRequest
+        from app.agent.service import AgentService
+        from app.utils.logger import request_id_var
+
+        interaction = AgentInteraction()
+        interaction.id = 1
+        interaction.visitor_id = "v1"
+        interaction.request_id = "req-h"
+
+        repo = MagicMock()
+        repo.get_or_create = AsyncMock(return_value=(interaction, True))
+        repo.fill_metrics = AsyncMock()
+        # 服务端已有 3 次求助 -> L2；客户端 history 为空（若信 history 会得 L1）
+        repo.count_by_visitor_and_lesson = AsyncMock(return_value=3)
+
+        service = AgentService(interaction_repo=repo)
+        service._retrieve_knowledge = AsyncMock(return_value=("", 0))  # type: ignore[method-assign]
+        service._inject_evidence = AsyncMock(  # type: ignore[method-assign]
+            side_effect=lambda messages, payload, visitor_id: _with_evidence(messages)
+        )
+        service._complete = AsyncMock(  # type: ignore[method-assign]
+            return_value=LLMResult(content="answer", error_reason=None, latency_ms=1)
+        )
+
+        token = request_id_var.set("req-h")
+        try:
+            data = await service.chat(
+                AgentChatRequest(message="帮我"), visitor_id="v1"
+            )
+        finally:
+            request_id_var.reset(token)
+
+        assert repo.fill_metrics.await_args.kwargs["hint_level"] == 2
+        assert data.teaching_feedback is not None
+        assert data.teaching_feedback.hint_level == 2
+
+
+def _with_evidence(messages):
+    from app.agent.evidence import AgentLearningEvidence
+
+    evidence = AgentLearningEvidence(
+        state="execution_failed", lesson_slug="l1", attempt_id=1
+    )
+    return messages, evidence

@@ -65,7 +65,6 @@ class TestRecommendationPracticeSignal:
             "aiHelps": 0,
             "completed": False,
         }
-        mock_analytics.get_lesson_snapshots_count.return_value = 0
 
         mock_learner_state = AsyncMock()
         mock_learner_state.get_completed_lessons.return_value = ["polars-basics"]
