@@ -23,8 +23,26 @@ RUN chmod +x /tmp/setup-debian-apt-mirrors.sh && APT_MIRROR=${APT_MIRROR} /tmp/s
 # Create dedicated non-root user with UID/GID 65532 (Spec §3.2).
 RUN groupadd -g 65532 sandbox && useradd -r -u 65532 -g sandbox sandbox
 
+# 版本锁定：沙箱里跑出来的 stdout/DataFrame 必须和 Backend 判定时用到的
+# 版本一致，否则会出现"本地过、线上不过"。polars/duckdb 的版本与
+# learn_da/pyproject.toml 的精确约束保持一致（tests/test_dependency_pins.py 守着）；
+# 升级时两处一起改，并跑 scripts/verify_exercises.py 复核 13 课。
+ARG PIP_POLARS_VERSION=1.39.3
+ARG PIP_DUCKDB_VERSION=1.5.1
+ARG PIP_PANDAS_VERSION=3.0.6
+ARG PIP_PYARROW_VERSION=25.0.1
+
 RUN pip install --upgrade pip -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
     pip install --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" \
-    polars duckdb pandas pyarrow
+    "polars==${PIP_POLARS_VERSION}" \
+    "duckdb==${PIP_DUCKDB_VERSION}" \
+    "pandas==${PIP_PANDAS_VERSION}" \
+    "pyarrow==${PIP_PYARROW_VERSION}"
+
+# 把实际装上的版本写进构建日志，镜像漂移时一眼可见
+RUN python -c "import platform, polars, duckdb, pandas, pyarrow; \
+print('sandbox python', platform.python_version()); \
+print('polars', polars.__version__); print('duckdb', duckdb.__version__); \
+print('pandas', pandas.__version__); print('pyarrow', pyarrow.__version__)"
 
 USER 65532:65532

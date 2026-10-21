@@ -22,8 +22,10 @@ dependencies = [
     "alembic>=1.13.1",
     "fastapi-utils>=0.8.0",
     "typing-inspect>=0.9.0",
-    "polars>=1.39.3",
-    "duckdb>=1.5.1",
+    # 精确锁定：练习 validator 判定与沙箱执行的版本必须一致
+    # （Dockerfile.sandbox 的 PIP_POLARS_VERSION / PIP_DUCKDB_VERSION 同步，见 tests/test_dependency_pins.py）
+    "polars==1.39.3",
+    "duckdb==1.5.1",
     "black>=25.12.0",
 ]
 
