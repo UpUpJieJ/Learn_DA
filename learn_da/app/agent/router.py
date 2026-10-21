@@ -25,7 +25,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 def _fc_enabled() -> bool:
     """FC 路径开关：flag 开启且有 key 才走 FC，否则保持阶段 ③ 旧路径。"""
-    return bool(settings.AGENT_FC_ENABLED and settings.effective_llm_api_key)
+    return bool(settings.AGENT_FC_ENABLED and settings.LLM_API_KEY)
 
 
 def get_knowledge_retriever(request: Request) -> KnowledgeRetriever:

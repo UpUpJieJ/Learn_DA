@@ -214,11 +214,8 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `PUBLIC_SCHEME` | `http` | 对外协议（http/https），决定会话 cookie 是否带 Secure；启用 HTTPS 时改 `https` |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./learn_da.db` | 数据库连接串 |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | 前端跨域白名单 |
-| `FALLBACK_LLM_API_KEY` | — | 兜底 LLM API 密钥（`LLM_API_KEY` 未设置时使用） |
-| `FALLBACK_LLM_BASE_URL` | — | 兜底 OpenAI 兼容接口地址 |
-| `FALLBACK_LLM_MODEL` | `gpt-4o-mini` | 兜底 LLM 模型 |
-| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — | 主 LLM 配置（优先于 `FALLBACK_LLM_*`） |
-| `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流 |
+| `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | — / — / `gpt-4o-mini` | LLM 配置（只有这一套；未配置 key 或调用失败时 Agent 确定性降级，不会切换到备用 key） |
+| `RATE_LIMIT_ENABLED` | `true` | 是否启用接口限流（关掉后全局与按路由的限流一并失效） |
 | `RECOMMENDATION_CODE_RUNS_THRESHOLD` | `5` | 触发回补建议的代码运行次数阈值 |
 | `RECOMMENDATION_AI_HELPS_THRESHOLD` | `3` | 触发回补建议的 AI 求助次数阈值 |
 | `RECOMMENDATION_REVIEW_COOLDOWN_SECONDS` | `86400` | 同一用户同一课程重复触发回补建议的冷却时间 |

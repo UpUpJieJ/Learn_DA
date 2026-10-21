@@ -180,7 +180,7 @@ async def evaluate_intent_fc(verbose: bool, concurrency: int = 4) -> None:
     from app.agent.llm_client import LLMClient
     from config.settings import settings
 
-    api_key = settings.effective_llm_api_key
+    api_key = settings.LLM_API_KEY
     if not api_key:
         print("=" * 60)
         print("FC 意图评测：未配置 LLM key，跳过")
@@ -188,7 +188,7 @@ async def evaluate_intent_fc(verbose: bool, concurrency: int = 4) -> None:
 
     cases = load_cases("agent_intent_cases.yml")
     client = AsyncOpenAI(
-        api_key=api_key, base_url=settings.effective_llm_base_url)
+        api_key=api_key, base_url=settings.LLM_BASE_URL)
     llm = LLMClient(client=client)
     semaphore = asyncio.Semaphore(concurrency)
 

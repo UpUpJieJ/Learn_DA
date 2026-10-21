@@ -49,12 +49,12 @@ async def lifespan(app: FastAPI):
             embedding_cache=EmbeddingCache()
         )
 
-        if settings.effective_llm_api_key:
+        if settings.LLM_API_KEY:
             from openai import AsyncOpenAI
 
             app.state.agent_llm_client = AsyncOpenAI(
-                api_key=settings.effective_llm_api_key,
-                base_url=settings.effective_llm_base_url,
+                api_key=settings.LLM_API_KEY,
+                base_url=settings.LLM_BASE_URL,
             )
 
     yield

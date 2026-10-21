@@ -71,7 +71,7 @@ class LLMClient:
         backoff_base_seconds: float = 0.5,
     ) -> None:
         self._client = client
-        self.model = model or settings.effective_llm_model
+        self.model = model or settings.LLM_MODEL
         self.timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None

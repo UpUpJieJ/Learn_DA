@@ -51,15 +51,9 @@ services:
       RUNNER_URL: ${RUNNER_URL:?Set the private Runner URL in deploy/app.env}
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/app.env}
       RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-7}
-      SANDBOX_DOCKER_ENABLED: "false"
-      SANDBOX_LOCAL_ENABLED: "false"
-      SANDBOX_USE_MOCK_WHEN_DISABLED: "false"
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
-      FALLBACK_LLM_API_KEY: ${FALLBACK_LLM_API_KEY:-}
-      FALLBACK_LLM_BASE_URL: ${FALLBACK_LLM_BASE_URL:-}
-      FALLBACK_LLM_MODEL: ${FALLBACK_LLM_MODEL:-gpt-4o-mini}
       SESSION_SECRET: ${SESSION_SECRET:?Set a 32+ character session secret in deploy/app.env}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
     volumes:

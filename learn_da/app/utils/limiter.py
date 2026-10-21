@@ -29,6 +29,13 @@ def _trusted_key_func(request: Request) -> str:
 # 创建全局共享的 limiter 实例
 limiter = Limiter(key_func=_trusted_key_func)
 
+# RATE_LIMIT_ENABLED 必须真正关掉限流：各路由的 @limiter.limit(...) 装饰器在
+# 缺少中间件时依然会独立计数并抛 429（中间件只负责全局默认限流与 429 响应格式）。
+# 因此把开关同步到 Limiter 自身的 enabled 标志，否则 RATE_LIMIT_ENABLED=False
+# 只是"不挂中间件"，按路由的限流照旧生效（2026-10-21 实测：全量跑 13 课练习时
+# 第 11 次请求被 429）。slowapi 的 limit 装饰器会检查该标志并直接放行。
+limiter.enabled = bool(settings.RATE_LIMIT_ENABLED)
+
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """

@@ -51,7 +51,7 @@ class AgentService:
         llm_client: AsyncOpenAI | None = None,
         interaction_repo: "AgentInteractionRepository | None" = None,
     ) -> None:
-        self.model = settings.effective_llm_model
+        self.model = settings.LLM_MODEL
         # 运行时由 router 依赖注入 lifespan 共享的 retriever（避免每请求重建）；
         # 默认自建仅供单测直接构造 AgentService 时使用。
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
@@ -339,7 +339,7 @@ class AgentService:
                 client=self.llm_client, model=self.model
             ).complete(messages, tools=tools, tool_choice=tool_choice)
 
-        api_key = settings.effective_llm_api_key
+        api_key = settings.LLM_API_KEY
         if not api_key:
             return await LLMClient(client=None, model=self.model).complete(
                 messages, tools=tools, tool_choice=tool_choice
@@ -347,7 +347,7 @@ class AgentService:
 
         temp_client = AsyncOpenAI(
             api_key=api_key,
-            base_url=settings.effective_llm_base_url,
+            base_url=settings.LLM_BASE_URL,
         )
         try:
             return await LLMClient(

@@ -15,10 +15,10 @@
 - **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
 - **CI 暂缓**（2026-08-21）：最小 CI 门禁已编写并本地验证（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build），但 GitHub 账户因账单锁定无法运行 Actions，workflow 文件已暂时移除；账单解锁后用 `git checkout ac779dc -- .github/workflows/ci.yml` 恢复。在此之前，**提交前必须本地手动跑全部测试**（回到阶段 4 时的约定）。
 - **P1 收尾完成**（2026-08-21）：① 回流建议信号移除对 CodeSnapshot 表的读取（快照功能已删，死表不再参与推荐打分，只留 code_runs/ai_helps）；② Agent 分级提示 hint_level 改为**服务端真实连续求助计数**（按课程统计 AgentInteraction，1-2 次 L1 / 3-4 次 L2 / 5+ L3），不再信任客户端 history（可伪造/清空）；无 repo/身份/课程或查询失败时降级为 history 估算。
-- 测试基线：后端 **399 项** pytest、Runner **17 项**、前端 **71 项** vitest 全绿。
+- 测试基线：后端 **409 项** pytest、Runner **29 项**、前端 **71 项** vitest 全绿（2026-10-21 更新；Runner 新增 local provider 12 项、后端新增依赖锁版本 8 项与限流开关 2 项）。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
-  - LLM 兜底配置改名：`LLM_*` 为主配置，`FALLBACK_LLM_*` 为兜底（`effective_llm_*` 统一解析）。
+  - LLM 只有一套配置 `LLM_*`；**`FALLBACK_LLM_*` 已删除**（2026-10-21，历史遗留的假兜底：只在主配置为空时生效，主配置存在但调用失败时不会切换）。调用失败时走 `usedFallback` 确定性降级，不会换 key。
   - 修复明文 HTTP 下 `crypto.randomUUID` 崩溃：前端统一走 `src/lib/uuid.ts` 的 `randomId()`（兼容非安全上下文）。
   - **删除示例体系**（`/examples` API、content/examples、Playground 示例选择器）；课程自带 `codeExample` 保留。
   - **删除快照功能**（保存按钮/快照 tab//analytics/snapshot(s) 端点）；`CodeSnapshot` 表保留。回流建议信号已于 2026-08-21 移除对该表的读取，表仅供历史数据留存。
@@ -58,6 +58,7 @@ bash deploy/acceptance.sh                 # 会写入一批验收数据
 - 生产执行 fail-closed：代码执行只走 Runner（`RUNNER_URL`），Runner 不可用时明确拒绝，不回退本地/mock。
 - **Runner 的执行后端二选一**（`learn_da_runner/runner/settings.py`）：`RUNNER_PROVIDER=docker`（默认，生产唯一选择，容器隔离）或 `local`（开发用宿主解释器：需 `RUNNER_ALLOW_LOCAL_EXECUTION=1`，且 `RUNNER_ENV`/`APP_ENV` 为 production 时 `build_provider()` 直接拒绝启动）。local **不是安全边界**（无网络隔离、无只读 fs），只用于本机没有 Docker 时跑通闭环；它沿用同一套超时/输出上限，并把 CRLF 归一成 LF、用 `-X utf8` 对齐 Linux 沙箱的文本行为。
 - Runner 的 token 解析顺序：进程环境 `RUNNER_TOKEN` > `.env`（`runner/settings.py`），所以只靠 `.env` 的本地跑法也能通过鉴权。
+- `RATE_LIMIT_ENABLED=False` 必须真的关掉限流：开关同步到 `limiter.enabled`（`app/utils/limiter.py`）。只在 `main.py` 跳过 `setup_limiter_middleware()` 是不够的——按路由的 `@limiter.limit(...)` 仍会独立计数并抛 429（2026-10-21 修复，`tests/unit/test_rate_limit_toggle.py` 守着）。
 
 ## 部署与运维
 

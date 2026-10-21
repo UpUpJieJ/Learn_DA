@@ -36,14 +36,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_ANALYTICS_WRITE: str = "30/minute"
     RATE_LIMIT_ANALYTICS_READ: str = "60/minute"
 
-    # LLM_* 为主配置；FALLBACK_LLM_* 仅在对应主配置未设置时生效（effective_llm_* 统一解析）
-    FALLBACK_LLM_API_KEY: Optional[str] = None
-    FALLBACK_LLM_BASE_URL: Optional[str] = None
-    FALLBACK_LLM_MODEL: str = "gpt-4o-mini"
+    # LLM 只有一套配置（历史遗留的 FALLBACK_LLM_* 已删除：它只在主配置为空时
+    # 生效，主配置存在但调用失败时不会切换，实际等于失效的"假兜底"）
     OPENAI_MAX_TURNS: int = 3
     LLM_API_KEY: Optional[str] = None
     LLM_BASE_URL: Optional[str] = None
-    LLM_MODEL: Optional[str] = None
+    LLM_MODEL: str = "gpt-4o-mini"
     LLM_ENABLE_THINKING: bool = False
     LLM_TIMEOUT_SECONDS: float = 60
     LLM_MAX_RETRIES: int = 1
@@ -93,18 +91,6 @@ class Settings(BaseSettings):
     @property
     def is_sqlite(self) -> bool:
         return self.DATABASE_URL.startswith("sqlite")
-
-    @property
-    def effective_llm_api_key(self) -> Optional[str]:
-        return self.LLM_API_KEY or self.FALLBACK_LLM_API_KEY
-
-    @property
-    def effective_llm_base_url(self) -> Optional[str]:
-        return self.LLM_BASE_URL or self.FALLBACK_LLM_BASE_URL
-
-    @property
-    def effective_llm_model(self) -> str:
-        return self.LLM_MODEL or self.FALLBACK_LLM_MODEL
 
     @field_validator("PUBLIC_SCHEME")
     @classmethod
