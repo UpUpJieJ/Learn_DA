@@ -201,3 +201,6 @@ coverage.xml
 
 .logs/
 .claude/
+
+# pytest 临时目录（--basetemp=.pytest_tmp 的产物，属于本地运行痕迹）
+.pytest_tmp/
