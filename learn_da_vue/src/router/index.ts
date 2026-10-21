@@ -36,6 +36,16 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    // 改版 M1：多 cell 任务式工作区（与旧 /learn/:slug 并存，灰度期两套入口）
+    path: '/lesson/:slug',
+    name: 'LessonWorkspace',
+    component: () => import('@/views/LessonWorkspace.vue'),
+    meta: {
+      title: '学习工作区',
+      keepAlive: false,
+    },
+  },
+  {
     path: '/playground/:slug?',
     name: 'Playground',
     component: () => import('@/views/Playground.vue'),

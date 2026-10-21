@@ -127,6 +127,21 @@ async def test_lessons_endpoint_returns_new_programming_topic(client):
 
 
 @pytest.mark.unit
+async def test_lessons_endpoint_exposes_has_workspace(client):
+    """前端靠 hasWorkspace 决定进工作区还是旧课程页。"""
+    resp = await client.get("/api/v1/lessons")
+    body = resp.json()
+
+    assert resp.status_code == 200
+    by_slug = {lesson["slug"]: lesson for lesson in body["data"]}
+    assert by_slug["polars-groupby"]["hasWorkspace"] is True
+    assert by_slug["python-functions"]["hasWorkspace"] is False
+
+    detail = await client.get("/api/v1/lessons/polars-groupby")
+    assert detail.json()["data"]["hasWorkspace"] is True
+
+
+@pytest.mark.unit
 async def test_catalog_endpoint_returns_platform_topics_and_tracks(client):
     resp = await client.get("/api/v1/catalog")
     body = resp.json()

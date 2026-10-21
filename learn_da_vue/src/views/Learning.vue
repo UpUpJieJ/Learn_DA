@@ -325,7 +325,9 @@ watch(
 // =====================================================
 
 function goToLesson(slug: string) {
-    router.push(`/learn/${slug}`);
+    // 改版 M1：带工作区的课优先进多 cell 工作区（没有 workspace 的老课仍进详情页）
+    const lesson = lessons.value.find((item) => item.slug === slug);
+    router.push(lesson?.hasWorkspace ? `/lesson/${slug}` : `/learn/${slug}`);
 }
 
 function selectCategory(category: LessonCategory | "all") {

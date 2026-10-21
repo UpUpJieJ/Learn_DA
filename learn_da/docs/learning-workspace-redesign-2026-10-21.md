@@ -446,8 +446,37 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
   - 起步代码提交 → `assertion_failed`，`t1-schema` 回传「缺少列 ['revenue', 'orders']（实际列：[…]）」，
     `t1-sorted` 因列不存在记 `error`（断言自身异常不算学员失败）。
   - 改 c2 → `staleFrom=c2`，`cells={c1:ok, c2:stale, c3:stale}`。
-- **仍未做**：前端接入（M3）、`frame_equal`/`sql_rows` 的真实 `refs` 来源（现为空字典，暂无课程使用）、
+- **仍未做**：`frame_equal`/`sql_rows` 的真实 `refs` 来源（现为空字典，暂无课程使用）、
   沙箱内预置数据集与运行时（当前 Docker 路径靠请求体 base64 传数据集，课程加载时 ≤8MB 合计）。
+
+### 11.3 M3 完成记录（2026-10-22，前端工作区 + 03 课样板接入）
+
+三栏工作区在浏览器里真实跑通：`/lesson/polars-groupby` → vite 代理 → 后端 8000 → Runner 8080（local provider）
+→ 真实 polars 读 `orders.csv`，t1/t2 全通过、改坏上游后断言失败并回显 `actual`。
+
+- **前端资产**：`learn_da_vue/src/api/workspace.ts`（5 个端点封装）、`src/stores/workspace.ts`
+  （Pinia：`snapshot/cells/tasks/runs/saveState/staleFrom`，编辑去抖 800ms 落库，`runCell`/`submitTask`
+  先占位再 flush 防并发，`requestId` 用 `lib/uuid` 的 `randomId()`）、`src/views/LessonWorkspace.vue`
+  （左任务列表 + 中单元格流 + 右任务详情，语义 token 全通过 `ui_lint`）。
+- **路由灰度**：新增 `/lesson/:slug`（工作区），与旧 `/learn/:slug` 并存；课程是否进工作区由后端
+  `LessonSummary.hasWorkspace`（`learn_da/app/learning/schemas.py`，来自 frontmatter 有无 `workspace:`）决定，
+  `Learning.vue` 的 `goToLesson()` 据此分流。
+- **单元格 UI**：运行 / 提交任务双按钮（提交是显式动作）、`StatusPill` 状态、`CodeOutput` 输出、
+  断言列表（✓/✗/– + `actual` 截断回显）、`staleFrom` 警示条（仅当 stale 起点不是第一格才提示）、
+  过期输出降透明并标注「结果已过期」（避免旧输出配新代码）、`Ctrl/⌘+Enter` 运行、`Shift+Enter` 换行。
+- **实测（headless Edge + CDP，`.tmp_verify/ws_cdp.py`）**：c1 运行 `(5000, 11)` 578ms →
+  c2 提交「任务 1/2」3 条断言全 ✓ → c3 提交「任务 2/2」2 条断言全 ✓ → 改坏 c2 重跑：`任务 0/2`、
+  `t1-schema` 回「缺少列 ['orders']（实际列：['region','revenue']）」、c3 降为「待执行」+ 警示条。
+  截图：`workspace-initial.png`、`workspace-t1-passed.png`、`workspace-all-passed.png`、`workspace-t1-failed.png`。
+- **发现的真 bug（已修）**：开发环境 `learn_da_vue/.env.development` 原来把 `VITE_API_BASE_URL` 指向
+  `http://127.0.0.1:8000/api/v1`，页面在 `localhost:5173` → 跨站请求，`SameSite=Lax` 的会话 cookie 不发送
+  → 每个请求都是新访客（`lesson_sessions` 连续出现不同 `visitor_id`，随后 `run` 报「会话不存在」）。
+  已改为 `/api/v1` 走 `vite.config.ts` 的代理（同源）。
+- **测试**：前端新增 `src/stores/__tests__/workspace.spec.ts`（9 项：加载/错误/编辑去抖/无变化不打网络/
+  提交先落库/并发守卫/失败复位/skipped 不算通过/重置），后端新增 `hasWorkspace` 断言。
+  基线：后端 **456** / Runner **39** / 前端 **112**。
+- **仍未做**：`/lab` 自由沙盒、`/report` 学习报告、其余 12 课迁移、教练侧栏接 `frame_equal` 建议动作
+  （`propose → 确认` 未接）、旧 `/learn/:slug` 与 `/playground` 下线（留到 P4）。
 
 ## 12. 测试策略
 

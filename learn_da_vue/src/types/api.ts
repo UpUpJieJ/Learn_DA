@@ -54,6 +54,8 @@ export interface LessonSummary {
     order: number;
     tags: string[];
     track: string;
+    /** 改版 M1：这课是否带可交互工作区（多 cell + 任务） */
+    hasWorkspace?: boolean;
 }
 
 export interface LessonDetail extends LessonSummary {

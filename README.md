@@ -139,6 +139,8 @@ npm run dev
 
 前端默认运行在 `http://127.0.0.1:5173`（**只监听 IPv6，用 `localhost` 访问**，`127.0.0.1` 会连接被拒），已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
 
+> `.env.development` 里的 `VITE_API_BASE_URL` 必须是 `/api/v1`（走代理、同源）。写成 `http://127.0.0.1:8000/api/v1` 会让请求变成跨站，`SameSite=Lax` 的会话 cookie 不随请求发送，每个请求都被当成新访客（工作区会报「会话不存在」，进度也存不住）。
+
 #### 前端 UI 约定（2026-10-21 起）
 
 - **只用语义 token**：颜色 `brand-* / ok-* / warn-* / err-* / ink-* / surface-* / line`，圆角 `rounded-card|control|pill`，阴影 `shadow-card|pop`，全部定义在 `src/assets/styles/main.css` 的 `@theme`。页面里不要直接写 `blue-500`、`emerald-100` 这类原色。
@@ -335,7 +337,7 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 
 设计与阶段计划见 [`learn_da/docs/learning-workspace-redesign-2026-10-21.md`](learn_da/docs/learning-workspace-redesign-2026-10-21.md)。
 
-### 学习工作区（改版 M1/M2，后端已可用）
+### 学习工作区（改版 M1/M2/M3）
 
 课程 frontmatter 可带 `workspace:` 块（多 cell + 任务 + 断言），后端提供会话式 API：
 
@@ -354,6 +356,11 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 cd learn_da
 .venv/Scripts/python.exe scripts/verify_workspace.py --base-url http://127.0.0.1:8000
 ```
+
+前端工作区在 `/lesson/<slug>`（例如 `http://localhost:5173/lesson/polars-groupby`）：左任务列表、
+中单元格流（运行 / 提交任务）、右任务目标。课程是否进工作区由后端 `hasWorkspace` 决定（frontmatter
+有 `workspace:` 的课程，课程列表点进去走 `/lesson/:slug`，其余仍走旧课程页）。编辑自动去抖 800ms 落库；
+改第 k 格后其自身与后续格标为「需执行」，上游改动会让已通过任务回到「需复核」。
 
 ---
 
@@ -382,7 +389,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ```bash
 cd learn_da_vue
-npm test -- --run      # vitest（103 项）
+npm test -- --run      # vitest（112 项）
 npm run type-check     # vue-tsc
 npm run lint:ui        # 视觉规范（新增违规即失败）
 npm run build          # 生产构建
@@ -395,13 +402,13 @@ npm run build          # 生产构建
 1. **开发环境**：按「快速开始」分别启动前后端，使用 SQLite 即可。
 2. **测试/预发布**：
    - 使用 Docker Compose 统一部署。
-   - 迁移至 MySQL 以支持并发写入。
+   - 仍是单机 SQLite（代码里没有 MySQL 适配，别按旧文档去改驱动）。
 3. **生产环境**：
    - 使用 `docker-compose.app.yml` 部署 Web 与 Backend，使用
      `docker-compose.runner.yml` 在专用主机部署 Runner。
    - 仅允许应用服务器通过私网访问 Runner 的 8080 端口；禁止公网暴露。
-   - 配置 HTTPS 反向代理、限流策略和持久化数据卷。
-   - 多个 Backend 副本时使用独立 MySQL，勿共享 SQLite 文件。
+   - 配置 HTTPS 反向代理（同时把 `PUBLIC_SCHEME` 改成 https）、限流策略和持久化数据卷。
+   - 多个 Backend 副本需要共享数据库，当前实现只支持单实例 + SQLite。
 
 ---
 

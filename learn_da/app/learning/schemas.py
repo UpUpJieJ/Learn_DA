@@ -20,6 +20,8 @@ class LessonSummary(BaseResponseModel):
     order: int = 0
     tags: list[str] = []
     track: str = ""
+    # 改版 M1：这课是否带可交互工作区（多 cell + 任务），前端据此给"进入工作区"入口
+    has_workspace: bool = False
 
 
 class LessonDetail(LessonSummary):
