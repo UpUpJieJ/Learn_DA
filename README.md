@@ -11,9 +11,9 @@
 核心特性：
 
 - **教程学习**：覆盖 Polars、DuckDB、组合实战与 Python 编程基础等主题，课程列表支持专题、难度与关键词过滤。
-- **交互式 Playground**：左侧 Monaco Editor（VSCode 同款）编写代码，右侧实时查看运行结果与数据预览，支持一键运行、清空、执行历史与按课程保存的本地草稿。
+- **交互式 Playground**：左侧代码编辑区（带行号、字号调节、Ctrl+Enter 运行）编写代码，右侧实时查看运行结果、数据预览与执行历史，草稿按课程保存在浏览器本地。
 - **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现（受限只读工具 + 硬步数上限，无 key 时确定性降级），支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
-- **安全执行策略**：开发环境默认优先使用本地/模拟执行；生产环境可开启 Docker 沙箱，限制资源与超时，隔离用户代码。
+- **安全执行策略**：代码执行只走独立 Runner 服务，默认在无网络、只读文件系统、非 root、带内存/CPU/进程数与超时限制的一次性容器里运行；Runner 不可用时后端明确返回 503，不回退本地执行。
 - **无登录本地模式**：无需账号即可使用核心功能；学习进度、界面偏好与 Playground 草稿保存在当前浏览器本地。
 
 ---
@@ -27,8 +27,8 @@
 | 前端交互层 | Vue 3 + Vite + TypeScript + TailwindCSS + Pinia | 用户界面、教程渲染、代码编辑、结果展示、Agent 对话 |
 | 后端服务层 | FastAPI + Python 3.12 + Uvicorn | 接口中转、业务逻辑、数据持久化、Agent 调度、沙箱通信 |
 | AI Agent 层 | 原生 OpenAI API（Function Calling） | 概念解释、代码生成、代码校验、对比分析、实战案例推荐 |
-| 安全执行层 | 本地执行 / Docker 容器隔离 / 模拟执行 | 运行用户代码，开发环境快速反馈，生产环境可启用资源配额与超时控制 |
-| 数据存储层 | SQLite（默认）/ MySQL（可选） | 教程内容、学习事件、练习尝试与交互审计 |
+| 安全执行层 | 独立 Runner 服务 + Docker 容器隔离（默认） / 宿主解释器（仅开发） | 运行用户代码，限制网络、资源与超时；生产只用容器隔离 |
+| 数据存储层 | SQLite（SQLAlchemy 异步 + Alembic 迁移） | 学习事件、练习尝试、交互审计与学习状态 |
 
 ---
 
@@ -95,7 +95,8 @@
 
 - **Python**：>= 3.12（后端）
 - **Node.js**：`^20.19.0 || >=22.12.0`（前端）
-- **Docker & Docker Compose**（可选，用于沙箱与一键部署）
+- **Docker**（生产必需：代码一律在 Runner 的沙箱容器里执行）
+- 本地开发没有 Docker 时可用 Runner 的 `RUNNER_PROVIDER=local` 模式跑通流程（见「本地无 Docker」小节，**仅开发用**）
 
 ### 后端启动
 
@@ -135,6 +136,44 @@ npm run dev
 ```
 
 前端默认运行在 `http://127.0.0.1:5173`，已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
+
+### Runner 启动（代码执行，必需）
+
+Playground、练习判定、Agent 的证据链都依赖 Runner；后端拿不到 Runner 时执行接口会返回 503。
+
+```bash
+cd learn_da_runner
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+uv sync
+cp .env.example .env                                # 写入 RUNNER_TOKEN（与 learn_da/.env 一致）
+
+# 有 Docker：构建沙箱镜像后按默认 docker provider 启动
+docker build -f ../learn_da/Dockerfile.sandbox -t polars-duckdb-sandbox:latest ../learn_da
+uvicorn runner.main:app --host 127.0.0.1 --port 8080
+```
+
+**本地无 Docker**（仅开发自测，不是安全边界）：Runner 可用宿主解释器执行代码，
+需要在 `learn_da_runner/.env` 里显式开启，并在 `learn_da/.env` 配同一个 `RUNNER_TOKEN`：
+
+```ini
+RUNNER_TOKEN=<与 learn_da/.env 相同>
+RUNNER_ENV=development
+RUNNER_PROVIDER=local
+RUNNER_ALLOW_LOCAL_EXECUTION=1
+RUNNER_LOCAL_PYTHON=<解释器绝对路径，需装好 polars/duckdb/pyarrow>
+```
+
+`RUNNER_ENV=production` 时 Runner 拒绝以 local 方式启动；生产必须用 docker provider。
+
+一键自检（13 门课的练习：starter 必须判不通过、标准解必须判通过）：
+
+```bash
+cd learn_da
+.venv/Scripts/python.exe scripts/verify_exercises.py --base-url http://127.0.0.1:8000
+```
+
+> 跑全量 13 课会触发 Playground 频率限制（默认 10 次/分钟），自检时把后端以
+> `RATE_LIMIT_ENABLED=False` 启动（该开关会连同按路由的限流一起关掉），或分批执行。
 
 ### Docker Compose 生产部署
 
@@ -206,8 +245,8 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 
 ### 2. Playground 代码实操
 
-- 基于 Monaco Editor，支持 Python 语法高亮与自动补全。
-- 用户代码提交至后端，开发环境可使用本地执行或模拟执行，生产环境建议启用 Docker 沙箱隔离执行。
+- 代码编辑区为带行号的 textarea（语法高亮由后端返回的结构化结果驱动，暂未接入 Monaco）。
+- 用户代码提交至后端，**一律转交 Runner 执行，Runner 不可用时明确拒绝**（fail-closed，不回退本地/模拟执行）。
 - 返回执行结果、标准输出、数据表格预览与报错信息。
 - 当前浏览器会按上下文保存 Playground 草稿：
   - 普通 Playground 使用 `default` 草稿。

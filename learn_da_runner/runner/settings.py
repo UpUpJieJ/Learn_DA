@@ -8,6 +8,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class RunnerSettings(BaseSettings):
     RUNNER_TOKEN: str = ""
     RUNNER_PORT: int = 8080
+    # Execution backend. "docker" is the only isolated option; "local" runs the
+    # snippet with a host interpreter and is development-only (see
+    # runner/local_provider.py). Local mode additionally requires
+    # RUNNER_ALLOW_LOCAL_EXECUTION=1 and is refused when RUNNER_ENV=production.
+    RUNNER_PROVIDER: str = "docker"
+    RUNNER_ALLOW_LOCAL_EXECUTION: bool = False
+    RUNNER_LOCAL_PYTHON: str = ""  # empty = the interpreter running the Runner
+    RUNNER_ENV: str = ""
     RUNNER_DOCKER_HOST: str | None = None  # None = local Docker socket
     RUNNER_DOCKER_IMAGE: str = "polars-duckdb-sandbox:latest"
     RUNNER_TIMEOUT_SECONDS: int = 5

@@ -37,6 +37,13 @@ cd learn_da_vue && npm test -- --run      # vitest
 npm run type-check                        # vue-tsc
 npm run build                             # 生产构建
 
+# Runner（learn_da_runner/，venv 在 learn_da_runner/.venv）
+cd learn_da_runner && .venv/Scripts/python.exe -m pytest -q
+.venv/Scripts/python.exe -m uvicorn runner.main:app --host 127.0.0.1 --port 8080
+
+# 13 课练习端到端自检（starter 必须判不通过、标准解必须判通过，需后端+Runner 都在跑）
+cd learn_da && .venv/Scripts/python.exe scripts/verify_exercises.py
+
 # 生产验收（服务器上或任何能访问目标主机的机器，需 curl + python3）
 bash deploy/acceptance.sh                 # 会写入一批验收数据
 ```
@@ -49,6 +56,8 @@ bash deploy/acceptance.sh                 # 会写入一批验收数据
 - 内容体系：`content/catalog.yml`（topics/tracks）+ `content/lessons/*.md` frontmatter；启动时构建共享 ContentIndex，**lint 错误 fail closed 阻断启动**（含 frontmatter 坏 YAML、catalog.yml 损坏，均显式报错不静默跳过）；课程图（prerequisites）校验无环。
 - 练习 validator 白名单：`stdout_exact` / `stdout_contains` / `dataframe_rows`（`app/practice/validator.py`）。**不要用 stdout_contains 判定"必须排除某些行"的场景**——它无法发现多余行。
 - 生产执行 fail-closed：代码执行只走 Runner（`RUNNER_URL`），Runner 不可用时明确拒绝，不回退本地/mock。
+- **Runner 的执行后端二选一**（`learn_da_runner/runner/settings.py`）：`RUNNER_PROVIDER=docker`（默认，生产唯一选择，容器隔离）或 `local`（开发用宿主解释器：需 `RUNNER_ALLOW_LOCAL_EXECUTION=1`，且 `RUNNER_ENV`/`APP_ENV` 为 production 时 `build_provider()` 直接拒绝启动）。local **不是安全边界**（无网络隔离、无只读 fs），只用于本机没有 Docker 时跑通闭环；它沿用同一套超时/输出上限，并把 CRLF 归一成 LF、用 `-X utf8` 对齐 Linux 沙箱的文本行为。
+- Runner 的 token 解析顺序：进程环境 `RUNNER_TOKEN` > `.env`（`runner/settings.py`），所以只靠 `.env` 的本地跑法也能通过鉴权。
 
 ## 部署与运维
 
