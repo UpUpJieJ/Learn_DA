@@ -1,0 +1,26 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 1282,
+      "rows": 0,
+      "sha256": "0ba881c9f03599187ab568843fd2d24288b74b109b878448ddeeeac193af644b"
+    },
+    "customers.csv": {
+      "bytes": 38007,
+      "rows": 800,
+      "sha256": "165b0b787178b12792362ec6a915c5d81d1bef08d7badb61cb2c300129c38b8c"
+    },
+    "orders.csv": {
+      "bytes": 365281,
+      "rows": 5000,
+      "sha256": "1b008685430e087138094eb0cc05cd19e2d1bd4453a6300ab7cb6215715b8496"
+    },
+    "products.csv": {
+      "bytes": 4546,
+      "rows": 120,
+      "sha256": "a3f1cb4e883656fafc490d247e6111efc6a12785863d04b11b3878d11d8319ef"
+    }
+  },
+  "generator": "scripts/build_datasets.py",
+  "seed": 20251021
+}

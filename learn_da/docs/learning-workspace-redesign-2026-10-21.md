@@ -223,6 +223,9 @@ assertions:
 
 约定：
 
+- `schema` 的 `columns` 默认是**包含**语义（列出必须存在的列，多出来的列不判错）；
+  加上 `exact: true` 才要求列顺序与集合完全一致——课程里校验"输出就这几列"时用它。
+  `dtypes` 只校验列出的列，类型名大小写不敏感（`Float64` / `float64` 等价）。
 - 断言**只读**：`expr_true` 在受限命名空间求值，禁止 `import`、文件写入（白名单 builtins）；
 - 断言失败必须给 `actual`（`repr`，截断 500 字符），这是"结构化诊断"的来源；
 - 单条断言超时 500ms，整体断言预算 2s；
@@ -396,6 +399,23 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 
 `exercise_attempts` 与新表并存；`test_security_settings` 等既有 409 项测试在 M1-M2 期间不删，
 新增测试与旧测试并行（迁移完成后再按模块清理）。
+
+### 11.1 M0 完成记录（2026-10-21）
+
+已落地，全部为新增代码，不触碰旧链路（后端 445 项 / Runner 29 项 / 前端 103 项通过）：
+
+- **数据集**：`learn_da/scripts/build_datasets.py`（`SEED=20251021`）生成
+  `learn_da/content/datasets/ecommerce/{orders,customers,products}.csv` + `README.md` + `manifest.json`
+  （orders 5000 行 / 365KB，合计约 409KB ≪ 5MB）。`--check` 校验仓库文件与生成器产物一致（sha256/字节/行数）。
+  测试 `learn_da/tests/test_build_datasets.py`（9 项）。
+- **断言 DSL**：`learn_da/app/practice/assertion_runtime.py`（求值实现，纯标准库，polars/duckdb 惰性导入）
+  + `learn_da/app/practice/assertions.py`（校验 / 生成尾巴 / 解析结果）。
+  测试 `learn_da/tests/unit/test_assertions_dsl.py`（27 项）。
+- **实测**：真实 Runner 跑"读 CSV(5000 行) → group_by 聚合 → 4 条断言"，标准解 4/4 passed（577ms），
+  把 `amount` 换成 `quantity` 后 a4 判失败并回传 actual（593ms）。
+- **发现（影响 M2）**：`POST /api/v1/playground/execute` 与 Runner 的 `code` 字段都是 `max_length=5000`，
+  内联运行时版本的程序约 10KB → 直接 422。所以 M2 的 `execute_session` 必须走"沙箱内预置
+  `assertion_runtime.py` + 按路径加载的紧凑尾巴"（约 300 字节），或单独放开该接口的长度上限。
 
 ## 12. 测试策略
 

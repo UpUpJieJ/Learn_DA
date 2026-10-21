@@ -53,14 +53,16 @@
 │   │   ├── learner_state/    # 服务端学习进度投影（唯一权威状态源）
 │   │   ├── learning/         # 教程内容接口与规则推荐
 │   │   ├── playground/       # Playground 业务逻辑与练习执行
-│   │   ├── practice/         # 可验证练习（尝试模型、断言判定、恢复）
+│   │   ├── practice/         # 可验证练习（尝试模型、旧 validator、v2 断言 DSL）
 │   │   ├── sandbox/          # 沙箱执行调度（Runner client）
 │   │   ├── middleware/       # CORS、安全头、访问日志中间件
 │   │   └── utils/            # 通用工具、自动路由注册、SlowAPI 限流
 │   ├── migrations/           # Alembic 数据库迁移
+│   ├── scripts/              # 内容校验、数据集生成、端到端自检
 │   ├── tests/                # 测试用例（pytest）
-│   └── content/              # 教程静态内容
+│   └── content/              # 教程静态内容（含 datasets/ 课程数据集）
 │
+└── learn_da_runner/          # 代码执行服务（Docker / local 两种后端）
 └── learn_da_vue/             # 前端（Frontend）
     ├── package.json          # Node 依赖
     ├── vite.config.ts        # Vite 构建配置（含 API 代理）
@@ -308,6 +310,30 @@ is_branch_point: false
 ```
 
 新增课程后，`/api/v1/catalog` 会返回新的主题/路径，`/api/v1/lessons?topic=programming&track=python_basics` 可按主题和路径筛选课程，前端学习中心会优先使用 catalog 动态生成专题入口。
+
+### 课程数据集与断言 DSL（改版 M0）
+
+课程用到的数据不再内联在正文里，而是放在 [`learn_da/content/datasets`](learn_da/content/datasets)：
+
+```bash
+cd learn_da
+.venv/Scripts/python.exe scripts/build_datasets.py           # 重新生成（固定 seed，字节可复现）
+.venv/Scripts/python.exe scripts/build_datasets.py --check    # 只校验仓库文件与生成器产物是否一致
+```
+
+**不要手改数据集文件**——它们和 `manifest.json` 里的 sha256 由生成器决定，改动会在 `--check` 和测试里报 drift。
+
+判定侧新增了 v2 断言 DSL（`learn_da/app/practice/assertion_runtime.py` + `learn_da/app/practice/assertions.py`），
+支持 `expr_true` / `frame_equal` / `schema` / `sql_rows` 四种断言，失败时回传被截断的 `actual` 供诊断。
+注意执行接口的 `code` 上限是 5000 字符，追加断言时要用按路径加载的紧凑尾巴：
+
+```python
+from app.practice.assertions import render_assertion_source
+
+footer = render_assertion_source(assertions, runtime_path="/app/app/practice/assertion_runtime.py")
+```
+
+设计与阶段计划见 [`learn_da/docs/learning-workspace-redesign-2026-10-21.md`](learn_da/docs/learning-workspace-redesign-2026-10-21.md)。
 
 ---
 
