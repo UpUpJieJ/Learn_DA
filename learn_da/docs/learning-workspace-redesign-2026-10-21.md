@@ -1,0 +1,535 @@
+# 学习工作区重设计：Workspace + Task + Assertion + Coach
+
+> 状态：设计稿（未开工）。日期：2026-10-21。
+> 相关现状：`learn_da/app/practice/validator.py`、`learn_da/app/agent/evidence.py`、
+> `learn_da/app/playground/schemas.py`、`learn_da_vue/src/views/Playground.vue`、
+> `learn_da_vue/src/views/LessonDetail.vue`、`learn_da_vue/src/components/agent/AgentPanel.vue`。
+
+## 0. 已定决策（2026-10-21，用户确认）
+
+| # | 决策 | 选择 | 含义 |
+|---|---|---|---|
+| D1 | 执行模型 | **重放式多 cell** | 每次执行从第 1 格顺序重放到目标格，单进程、用完即弃；不做常驻 kernel（留作后续阶段，接口不变） |
+| D2 | 数据来源 | **先自造**，后期可导真实数据 | 课程自带只读数据集（`content/datasets/`），用固定随机种子生成、随课程入库与 lint |
+| D3 | 执行顺序语义 | **严格按任务顺序**（响应式） | 改上游格 → 下游全部标记 stale，相关任务判定作废需复核；不允许"用旧状态过关" |
+| D4 | 交互细节（6 项） | 全部按建议采纳 | 允许草稿格；保留简化 Playground 作自由沙盒；允许跳过任务（记 `skipped`）；数据先干净后加脏；灰度期两套入口并存；样板课先做 `03-polars-groupby` |
+
+三条决策相互强化：严格顺序让重放式成为**语义等价**方案（因为状态就是"从头跑到这里"），
+不需要 kernel 也能保证一致性；自造数据集则让重放可复现（同一份只读数据、同一种子）。
+
+## 1. 问题（现状证据）
+
+1. **执行器**：`POST /api/v1/playground/execute` 收 `{code, language, lessonSlug?, exerciseId?}`
+   （`learn_da/app/playground/schemas.py:18-27`），跑完整个脚本返回 stdout；
+   每次独立进程、无状态、无 cell 概念。
+2. **判定**：白名单三种（`learn_da/app/practice/validator.py:69-74`）
+   `stdout_exact` / `stdout_contains` / `dataframe_rows`——全是"输出与答案的字符串/行比对"。
+   例：`polars-groupby` 只校验 `columns` 与 `row_count`，**数值全错也能通过**。
+3. **课程**：13 课 × 1 题；数据内联在 starter 里（`learn_da/content/lessons/03-polars-groupby.md:34-39`），
+   `read_csv/read_parquet/read_json` 在全部课程中**零出现**，所谓"数据分析"实际是构造 6 行字面量。
+4. **AI**：证据只有"最近一次 attempt 的 stdout/stderr 各截断 500 字符"（`learn_da/app/agent/evidence.py:46-63`），
+   五态枚举 + `hintLevel` 由求助次数估算（`learn_da/app/agent/service.py:_resolve_hint_level`），
+   看不见过程、看不见卡点；工具仅 4 个只读函数（`learn_da/app/agent/fc_tools.py:29-92`）。
+5. **前端**：`Playground.vue` 1442 行、`LessonDetail.vue` 1095 行、`AgentPanel.vue` 808 行，
+   三种"代码"（正文示例、练习 starter、AI 代码块）互不相通，靠复制/注入搬运。
+
+根因：AI、课程、执行器之间共享的数据只有"一条 lesson slug + 一次 stdout"。
+
+## 2. 目标与非目标
+
+**目标**
+
+- G1 学习者在一个**有状态工作区**里完成 3-6 个递进任务，像做真实数据分析。
+- G2 判定基于**可执行断言**（变量状态），失败返回结构化诊断（哪条断言、实际 vs 期望）。
+- G3 AI 拥有**会话级上下文**（任务、cell、轨迹、断言失败明细），能做三档介入与可应用动作。
+- G4 严格顺序 + 重放，保证"通过"始终可复现、可回归测试。
+- G5 课程标准可 lint：starter 必 fail、参考解必 pass、数据集与断言一致。
+
+**非目标（本期不做）**
+
+- 常驻 kernel / 真增量执行（M5 再议）。
+- 账号体系（继续匿名签名 cookie）。
+- 任意用户自建课程 / 共享会话。
+- 沙箱网络访问（保持无网络 fail-closed 策略）。
+
+## 3. 核心概念与语义
+
+| 概念 | 定义 | 关键约束 |
+|---|---|---|
+| Lesson | 一课：场景说明 + 任务序列 + 数据集引用 | 至少 3 个 task |
+| Scenario | 场景文本（真实业务口吻），是课程正文的主体 | 引用数据集里的真实字段 |
+| Dataset | 随课程入库的只读数据文件 | 每课 ≤ 5MB，路径固定为 `data/<name>` |
+| Task | 一个递进目标：`goal` + `assertions` + `hints` | id 形如 `t1`、`t2`，顺序即依赖 |
+| Cell | 工作区一格代码，归属某 task 或 `scratch` | 有稳定 `cell_id`、`seq` |
+| RunEvent | 一次执行记录（代码哈希、状态、输出、耗时） | 幂等键 `request_id` |
+| Assertion | 可执行断言，运行在用户命名空间里 | 只读、超时受限、不修改状态 |
+| TaskAttempt | 一次"提交判定"结果（含逐条断言结果） | 通过后若上游变更即置 stale |
+| HintUsage | 提示阶梯使用记录（第几层、谁触发） | 服务端记账，不允许越层重放 |
+| Session | 学习者在某课的会话：cell 列表 + 任务状态 | 每人每课一个活跃会话 |
+
+### 3.1 严格顺序（响应式）语义
+
+```
+任务 t1 → t2 → t3；每任务一个提交格（可加 scratch 草稿格）
+编辑 cell_k（seq = k）:
+  - 该格状态 -> dirty
+  - 所有 seq > k 的 cell -> stale（保留代码与历史输出，但标记"需重跑"）
+  - 所有依赖 stale cell 的 TaskAttempt -> 从 passed 降级为 stale（"需复核"）
+  - 已完成任务的下游任务 -> 重新锁定（未解锁），直到上游重新通过
+执行 cell_k:
+  - 服务端重放 seq 1..k（全新进程、同一份只读数据）
+  - 若任一前序格失败 -> 本次结果 = upstream_failed（不写断言结论）
+  - 否则逐条评估该格所属 task 的断言 -> passed / failed
+提交 task（显式动作）:
+  - 仅当该 task 的提交格最近一次运行 passed 且无 stale 上游时才允许
+  - 写入 TaskAttempt，解锁下一个 task
+```
+
+不允许的行为（服务端硬约束）：
+
+- 跳格执行（只跑第 5 格而前面是 stale）→ 拒绝，返回 `prefix_stale`；
+- 用扫描/篡改的方式改数据文件 → 只读挂载；
+- 未通过就解锁下一 task → 拒绝（可显式"跳过"，但记录 `skipped`，不计完成）。
+
+### 3.2 重放算法（v1）
+
+```python
+def run_cell(session, cell_id, request_id) -> RunResult:
+    cells = session.cells_ordered_up_to(cell_id)      # 含目标格
+    program = [c.code for c in cells]
+    result = runner.execute_session(
+        program=[...],                                 # 逐格执行，隔离 stdout 归属
+        datasets=lesson.datasets,                      # 只读挂载 data/
+        assertions=task.assertions_for(cell_id),       # 仅目标格断言
+        limits={timeout_s: 10, max_output: 65536, memory_mb: 512},
+    )
+    return RunResult(
+        cells=[CellRun(status, stdout, stderr, duration_ms) for each],
+        assertions=result.assertions,
+        prefix_hash=hash(cells),
+    )
+```
+
+成本控制：
+
+- 每课前缀总时长目标 **< 3s**（自造数据集 ≤ 5000 行，`read_csv` < 100ms）；
+- 超时按**整次重放**计（默认 10s），不是按格；
+- 未改变的前缀不缓存（重放模式下无缓存），但前端"只跑改动格"仍表现为一次重放。
+
+未来（M5）升级为常驻 kernel 时，仅替换 `runner.execute_session` 的实现，
+`prefix_hash` 变成 kernel 命中的键，API 与数据模型不变。
+
+## 4. 数据模型（新增表）
+
+```python
+lesson_sessions
+  id, visitor_id, lesson_slug, status[active|completed|abandoned],
+  active_task_id, created_time, updated_time
+  UNIQUE(visitor_id, lesson_slug)
+
+session_cells
+  id, session_id, task_id(NULL=scratch), seq, language[python|sql],
+  code TEXT, code_hash, created_time, updated_time
+  INDEX(session_id, seq)
+
+run_events
+  id, visitor_id, session_id, cell_id, request_id, prefix_hash,
+  execution_status[success|error|timeout|rejected|unavailable|upstream_failed],
+  stdout, stderr, error_type, duration_ms, assertions_json, created_time
+  UNIQUE(visitor_id, request_id)          # 幂等（沿用 exercise_attempts 的做法）
+
+task_attempts
+  id, visitor_id, session_id, task_id, cell_id, run_event_id,
+  verdict[passed|failed|skipped|stale], assertion_results JSON, created_time
+  INDEX(visitor_id, task_id)
+
+hint_usages
+  id, visitor_id, session_id, task_id, level INT, source[auto|requested],
+  created_time
+```
+
+**legacy**：`exercise_attempts` 冻结为只读历史（不再写入新数据），保留表与索引，
+旧页面下线后按需归档。`CodeSnapshot` 等死表同前（已在 2026-08-21 停止读取）。
+
+## 5. API 契约
+
+统一走 `StdResp` 包装，匿名签名 cookie 提供 `visitor_id`（服务端注入，不接受客户端参数）。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/workspace/sessions` | `{lessonSlug}`：创建或恢复活跃会话，返回 session + cells + taskStates |
+| GET | `/api/v1/workspace/sessions/{id}` | 读取会话全量（含每格最近 RunEvent 摘要、任务状态） |
+| PUT | `/api/v1/workspace/sessions/{id}/cells/{cellId}` | `{code}`：保存并触发下游 stale |
+| POST | `/api/v1/workspace/sessions/{id}/cells/{cellId}/run` | `{requestId}`：重放执行 + 断言，返回逐格结果与任务判定 |
+| POST | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/submit` | `{requestId}`：显式提交（幂等），解锁下一任务 |
+| POST | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/hint` | `{}`：按服务端计算的层返回下一层提示并记账 |
+| POST | `/api/v1/workspace/sessions/{id}/cells` | `{afterSeq, language}`：插入 scratch 草稿格 |
+| DELETE | `/api/v1/workspace/sessions/{id}/cells/{cellId}` | 删除 scratch 格（提交格不可删） |
+
+响应片段（`run`）：
+
+```json
+{
+  "data": {
+    "cells": [
+      {"cellId": 12, "status": "success", "durationMs": 41, "stdoutTail": "…"},
+      {"cellId": 13, "status": "error", "errorType": "NameError",
+       "stderrFirstLine": "name 'ordrs' is not defined"}
+    ],
+    "assertions": [
+      {"id": "a1", "ok": false, "title": "列名与顺序",
+       "expected": ["region", "total_amount", "order_count"],
+       "actual": ["region", "total", "cnt"],
+       "message": "聚合列需要用 alias 命名为 total_amount / order_count"}
+    ],
+    "verdict": "failed",
+    "taskState": {"taskId": "t2", "status": "failed", "attemptNo": 3}
+  }
+}
+```
+
+## 6. 断言 DSL（v2）
+
+断言在 **Runner 进程内、用户命名空间里**执行（因为需要读变量），断言文本由服务端下发，
+结果回传为结构化 JSON。类型限定四种：
+
+```yaml
+assertions:
+  - id: a1
+    type: expr_true           # 任意 Python 表达式，truthy 即通过
+    expr: "region_stats.height == 5"
+    title: 区域数应为 5
+    on_fail: 用 orders['region'].n_unique() 对照一下
+
+  - id: a2
+    type: frame_equal         # 与参考结果逐值比对（polars/pandas 均可）
+    var: region_stats
+    ref: expected/03-t2-region.parquet   # 服务端内存注入，不落用户可见路径
+    order_matters: true
+    rtol: 1e-6
+    title: 聚合结果与参考一致
+
+  - id: a3
+    type: schema              # 列名/类型校验
+    var: orders
+    columns: [order_id, region, product_id, amount, order_date]
+    dtypes: {amount: Float64, order_date: Date}
+
+  - id: a4
+    type: sql_rows            # DuckDB 单元格：预期结果集比对
+    query: "SELECT region, SUM(amount) FROM orders GROUP BY 1"
+    ref: expected/07-t1.sql.json
+```
+
+约定：
+
+- 断言**只读**：`expr_true` 在受限命名空间求值，禁止 `import`、文件写入（白名单 builtins）；
+- 断言失败必须给 `actual`（`repr`，截断 500 字符），这是"结构化诊断"的来源；
+- 单条断言超时 500ms，整体断言预算 2s；
+- **弱保证说明**：`ref` 数据以内存注入不落盘，但用户代码与断言同进程，理论上可读父进程内存。
+  威胁模型取"防误用不防恶意"：靠 RunEvent/TaskAttempt 记录与课程难度，不做强隔离。
+
+### 6.1 与旧 validator 的关系
+
+旧三型保留一个迁移期：新课程用 v2 断言，旧课程（13 课）在迁移完成前继续走
+`exercise_attempts` + 旧 validator。`dataframe_rows` 作为 `frame_equal` 的退化子集，
+在迁移完成后可下线（保留函数与测试若干版本，标注 deprecated）。
+
+## 7. 内容格式 v2
+
+```
+learn_da/content/
+  catalog.yml
+  lessons/03-polars-groupby.md            # frontmatter + 场景正文
+  datasets/ecommerce/{orders.csv,customers.csv,products.csv,README.md}
+  expected/03-polars-groupby/{t2-region.parquet}
+```
+
+frontmatter 增量（旧字段保留，`exercise` 标记 deprecated）：
+
+```yaml
+workspace:
+  datasets:
+    - ecommerce/orders.csv
+    - ecommerce/products.csv
+  mount: data                 # 沙箱内挂载点
+tasks:
+  - id: t1
+    title: 读入并确认数据
+    goal: 把订单表读进 orders，确认 5000 行与关键列类型
+    language: python
+    starter: |
+      import polars as pl
+      # TODO: 读入 data/orders.csv
+      orders = None
+    assertions: [ ... ]
+    hints:
+      - level: 1
+        text: 先 pl.read_csv("data/orders.csv")
+      - level: 2
+        text: 用 orders.schema 看类型，注意 amount 可能被读成 str
+      - level: 3
+        text: pl.read_csv(..., schema_overrides={"amount": pl.Float64})
+  - id: t2
+    title: 按区域聚合
+    ...
+```
+
+正文（markdown）改为"场景说明书"：字段含义、业务问题、验收标准、必要的概念卡；
+不再包含"照抄就能过"的完整参考实现（参考解只用于 lint 与断言 ref）。
+
+**lint 规则（扩展 `scripts/content_lint.py`）**
+
+| 规则 | 说明 |
+|---|---|
+| L1 | task 数 ≥ 3，id 唯一且按序 |
+| L2 | 每 task 至少 1 条断言，且断言引用的 `var` 在参考解执行后存在 |
+| L3 | starter 在该 task 断言下**必须 fail**（防白给） |
+| L4 | 参考解在**完整序列**下全部 pass（重放语义下验证，防"单格通过、整链失败"） |
+| L5 | hints 层数 ≥ 2 且非空；层号严格递增 |
+| L6 | datasets 存在、总大小 ≤ 5MB、扩展名白名单（csv/parquet/json）、无 URL 引用 |
+| L7 | `expected/*` 与断言 `ref` 一一对应；由数据集脚本可复现生成 |
+| L8 | 场景正文引用的列名在数据集 schema 中存在 |
+
+数据集生成脚本 `scripts/build_datasets.py`：固定 `random.seed`，可重跑得到字节一致的产物，
+CI/本地都能校验 hash（与 L7 配合，避免"expected 与数据悄悄漂移"）。
+
+## 8. 教练（Coach）集成
+
+### 8.1 上下文
+
+`POST /api/v1/agent/chat` 的 `context` 扩展（保持向后兼容，旧字段仍可用）：
+
+```json
+{
+  "currentLesson": "polars-groupby",
+  "taskId": "t2",
+  "sessionId": 41,
+  "cellId": 13,
+  "currentCode": "…",
+  "recentRuns": [
+    {"cellId": 13, "status": "error", "errorType": "ColumnNotFoundError",
+     "stderrFirstLine": "unable to find column \"total\"; valid columns: […]"},
+    {"cellId": 13, "status": "success", "assertionsFailed": ["a2"]}
+  ],
+  "hintUsage": {"t2": 1}
+}
+```
+
+服务端仍以**数据库为准**（session/run_events/task_attempts），客户端上下文只用于定位。
+`evidence.py` 的五态保留为"执行/验证状态"子集，新增 `task_failed` / `task_passed` /
+`upstream_failed` 三个 task 级状态。
+
+### 8.2 三档介入
+
+| 档位 | 触发 | 表现 | 记录 |
+|---|---|---|---|
+| ambient（环境提示） | 执行失败或断言失败后 1 次 | 教练面板出现一条折叠卡片「我看到了什么」：错误类型 + 断言差异 + 一句引导 | 不写 HintUsage |
+| ladder（提示阶梯） | 用户点「给点提示」 | 服务端算层（失败次数 + 已用层）返回下一层，越层请求无效 | 写 HintUsage |
+| chat（自由问答） | 用户提问 | 带完整上下文回答 | 记 AgentInteraction |
+
+**层数计算（服务端权威）**：
+
+```
+level = min(3, 1 + failures_since_last_hint + hints_used)
+```
+
+失败次数来自 task_attempts（同 task、本次 hint 之后），不受客户端 history 影响。
+
+### 8.3 可应用动作（propose → 用户确认）
+
+模型输出末尾允许带一个结构化块（服务端校验后转成动作，不直接改代码）：
+
+```json
+{"action": "replace_cell", "cellId": 13, "code": "region_stats = orders.group_by('region').agg(...)",
+ "reason": "你的聚合列没有 alias，断言 a1 不通过"}
+```
+
+前端渲染为 diff + 按钮「应用到第 3 格并重跑」；用户点确认才 `PUT cell` + `run`。
+服务端只接受白名单动作（`replace_cell` / `insert_scratch_cell` / `run_cell`），
+并校验目标 cell 属于当前会话与该 visitor。
+
+## 9. 前端信息架构
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 课程头：title / 进度（t1 ✓ t2 ● t3 ○）/ 退出                    │
+├──────────────┬───────────────────────────────┬───────────────┤
+│ 任务列表      │ 工作区（cell 流）              │ 教练           │
+│ t1 ✓ 读入数据 │ [t1] cell 1 代码 … 输出        │ 折叠卡片       │
+│ t2 ● 区域聚合 │ [t2] cell 2 代码 … 断言结果    │ 提示阶梯       │
+│ t3 ○ 窗口函数 │      + 新增草稿格              │ 对话           │
+│ （锁定/复核） │ 每格：运行 / 重置 / 只读 diff   │ 应用 diff 按钮  │
+└──────────────┴───────────────────────────────┴───────────────┘
+```
+
+- 三栏替代 `LessonDetail.vue` + `Playground.vue`；`AgentPanel.vue` 从悬浮窗改为右栏（保留移动端抽屉）。
+- cell 组件统一：编辑器（保留现有行号 textarea）+ 输出区（stdout / 报错 / DataFrame 表格预览）
+  + 断言结果条（每条断言的 ✓/✗ 与 expected/actual）。
+- stale 视觉：下游格顶部一条灰条「上游已修改，需重跑」，任务列表出现"需复核"。
+- 保留一个"自由实验区"入口（现有 Playground 简化版），但**不参与课程判定**。
+
+## 10. 执行面（Runner）
+
+新增 `execute_session` 能力（`learn_da_runner/runner/`）：
+
+- 入参：`{program: [code...], stop_at: index, datasets: [{src, mount}], assertions: [...]}`；
+- 实现在**单个子进程**内顺序执行各格：逐格捕获 stdout/stderr（用分隔标记切分），
+  任一格异常即停止并标记该格 `error`，后续格 `skipped`；
+- 数据集只读挂载：`local` provider 用临时目录 + `os.symlink`/复制（Windows 下复制），
+  `docker` provider 用 bind mount `:ro`；
+- 断言在最后一格执行完后、同进程内求值，返回逐条结果；
+- 沿用现有硬限额（`RUNNER_TIMEOUT_SECONDS`、`RUNNER_MEMORY_LIMIT_MB`、`RUNNER_MAX_OUTPUT_BYTES`），
+  新增"整次重放"总超时与"断言预算"；
+- 安全：仍是 fail-closed，不联网、不写工作区外路径、不读 `expected/`（内存注入）。
+
+## 11. 迁移与兼容
+
+| 阶段 | 内容 | 可回退点 |
+|---|---|---|
+| M0 | 本设计稿 + 断言 DSL 单测骨架 + 数据集生成脚本（先造 `ecommerce` 一套） | 纯新增，零风险 |
+| M1 | 后端表 + workspace API（内部用现有 execute 实现重放，断言先只支持 `expr_true`/`schema`） | 新端点未接前端 |
+| M2 | Runner `execute_session` + 断言引擎 + 数据集挂载 + `frame_equal`/`sql_rows` | 旧 `/execute` 不动 |
+| M3 | 前端三栏 + **03-polars-groupby 单课样板**（feature flag `WORKSPACE_V2`） | 单课灰度，可关 |
+| M4 | 内容迁移到 13 课 + Coach 接入 + 旧页面下线 + 旧 validator 标 deprecated | 旧路由保留一个版本 |
+| M5（可选） | 常驻 kernel 替换重放 | 接口不变 |
+
+`exercise_attempts` 与新表并存；`test_security_settings` 等既有 409 项测试在 M1-M2 期间不删，
+新增测试与旧测试并行（迁移完成后再按模块清理）。
+
+## 12. 测试策略
+
+- **断言 DSL**：每种类型的通过/失败/异常/超时；`expr_true` 的命名空间白名单（禁 import/写文件）。
+- **重放语义**：改上游 → 下游 stale；跳格执行被拒；幂等（同 requestId 只写一条 RunEvent）。
+- **lint**：构造 8 类坏课程（L1-L8 各一），必须 fail-closed 并给文件名。
+- **数据集可复现**：同种子两次生成字节一致，hash 稳定。
+- **端到端**：一课的完整链路（建会话 → 跑 starter 失败 → 应用提示 → 通过 → 提交 → 下一任务解锁），
+  用 `scripts/verify_workspace.py` 跑真实 Runner（沿用 `verify_exercises.py` 的做法）。
+- **回归**：现有后端 409 / Runner 29 / 前端 71 必须持续通过；旧 `/execute` 行为不变。
+
+## 13. 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|---|---|---|
+| 重放延迟（前缀越长越慢） | 体感卡顿 | 数据集 ≤5000 行、前缀目标 <3s；前端乐观渲染"正在重放 1..N 格" |
+| 无账号 + 会话丢失 | 换浏览器进度丢 | 服务端会话为权威；localStorage 缓存草稿；预留"会话 id 恢复链接" |
+| 答案弱可见性 | 学习者可偷看 ref | 内存注入不落盘；记录 attempt；难度上不为难 |
+| 严格顺序带来的挫败 | 改一格全下游重做 | stale 只要求重跑、不丢代码；任务"需复核"而非清零 |
+| 内容工作量（13 课 × 3-6 task） | 周期长 | 先 1 课样板；再按 track 分批（polars 6 课 → duckdb 4 课 → python 3 课） |
+| 内存（服务器 1.9G 可用） | 并发差 | 重放式无常驻进程，单次执行受 `RUNNER_MEMORY_LIMIT_MB` 限制；并发限流 |
+
+## 14. 已确认项（2026-10-21，用户全部按建议采纳）
+
+1. **草稿格**：允许（`kind=scratch`，不参与断言，参与重放）。
+2. **自由实验区**：保留简化版 Playground（`/lab`），只读同一套数据集，不参与课程判定。
+3. **跳任务**：允许，记 `skipped`，不计入完成率与能力雷达。
+4. **数据集脏度**：t1 干净，后续任务逐步引入缺失值/重复/类型坑。
+5. **灰度期**：保留旧 `/playground` 与旧课程页，`WORKSPACE_V2` 开关切换。
+6. **样板课**：先做 `03-polars-groupby`（3 个任务：读入校验 → 区域聚合 → 窗口占比）。
+
+## 15. 页面重构（2026-10-21 定稿）
+
+### 15.1 痛点与量化证据
+
+用户选定的痛点页面（多选，4/5）：Playground、课程详情页、学习看板、课程列表（**首页未选 → 不改结构**）。
+痛点类型：信息架构、交互细节、视觉一致性（移动端与性能未列，本轮不做专项）。
+
+审计结果（`src/**` 共 45 个文件，全部实测）：
+
+| 维度 | 现状 | 结论 |
+|---|---|---|
+| 配色 token | `main.css` `@theme` 已定义 `primary-*` / `success-*` / `warning-*` / `danger-*`，但引用 **0** 次；实际用 `blue-*` 201、`emerald-*` 100、`slate-*` 431、`red-*` 22、`orange-*` 15、`indigo-*` 5 | token 是死代码，语义色未落地 |
+| 圆角 | `rounded-full` 53 / `lg` 49 / `xl` 31 / `2xl` 28 / `md` 2 | 5 种并存，卡片无统一档位 |
+| 阴影 | `md` 9 / `sm` 9 / `lg` 3 / `xl` 3 / `2xl` 1 | 5 种并存 |
+| 组件复用 | `src/components` 仅 4 个文件；全站手写 `<button>` **92** 个、原生 `<input>` 2、`<textarea>` 3 | 无基础组件层 |
+| 反馈机制 | `toast/notification` **0** 处、`confirm()` 0 处 | 无瞬时反馈、无危险操作确认层 |
+| 三态 | `Playground.vue`(1525 行)、`LessonDetail.vue`(1188 行) 的 `skeleton` 均为 **0**；`Dashboard.vue` 有 loading（4）/ error（9）/ empty（6） | 最常用两页无加载骨架 |
+| 键盘 | 全站 `keydown` 事件 **6** 处 | 无快捷操作体系 |
+
+### 15.2 信息架构（最终路由）
+
+| 路由 | 页面 | 单一职责 | 出口（"下一步"去哪） |
+|---|---|---|---|
+| `/` | Home（**保留现有营销结构**） | 首访理解这是什么 | 顶部新增「继续上次」条 → 直达上次会话未完成任务 |
+| `/learn` | 课程地图 | 按 track 纵览，看清每课任务级进度 | 点课 → `/lesson/:slug`；「继续」→ 上次任务 |
+| `/lesson/:slug` | 工作区（三栏） | 读懂任务 → 写 cell → 提交验证 | 任务完成 → 就地展开下一任务；课程完成 → `/learn` |
+| `/lab` | 自由沙盒 | 不判定的试手区（数据集浏览 + 快跑） | 无强制出口 |
+| `/report` | 学习报告 | 用 `task_attempts` 真实计算能力与错误模式 | 薄弱维度 → 对应课程 |
+| `/:pathMatch(.*)*` | 404 | — | 回 `/learn` |
+
+主导航 4 项：今日(/) · 课程(/learn) · 报告(/report) · 实验室(/lab)。
+`/lesson/:slug` 与 `/lab` 不占导航项（工作区态，用面包屑返回）。
+会话深链：`/lesson/x?s=<sessionId>&task=<taskId>`，刷新与分享都不丢位置。
+
+三条主流程的点击成本：
+
+- **新访客**：`/` → 选 track（1 击）→ `/learn` → 第一课（1 击）→ 首任务已在工作区（0 击）。
+- **回访**：`/` 顶部「继续」→ 上次会话最后未完成任务（**1 击**，现状需 3 击且常要自己回忆学到哪）。
+- **卡住**：失败卡片内联显示断言 `actual` → 点「要提示」（原地逐级）→ 仍不懂 → 右栏 AI 抽屉自动带证据。
+
+### 15.3 交互细节
+
+- **动作分级**：主 = 提交任务（每页唯一实心主按钮）；次 = 运行 cell；三级 = 要提示 / 问 AI（描边或纯文字）。
+- **快捷键**：`Ctrl/Cmd+Enter` 运行当前 cell；`Shift+Enter` 运行并下移；在任务卡上 `Ctrl/Cmd+Enter` 提交；`?` 打开快捷键浮层。
+- **三态统一**：所有网络连接页面必须有 skeleton / empty / error+重试三态，由新增 `src/composables/useAsyncState.ts` 承载（`state: loading|ready|empty|error`、`retry()`），禁止页面内各写一套 `isLoading`（现状 56 处）。
+- **反馈层级**：状态变化用 inline（按钮内 loading、任务卡状态药丸）；瞬时事件用新增 `useToast.ts` + `<ToastHost>`（"已复制/已保存/云端保存失败，已存本地"）；**不用 `window.confirm`**，危险操作走 `<ConfirmDialog>`。
+- **防丢**：cell 内容写 `localStorage`（key `workspace:{sessionId}:{cellId}`）+ 服务端 PUT 去抖 800ms；PUT 失败进重试队列并在状态栏提示，不静默丢稿。
+- **可发现性**：空状态必须给出下一步动作（`<EmptyState>` 强制 `cta` 属性），不允许只画一个图标加一句话。
+
+### 15.4 视觉统一（token 落地 + 组件收敛）
+
+语义 token（写入 `src/assets/styles/main.css` 的 `@theme`，替换现有 primary/success/warning/danger 命名）：
+
+- 品牌：`--color-brand-50…700`（沿用 #2563eb 系）
+- 状态：`--color-ok-*`（#16a34a 系）、`--color-warn-*`、`--color-err-*`
+- 中性：`--color-ink-900/700/500/300`（文本层级）、`--color-surface-page/card/raised`（背景层级）、`--color-line`
+- 形状：`--radius-card` 0.75rem、`--radius-control` 0.5rem、`--radius-pill` 999px；`--shadow-card`、`--shadow-pop`
+
+约束（新增 `learn_da_vue/scripts/ui_lint.mjs`，挂进 `npm run lint:ui` 与提交前检查）：
+
+- 禁止在 `src/**` 新增 `blue-* / emerald-* / red-* / orange-* / indigo-* / green-*`（raw palette 只允许在 `main.css` token 定义里出现）。
+- 圆角只允许 `rounded-card / rounded-control / rounded-full`；阴影只允许 `shadow-card / shadow-pop`。
+- 报错必须给出 `文件:行`，便于逐个收敛。
+
+组件清单（`src/components/ui/`，替换点写明）：
+
+| 组件 | 替换 |
+|---|---|
+| `<AppButton variant="primary\|secondary\|ghost" size="sm\|md" loading>` | 92 个手写 button |
+| `<AppCard title padded>` | 各页卡片外壳 |
+| `<AppField>` / `<AppInput>` | 2 个原生 input |
+| `<StatusPill state="todo\|in_progress\|needs_review\|passed\|failed\|skipped">` | 四散的状态标签 |
+| `<CodeOutput stdout stderr durationMs status>` | Playground 输出面板 + 工作区输出 |
+| `<EmptyState title hint cta>` | 各页空白态 |
+| `<ConfirmDialog>` / `<ToastHost>` / `<ShortcutHelp>` | 新增 |
+
+排版四档：page 24/700、section 18/600、card 15/600、label 12/500；正文 15/1.7；代码 13 等宽。
+**本轮不做暗色主题，不做移动端专项**（预留工作区单栏切换，不承诺优化）。
+
+### 15.5 验收标准
+
+1. 导航：任一课程任务 ≤2 次点击可达；回访「继续」= 1 次点击。
+2. 视觉：`npm run lint:ui` 0 违规；`src/**` 中 raw palette 引用为 0（token 定义除外）。
+3. 交互：`/learn`、`/lesson/:slug`、`/report`、`/lab` 四页均具备 skeleton/empty/error 三态；工作区刷新后 cell 内容与最近运行结果不丢。
+4. 组件：手写 `<button>` 归零（工作区 cell 内微型图标钮除外，需在 lint 白名单注明原因）。
+5. 测试：新增 vitest 用例覆盖 `useAsyncState`、`useToast`、`StatusPill`、`AppButton loading`；`npm test` 与 `vue-tsc --build` 全绿。
+
+### 15.6 实施顺序（独立可合，旧页保留到 P4）
+
+| 阶段 | 内容 | 依赖 |
+|---|---|---|
+| **P0** | token 落地 + `ui_lint.mjs` + 基础组件（`components/ui/*`，纯新增，不改页面行为） | 无 |
+| P1 | `/learn` 课程地图（任务级进度） | M1（task_attempts） |
+| P2 | `/lesson/:slug` 工作区外壳 + 三栏 + 快捷键 + 防丢 | M2/M3 |
+| P3 | `/report`（真实能力计算） | M1 + 至少 3 课有 task 数据 |
+| P4 | `/lab` + 下线旧 `/playground` 与旧课程页 | P0-P3 |
+
+P0 完全不依赖后端改造，可以先做且风险最低。
+
+#### P0 完成记录（2026-10-21）
+
+- **token**：`learn_da_vue/src/assets/styles/main.css` 的 `@theme` 已换成 `brand/ok/warn/err/ink/surface/line`，并定义 `--radius-card|control|pill`、`--shadow-card|pop`；旧的 `primary/success/warning/danger` 四个 token 删除（审计时引用数为 0）。
+- **规范检查**：`learn_da_vue/scripts/ui_lint.mjs` + 基线 `scripts/ui_lint.baseline.json`（存量 61 文件 / 558 处，只允许减少）；`src/components/ui/**` 零容忍。脚本命令 `npm run lint:ui`、`npm run lint:ui:baseline`、`npm run check`（type-check + lint:ui）。
+- **基础组件**：`src/components/ui/` 下 `AppButton`/`AppCard`/`AppInput`/`StatusPill`/`CodeOutput`/`EmptyState`/`ConfirmDialog`/`ToastHost` + `status.ts` + `index.ts`（barrel）；配套 `useAsyncState`（三态 + 竞态丢弃）、`useToast`（模块级队列）两个 composable，`App.vue` 挂 `<ToastHost />`。
+- **测试**：新增 5 个 spec（`useAsyncState`/`useToast`/`AppButton`/`StatusPill`/`ConfirmDialog`），前端 71 → **103 passed**；`vitest.config.ts` 补 `vue()` 插件（此前导入 `.vue` 会报缺少 plugin-vue）。
+- **未做（留到后续阶段）**：`ShortcutHelp`（`?` 快捷键说明）随 P2 快捷键一起做；页面本身未改（旧 `Playground`/`LessonDetail` 仍在，按 §15.6 保留到 P4）。
