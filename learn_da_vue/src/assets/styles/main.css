@@ -1,31 +1,51 @@
 @import "tailwindcss";
 
-/* ===== 设计系统变量 ===== */
+/* ===== 设计系统变量（语义 token） =====
+   规则：页面与组件只使用语义 token（brand / ok / warn / err / ink / surface / line），
+   不要在 src/** 里直接写 raw palette（blue-500、emerald-100 等）。
+   由 scripts/ui_lint.mjs 把关（npm run lint:ui），规范见
+   learn_da/docs/learning-workspace-redesign-2026-10-21.md §15.4。 */
 @theme {
-  /* 主色调：科技蓝 */
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
+  /* 品牌色 */
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
 
-  /* 辅助色：成功绿 */
-  --color-success-500: #22c55e;
-  --color-success-600: #16a34a;
+  /* 状态色：通过 / 警示 / 失败 */
+  --color-ok-50: #ecfdf5;
+  --color-ok-100: #d1fae5;
+  --color-ok-500: #22c55e;
+  --color-ok-600: #16a34a;
+  --color-ok-700: #15803d;
 
-  /* 辅助色：警告橙 */
-  --color-warning-500: #f97316;
+  --color-warn-50: #fff7ed;
+  --color-warn-100: #ffedd5;
+  --color-warn-500: #f97316;
+  --color-warn-600: #ea580c;
+  --color-warn-700: #c2410c;
 
-  /* 辅助色：错误红 */
-  --color-danger-500: #ef4444;
-  --color-danger-600: #dc2626;
+  --color-err-50: #fef2f2;
+  --color-err-100: #fee2e2;
+  --color-err-500: #ef4444;
+  --color-err-600: #dc2626;
+  --color-err-700: #b91c1c;
 
-  /* 编辑器背景深色 */
+  /* 中性：文本层级 + 背景层级 + 分隔线 */
+  --color-ink-900: #0f172a;
+  --color-ink-700: #334155;
+  --color-ink-500: #64748b;
+  --color-ink-300: #cbd5e1;
+  --color-surface-page: #f8fafc;
+  --color-surface-card: #ffffff;
+  --color-surface-raised: #f1f5f9;
+  --color-line: #e2e8f0;
+
+  /* 代码输出面板（深色，仅 CodeOutput 使用） */
   --color-editor-bg: #1e1e1e;
   --color-editor-line: #2d2d2d;
 
@@ -33,11 +53,14 @@
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "Consolas", ui-monospace, monospace;
 
-  /* 圆角 */
+  /* 圆角：卡片 / 控件 / 胶囊（只有这三档） */
   --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+  --radius-pill: 999px;
 
-  /* 阴影 */
+  /* 阴影：卡片 / 浮层（只有这两档） */
   --shadow-card: 0 4px 24px 0 rgb(0 0 0 / 0.08);
+  --shadow-pop: 0 12px 32px -8px rgb(15 23 42 / 0.24);
 }
 
 /* ===== 基础重置与全局样式 ===== */
@@ -56,8 +79,8 @@ html {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: #f8fafc;
-  color: #1e293b;
+  background-color: var(--color-surface-page);
+  color: var(--color-ink-900);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -70,16 +93,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--color-surface-raised);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 999px;
+  background: var(--color-ink-300);
+  border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-ink-500);
 }
 
 /* ===== 代码块字体 ===== */
@@ -92,7 +115,7 @@ samp {
 
 /* ===== 链接 ===== */
 a {
-  color: var(--color-primary-600);
+  color: var(--color-brand-600);
   text-decoration: none;
 }
 

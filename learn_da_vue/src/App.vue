@@ -2,6 +2,7 @@
 import { RouterView, useRoute } from "vue-router";
 import { computed, onMounted } from "vue";
 import Navbar from "@/components/layout/Navbar.vue";
+import ToastHost from "@/components/ui/ToastHost.vue";
 import { useLearnerStateStore } from "@/stores/learnerState";
 
 const route = useRoute();
@@ -46,6 +47,9 @@ onMounted(() => {
                 </Transition>
             </RouterView>
         </main>
+
+        <!-- 瞬时反馈（useToast）唯一渲染点 -->
+        <ToastHost />
     </div>
 </template>
 

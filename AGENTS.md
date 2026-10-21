@@ -15,7 +15,7 @@
 - **生产部署验收已通过**（2026-08-17，17/17）：三节样板课真实 Runner 执行→练习判定→Attempt 幂等→Agent 五态反馈→事件幂等→Dashboard 指标，见 `learn_da/docs/production-acceptance-2026-08-17.md`；复测用 `bash deploy/acceptance.sh`。
 - **CI 暂缓**（2026-08-21）：最小 CI 门禁已编写并本地验证（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build），但 GitHub 账户因账单锁定无法运行 Actions，workflow 文件已暂时移除；账单解锁后用 `git checkout ac779dc -- .github/workflows/ci.yml` 恢复。在此之前，**提交前必须本地手动跑全部测试**（回到阶段 4 时的约定）。
 - **P1 收尾完成**（2026-08-21）：① 回流建议信号移除对 CodeSnapshot 表的读取（快照功能已删，死表不再参与推荐打分，只留 code_runs/ai_helps）；② Agent 分级提示 hint_level 改为**服务端真实连续求助计数**（按课程统计 AgentInteraction，1-2 次 L1 / 3-4 次 L2 / 5+ L3），不再信任客户端 history（可伪造/清空）；无 repo/身份/课程或查询失败时降级为 history 估算。
-- 测试基线：后端 **409 项** pytest、Runner **29 项**、前端 **71 项** vitest 全绿（2026-10-21 更新；Runner 新增 local provider 12 项、后端新增依赖锁版本 8 项与限流开关 2 项）。
+- 测试基线：后端 **409 项** pytest、Runner **29 项**、前端 **103 项** vitest 全绿（2026-10-21 更新；前端新增 P0 基础组件与 composables 32 项）。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
   - LLM 只有一套配置 `LLM_*`；**`FALLBACK_LLM_*` 已删除**（2026-10-21，历史遗留的假兜底：只在主配置为空时生效，主配置存在但调用失败时不会切换）。调用失败时走 `usedFallback` 确定性降级，不会换 key。
@@ -35,6 +35,8 @@ cd learn_da && .venv/Scripts/python.exe -m pytest -q          # 全部测试
 # 前端（learn_da_vue/）
 cd learn_da_vue && npm test -- --run      # vitest
 npm run type-check                        # vue-tsc
+npm run lint:ui                           # 视觉规范检查（语义 token / 圆角 / 阴影）
+npm run check                             # type-check + lint:ui 一起跑
 npm run build                             # 生产构建
 
 # Runner（learn_da_runner/，venv 在 learn_da_runner/.venv）
@@ -59,6 +61,8 @@ bash deploy/acceptance.sh                 # 会写入一批验收数据
 - **Runner 的执行后端二选一**（`learn_da_runner/runner/settings.py`）：`RUNNER_PROVIDER=docker`（默认，生产唯一选择，容器隔离）或 `local`（开发用宿主解释器：需 `RUNNER_ALLOW_LOCAL_EXECUTION=1`，且 `RUNNER_ENV`/`APP_ENV` 为 production 时 `build_provider()` 直接拒绝启动）。local **不是安全边界**（无网络隔离、无只读 fs），只用于本机没有 Docker 时跑通闭环；它沿用同一套超时/输出上限，并把 CRLF 归一成 LF、用 `-X utf8` 对齐 Linux 沙箱的文本行为。
 - Runner 的 token 解析顺序：进程环境 `RUNNER_TOKEN` > `.env`（`runner/settings.py`），所以只靠 `.env` 的本地跑法也能通过鉴权。
 - `RATE_LIMIT_ENABLED=False` 必须真的关掉限流：开关同步到 `limiter.enabled`（`app/utils/limiter.py`）。只在 `main.py` 跳过 `setup_limiter_middleware()` 是不够的——按路由的 `@limiter.limit(...)` 仍会独立计数并抛 429（2026-10-21 修复，`tests/unit/test_rate_limit_toggle.py` 守着）。
+- **前端 UI 只有一套语义 token**（`src/assets/styles/main.css` 的 `@theme`）：颜色 `brand-* / ok-* / warn-* / err-* / ink-* / surface-* / line`，圆角仅 `rounded-card|control|pill`，阴影仅 `shadow-card|pop`。不要在页面里直接写 raw palette（`blue-500`、`emerald-100` 等），`npm run lint:ui` 会用基线（`scripts/ui_lint.baseline.json`）拦住新增违规，`src/components/ui/**` 零容忍。
+- **基础组件在 `src/components/ui/`**（`AppButton` / `AppCard` / `AppInput` / `StatusPill` / `CodeOutput` / `EmptyState` / `ConfirmDialog` / `ToastHost`）：新页面直接用，不要手写第二套按钮或自造状态药丸；网络页面三态用 `useAsyncState`，瞬时反馈用 `useToast()`，危险操作用 `ConfirmDialog`（不用 `window.confirm`），空态必须带 CTA。
 
 ## 部署与运维
 

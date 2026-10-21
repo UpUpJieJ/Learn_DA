@@ -135,7 +135,14 @@ npm install
 npm run dev
 ```
 
-前端默认运行在 `http://127.0.0.1:5173`，已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
+前端默认运行在 `http://127.0.0.1:5173`（**只监听 IPv6，用 `localhost` 访问**，`127.0.0.1` 会连接被拒），已配置代理将 `/api` 请求转发至后端 `http://127.0.0.1:8000`。
+
+#### 前端 UI 约定（2026-10-21 起）
+
+- **只用语义 token**：颜色 `brand-* / ok-* / warn-* / err-* / ink-* / surface-* / line`，圆角 `rounded-card|control|pill`，阴影 `shadow-card|pop`，全部定义在 `src/assets/styles/main.css` 的 `@theme`。页面里不要直接写 `blue-500`、`emerald-100` 这类原色。
+- **基础组件在 `src/components/ui/`**：`AppButton` / `AppCard` / `AppInput` / `StatusPill` / `CodeOutput` / `EmptyState` / `ConfirmDialog` / `ToastHost`。新页面直接复用，不要再手写一套按钮。
+- **三态与反馈**：网络页面用 `useAsyncState`（idle/loading/ready/empty/error），瞬时反馈用 `useToast()`，危险操作用 `ConfirmDialog`（不用 `window.confirm`），空态必须给 CTA。
+- **提交前跑规范检查**：`npm run lint:ui`。存量违规有基线（`scripts/ui_lint.baseline.json`），新增违规会让命令以非零码退出；`src/components/ui/**` 零容忍。
 
 ### Runner 启动（代码执行，必需）
 
@@ -323,6 +330,16 @@ pytest -m integration
 
 # 覆盖率报告
 pytest --cov=app --cov=services --cov-report=html
+```
+
+前端：
+
+```bash
+cd learn_da_vue
+npm test -- --run      # vitest（103 项）
+npm run type-check     # vue-tsc
+npm run lint:ui        # 视觉规范（新增违规即失败）
+npm run build          # 生产构建
 ```
 
 ---
