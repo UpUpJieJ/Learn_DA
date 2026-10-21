@@ -60,6 +60,29 @@ class RunnerClient:
         except Exception as exc:
             raise RunnerUnavailableError("runner unavailable") from exc
 
+    async def execute_session(self, payload: dict) -> dict:
+        """Replay a whole cell list on the Runner (workspace M1).
+
+        The payload is passed through as-is because the session contract lives in
+        the workspace module; only the transport concerns are handled here.
+        """
+        timeout = float(getattr(settings, "RUNNER_SESSION_TIMEOUT_SECONDS", 30))
+        try:
+            response = await self._http.post(
+                f"{self._base_url}/v1/sessions",
+                headers={"X-Runner-Token": self._token},
+                json=payload,
+                timeout=timeout,
+            )
+            if response.status_code == 503:
+                raise RunnerUnavailableError("runner unavailable")
+            response.raise_for_status()
+            return response.json()
+        except RunnerUnavailableError:
+            raise
+        except Exception as exc:
+            raise RunnerUnavailableError("runner unavailable") from exc
+
     async def is_ready(self) -> bool:
         """Check whether the Runner reports readiness."""
         try:

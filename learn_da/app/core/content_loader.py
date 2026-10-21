@@ -114,6 +114,8 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
             "completion_criteria": frontmatter.get("completion_criteria", []),
             # Phase 2: 正式练习定义
             "exercise": exercise,
+            # 改版 M1：多 cell 工作区定义（可选，结构由 app/workspace/content.py 校验）
+            "workspace": frontmatter.get("workspace"),
             # Phase 3: 建议系统元数据（可选）
             "track": frontmatter.get("track", ""),
             "prerequisites": frontmatter.get("prerequisites", []),

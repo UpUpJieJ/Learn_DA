@@ -417,6 +417,38 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
   内联运行时版本的程序约 10KB → 直接 422。所以 M2 的 `execute_session` 必须走"沙箱内预置
   `assertion_runtime.py` + 按路径加载的紧凑尾巴"（约 300 字节），或单独放开该接口的长度上限。
 
+### 11.2 M1 + M2 完成记录（2026-10-22）
+
+后端与 Runner 两侧都已落地，**旧 `/execute` 与旧 validator 完全不动**（后端 455 项 / Runner 39 项 / 前端 103 项通过）。
+
+- **数据表**（迁移 `a7d1e4f2b9c3`，down_revision `c3f8a1b7e2d4`）：`lesson_sessions`、`session_cells`、
+  `run_events`、`task_attempts`（`learn_da/app/workspace/models.py`）。会话按 `(visitor_id, lesson_slug)` 唯一，
+  执行事件按 `(visitor_id, request_id)` 唯一做幂等。
+- **API**（`learn_da/app/workspace/router.py`，模块名必须写进 `ENABLED_APP_MODULES`，否则 404）：
+  `POST /api/v1/workspace/sessions`、`GET …/sessions/{id}`、`PUT …/cells/{cellId}`、
+  `POST …/cells/{cellId}/run`、`POST …/tasks/{taskId}/submit`。
+- **级联失效**：改第 k 格代码 → 第 k 格自身与之后所有格置 `stale`；已通过的任务若其所在格不再是 `ok`，
+  视图状态回到 `todo`（需复核），不改历史 `TaskAttempt`。
+- **幂等**：`RunEvent.payload` 存的是**完整响应体**（`RunResponse.model_dump(by_alias=True)`），
+  同一 `requestId` 重放直接还原，含 `taskStatus`。
+- **Runner**：`POST /v1/sessions`（`learn_da_runner/runner/main.py`）→ `provider.execute_session`；
+  本地后端 `LocalSubprocessProvider.execute_session` 与 Docker 后端共用 `runner/session.py:prepare_workspace`
+  写工作区（`driver.py` / `plan.json` / `assertion_runtime.py` / `data/…`），由 `runner/session_driver.py`
+  在单进程内顺序重放，失败即停、后续格 `skipped`；只有前面的格子全部成功才求值断言，否则
+  `assertionsSkipped=true` 并给 detail。路径校验拒绝绝对路径与 `..`（Windows 上 `Path('/etc/passwd').is_absolute()`
+  为 False，额外判断前导 `/`、`\`）。
+- **内容样板**：`learn_da/content/lessons/03-polars-groupby.md` frontmatter 新增 `workspace:`
+  （数据集 `ecommerce/orders.csv`，3 格 = starter c1 + 任务 c2/c3，2 个任务共 5 条断言）。
+  `content_loader` 把该块原样带进 lesson dict，结构由 `app/workspace/content.py` 校验。
+- **实测（本机 local provider，真实 polars）**：
+  - `python scripts/verify_workspace.py` → 「会话 1：3 个单元格，2 个任务」「c1 执行 passed（547ms）」
+    「t1 全部 3 条断言 passed」「t2 全部 2 条断言 passed」「工作区自检通过」。
+  - 起步代码提交 → `assertion_failed`，`t1-schema` 回传「缺少列 ['revenue', 'orders']（实际列：[…]）」，
+    `t1-sorted` 因列不存在记 `error`（断言自身异常不算学员失败）。
+  - 改 c2 → `staleFrom=c2`，`cells={c1:ok, c2:stale, c3:stale}`。
+- **仍未做**：前端接入（M3）、`frame_equal`/`sql_rows` 的真实 `refs` 来源（现为空字典，暂无课程使用）、
+  沙箱内预置数据集与运行时（当前 Docker 路径靠请求体 base64 传数据集，课程加载时 ≤8MB 合计）。
+
 ## 12. 测试策略
 
 - **断言 DSL**：每种类型的通过/失败/异常/超时；`expr_true` 的命名空间白名单（禁 import/写文件）。

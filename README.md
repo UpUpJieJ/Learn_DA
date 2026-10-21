@@ -232,7 +232,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `RUNNER_URL` | — | 专用 Runner 的私网 URL，生产环境必填 |
 | `RUNNER_TOKEN` | — | Backend 与 Runner 共用的内部认证密钥，至少 32 字符 |
 | `SESSION_SECRET` | — | Backend 匿名会话签名密钥，生产环境至少 32 字符 |
-| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,practice` | 启用的业务模块 |
+| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,practice,workspace` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
 
@@ -334,6 +334,26 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 ```
 
 设计与阶段计划见 [`learn_da/docs/learning-workspace-redesign-2026-10-21.md`](learn_da/docs/learning-workspace-redesign-2026-10-21.md)。
+
+### 学习工作区（改版 M1/M2，后端已可用）
+
+课程 frontmatter 可带 `workspace:` 块（多 cell + 任务 + 断言），后端提供会话式 API：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/v1/workspace/sessions` | 按 `lessonSlug` 创建/复用会话，返回单元格、任务、数据集 |
+| `GET` | `/api/v1/workspace/sessions/{id}` | 会话快照（格子状态、任务状态、`staleFrom`） |
+| `PUT` | `/api/v1/workspace/sessions/{id}/cells/{cellId}` | 改代码（后续格子级联失效） |
+| `POST` | `/api/v1/workspace/sessions/{id}/cells/{cellId}/run` | 重放式执行到该格（`requestId` 幂等） |
+| `POST` | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/submit` | 提交任务（落 `task_attempts`，返回断言明细） |
+
+后端把这些请求转成 Runner 的 `POST /v1/sessions`（顺序重放 + 单进程），样例课是 `03-polars-groupby`。
+端到端自检（需后端与 Runner 都在跑）：
+
+```bash
+cd learn_da
+.venv/Scripts/python.exe scripts/verify_workspace.py --base-url http://127.0.0.1:8000
+```
 
 ---
 

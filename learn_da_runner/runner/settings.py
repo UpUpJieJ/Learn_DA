@@ -24,6 +24,10 @@ class RunnerSettings(BaseSettings):
     RUNNER_PIDS_LIMIT: int = 64
     RUNNER_TMPFS_SIZE_MB: int = 64
     RUNNER_MAX_OUTPUT_BYTES: int = 65_536  # 64 KiB per stream
+    # Session execution replays every cell in one process, so the wall-clock
+    # budget is much larger than a single snippet.
+    RUNNER_SESSION_TIMEOUT_SECONDS: int = 20
+    RUNNER_SESSION_MAX_DATASET_BYTES: int = 2_000_000  # 2 MB per request
 
     model_config = SettingsConfigDict(
         env_file=".env",

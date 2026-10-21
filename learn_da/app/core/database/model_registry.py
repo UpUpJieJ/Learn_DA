@@ -17,6 +17,12 @@ from app.learner_state.models import (  # noqa: F401
     RecommendationCooldown,
 )
 from app.practice.models import ExerciseAttempt  # noqa: F401
+from app.workspace.models import (  # noqa: F401
+    LessonSession,
+    RunEvent,
+    SessionCell,
+    TaskAttempt,
+)
 
 __all__ = [
     "AgentEmbedding",
@@ -27,4 +33,8 @@ __all__ = [
     "LearnerLessonProgress",
     "RecommendationCooldown",
     "ExerciseAttempt",
+    "LessonSession",
+    "SessionCell",
+    "RunEvent",
+    "TaskAttempt",
 ]

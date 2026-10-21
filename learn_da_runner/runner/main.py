@@ -12,7 +12,12 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from runner.auth import require_runner_token
 from runner.local_provider import LocalSubprocessProvider
 from runner.provider import DockerExecutionProvider, ExecutionProvider
-from runner.schemas import RunnerExecutionRequest, RunnerExecutionResult
+from runner.schemas import (
+    RunnerExecutionRequest,
+    RunnerExecutionResult,
+    RunnerSessionRequest,
+    RunnerSessionResult,
+)
 from runner.settings import runner_settings
 
 _provider: ExecutionProvider | None = None
@@ -110,3 +115,14 @@ async def execute(
     """Execute code in a sandboxed container and return the result."""
     raw_result = await anyio.to_thread.run_sync(provider.execute, payload)
     return RunnerExecutionResult.model_validate(raw_result)
+
+
+@app.post("/v1/sessions", response_model=RunnerSessionResult)
+async def execute_session(
+    payload: RunnerSessionRequest,
+    _: None = Depends(require_runner_token),
+    provider: ExecutionProvider = Depends(get_provider),
+) -> RunnerSessionResult:
+    """Replay a whole cell list in one sandbox and evaluate its assertions."""
+    raw_result = await anyio.to_thread.run_sync(provider.execute_session, payload)
+    return RunnerSessionResult.model_validate(raw_result)

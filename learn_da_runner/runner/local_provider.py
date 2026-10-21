@@ -22,7 +22,19 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from runner.schemas import ExecutionStatus, RunnerExecutionRequest
+from runner.schemas import (
+    ExecutionStatus,
+    RunnerExecutionRequest,
+    RunnerSessionRequest,
+)
+from runner.session import (
+    DRIVER_FILENAME,
+    SessionWorkspaceError,
+    build_result,
+    parse_driver_output,
+    prepare_workspace,
+)
+from runner.session_driver import MARKER
 from runner.settings import runner_settings
 
 
@@ -148,6 +160,102 @@ class LocalSubprocessProvider:
                     "durationMs": duration_ms,
                     "outputTruncated": False,
                 }
+
+    # ------------------------------------------------------------------
+    # Session execution (replay-style)
+    # ------------------------------------------------------------------
+
+    def execute_session(self, request: RunnerSessionRequest) -> dict:
+        """Replay every cell in one short-lived process, then check assertions."""
+        execution_id = uuid4()
+        start = time.monotonic()
+        proc: subprocess.Popen | None = None
+        timeout = runner_settings.RUNNER_SESSION_TIMEOUT_SECONDS
+
+        with tempfile.TemporaryDirectory(prefix="learn_da_session_") as workdir:
+            work = Path(workdir)
+            try:
+                prepare_workspace(work, request)
+            except SessionWorkspaceError as exc:
+                return build_result(
+                    request_id=str(request.request_id),
+                    execution_id=str(execution_id),
+                    status=ExecutionStatus.REJECTED,
+                    payload=None,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                    error_type="invalid_session_request",
+                    error_message=str(exc),
+                )
+
+            out_path = work / "_stdout"
+            err_path = work / "_stderr"
+            try:
+                with out_path.open("wb") as out_file, err_path.open("wb") as err_file:
+                    proc = subprocess.Popen(
+                        [self._python, "-I", "-X", "utf8", "-B", DRIVER_FILENAME],
+                        cwd=workdir,
+                        stdin=subprocess.DEVNULL,
+                        stdout=out_file,
+                        stderr=err_file,
+                        env=self._child_env(),
+                    )
+                    exit_code = proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                if proc is not None:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
+                return build_result(
+                    request_id=str(request.request_id),
+                    execution_id=str(execution_id),
+                    status=ExecutionStatus.TIMEOUT,
+                    payload=None,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                    error_type="timeout",
+                    error_message=f"session exceeded {timeout}s",
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                if proc is not None and proc.poll() is None:
+                    proc.kill()
+                return build_result(
+                    request_id=str(request.request_id),
+                    execution_id=str(execution_id),
+                    status=ExecutionStatus.ERROR,
+                    payload=None,
+                    duration_ms=int((time.monotonic() - start) * 1000),
+                    error_type="execution_error",
+                    error_message=str(exc)[:2000],
+                )
+
+            duration_ms = int((time.monotonic() - start) * 1000)
+            stdout_text, _ = self._read_capped(out_path)
+            stderr_text, _ = self._read_capped(err_path)
+            payload = parse_driver_output(stdout_text, MARKER)
+
+            if payload is None:
+                return build_result(
+                    request_id=str(request.request_id),
+                    execution_id=str(execution_id),
+                    status=ExecutionStatus.ERROR,
+                    payload=None,
+                    duration_ms=duration_ms,
+                    error_type="driver_protocol_error",
+                    error_message=(
+                        f"driver exited with {exit_code}: "
+                        f"{(stderr_text or stdout_text)[-800:]}"
+                    ),
+                )
+
+            return build_result(
+                request_id=str(request.request_id),
+                execution_id=str(execution_id),
+                status=ExecutionStatus.SUCCESS,
+                payload=payload,
+                duration_ms=duration_ms,
+                error_type=None if exit_code == 0 else "driver_nonzero_exit",
+            )
 
     # ------------------------------------------------------------------
     # Helpers

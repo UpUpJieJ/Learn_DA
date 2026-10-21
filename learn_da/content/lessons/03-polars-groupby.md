@@ -54,6 +54,71 @@ exercise:
     expected:
       columns: [region, total_amount, order_count]
       row_count: 3
+# 改版 M1 样板：多 cell 工作区（重放式，严格顺序）
+workspace:
+  datasets:
+    - ecommerce/orders.csv
+  cells:
+    - id: c1
+      kind: starter
+      code: |
+        import polars as pl
+
+        orders = pl.read_csv("data/ecommerce/orders.csv")
+        print(orders.shape)
+        print(orders.head(3))
+    - id: c2
+      kind: task
+      task_id: t1
+      code: |
+        # TODO: 按 region 分组，计算 revenue（amount 求和）与 orders（订单数），
+        # 并按 revenue 降序排列
+        region_stats = orders
+        print(region_stats)
+    - id: c3
+      kind: task
+      task_id: t2
+      code: |
+        # TODO: 在 region_stats 基础上新增 share 列（该区域 revenue 占比），保留两位小数
+        region_share = region_stats
+        print(region_share)
+  tasks:
+    - id: t1
+      title: 按区域聚合销售额
+      cell: c2
+      objective: |
+        用 group_by('region') + agg 计算每个区域的 revenue 与订单数 orders，
+        并按 revenue 降序排列。数据来自 data/ecommerce/orders.csv。
+      assertions:
+        - id: t1-schema
+          type: schema
+          title: 结果包含 region / revenue / orders 三列
+          var: region_stats
+          columns: [region, revenue, orders]
+        - id: t1-rows
+          type: expr_true
+          title: 华东/华北/华南/西南四个区域各一行
+          expr: "region_stats.height == 4"
+        - id: t1-sorted
+          type: expr_true
+          title: 结果按 revenue 降序
+          expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
+    - id: t2
+      title: 计算区域销售额占比
+      cell: c3
+      objective: |
+        在 region_stats 上新增 share 列 = 该区域 revenue / 全部 revenue 之和，
+        四舍五入到两位小数；四个区域的 share 之和应为 1。
+      assertions:
+        - id: t2-schema
+          type: schema
+          title: 结果保留原三列并新增 share
+          var: region_share
+          columns: [region, revenue, orders, share]
+        - id: t2-sum
+          type: expr_true
+          title: share 之和为 1
+          expr: "abs(region_share['share'].sum() - 1.0) < 1e-2"
 ---
 
 # Polars 分组聚合
