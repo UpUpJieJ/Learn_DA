@@ -1,0 +1,8 @@
+# 先行默认：文本文件 LF 入库，按 core.autocrlf 检出。
+* text=auto
+
+# 课程数据集是"字节可复现"的：sha256 被写进 manifest.json，并由
+# scripts/build_datasets.py --check 与测试校验。任何行尾转换都会让校验失效
+# （仓库开了 core.autocrlf=true，Windows 检出默认会转成 CRLF）。
+# 注意：.gitattributes 是"最后匹配的规则生效"，所以这条必须写在 * 之后。
+learn_da/content/datasets/** -text
