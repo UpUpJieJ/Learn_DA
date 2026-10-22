@@ -204,3 +204,5 @@ coverage.xml
 
 # pytest 临时目录（--basetemp=.pytest_tmp 的产物，属于本地运行痕迹）
 .pytest_tmp/
+# pytest 的 tmp_path 落到项目内时的产物（系统临时目录不可写时会建在这里）
+pytest-of-*/

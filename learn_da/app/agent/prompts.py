@@ -3,8 +3,8 @@ from .schemas import AgentChatMessage, AgentContext
 
 
 SYSTEM_PROMPT = (
-    "你是 Learn DA 的通用学习教练，帮助学习者围绕当前课程理解概念、练习代码并规划下一步。"
-    "回答必须简洁、可执行，并始终围绕当前课程和 Playground 上下文。"
+    "你是 Learn DA 的通用学习教练，帮助学习者围绕当前课程理解概念、完成任务并规划下一步。"
+    "回答必须简洁、可执行，并始终围绕当前课程与学习工作区上下文。"
     "你不是代写工具，也不是泛聊天助手。"
     "如果当前课程涉及 Polars、DuckDB、Pandas 或 SQL，可以用对比方式讲解关键差异；其他主题则优先解释核心概念和练习方法。"
     "先解释思路，再给代码或操作建议；在练习场景里优先给提示，不要直接给最终答案，除非用户明确要求。"
@@ -66,35 +66,56 @@ def build_context_block(context: AgentContext | None) -> str:
         parts.append(f"当前课程：{lesson_title}（{lesson_slug}，{lesson_category}）")
     if context.lesson_content:
         parts.append(f"课程内容摘要：\n{context.lesson_content[:3000]}")
+    if context.current_task:
+        parts.append(f"当前任务：{context.current_task}")
     if context.current_code:
         parts.append(
-            f"当前 Playground 代码：\n```python\n{context.current_code[:4000]}\n```"
+            "编辑器里的当前代码（可能已改动但尚未提交，不代表服务端记录的状态）："
+            f"\n```python\n{context.current_code[:4000]}\n```"
         )
     return "\n\n".join(parts)
 
 
 def build_evidence_block(evidence: AgentLearningEvidence | None) -> str:
-    """构造服务端练习证据块（权威来源）。
+    """构造服务端任务证据块（权威来源）。
 
-    始终注入到 FC prompt；无证据时显式说明，避免模型臆造练习状态。
+    始终注入到 prompt；无证据时显式说明，避免模型臆造任务状态。
     """
     if evidence is None:
-        return "【服务端练习证据】\n状态：学习者暂无可用练习证据"
+        return "【服务端任务证据】\n状态：学习者暂无可用任务证据"
 
-    lines = ["【服务端练习证据】"]
+    lines = ["【服务端任务证据】"]
     state_label = {
         "execution_failed": "代码执行失败",
-        "verification_failed": "执行成功但验证未通过",
-        "passed_unconfirmed": "练习已通过",
+        "verification_failed": "执行成功但断言未通过",
+        "passed_unconfirmed": "任务已通过",
         "unverifiable": "结果不可验证",
-        "no_evidence": "暂无可用练习证据",
+        "no_evidence": "暂无可用任务证据",
     }.get(evidence.state, evidence.state)
     lines.append(f"教学状态：{evidence.state}（{state_label}）")
 
-    if evidence.attempt_id is not None:
-        lines.append(f"尝试 ID：{evidence.attempt_id}")
     if evidence.lesson_slug:
         lines.append(f"课程：{evidence.lesson_slug}")
+    if evidence.tasks_passed is not None and evidence.tasks_total:
+        lines.append(
+            f"任务进度：{evidence.tasks_passed}/{evidence.tasks_total} 已通过"
+        )
+    if evidence.current_task_id:
+        lines.append(f"当前未通过的任务：{evidence.current_task_id}")
+    if evidence.attempt_id is not None:
+        lines.append(f"提交 ID：{evidence.attempt_id}")
+    if evidence.attempt_no is not None:
+        lines.append(f"该任务第 {evidence.attempt_no} 次提交")
+    if evidence.task_id:
+        lines.append(f"本次提交的任务：{evidence.task_id}")
+    if evidence.task_title:
+        lines.append(f"任务标题：{evidence.task_title}")
+    if evidence.task_objective:
+        lines.append(f"任务要求：{evidence.task_objective}")
+    if evidence.verdict:
+        lines.append(f"判定结论：{evidence.verdict}")
+
+    # 旧练习链路的字段（历史数据）
     if evidence.exercise_id:
         lines.append(f"练习：{evidence.exercise_id}")
     if evidence.execution_status:
@@ -109,13 +130,32 @@ def build_evidence_block(evidence: AgentLearningEvidence | None) -> str:
         lines.append(f"标准输出摘要：\n{evidence.stdout_summary}")
     if evidence.stderr_summary:
         lines.append(f"标准错误摘要：\n{evidence.stderr_summary}")
+
+    if evidence.assertions:
+        lines.append("断言结果（失败在前）：")
+        for index, item in enumerate(evidence.assertions, start=1):
+            title = item.title or item.assertion_id or f"断言{index}"
+            suffix = f"（{item.assertion_id}）" if item.assertion_id and item.title else ""
+            lines.append(f"{index}. [{item.status or '未知'}] {title}{suffix}")
+            if item.detail:
+                lines.append(f"   说明：{item.detail}")
+            if item.actual:
+                lines.append(f"   实际值：{item.actual}")
+
     lines.append(
         "课程完成状态：" + ("已完成" if evidence.lesson_completed else "未完成")
     )
+    if evidence.code_matches_editor is False:
+        lines.append(
+            "注意：编辑器里的代码不是最近一次提交的代码（可能已改动但未提交）。"
+            "上面的断言结果是针对已提交版本的，不要用编辑器代码去反驳它，"
+            "也不要据此说「你还缺 X」；如需判断当前代码，请让学习者先提交。"
+        )
     if evidence.evidence_time:
         lines.append(f"证据时间：{evidence.evidence_time}")
     lines.append(
         "以上为服务端权威证据，客户端自报状态不可覆盖；回答时以此为准。"
+        "给建议时只解释问题与方向，不要直接给出可提交的完整答案。"
     )
     return "\n".join(lines)
 

@@ -108,6 +108,10 @@ class TaskAttempt(BaseModel):
     task_id = Column(String(64), index=True, nullable=False)
     attempt_no = Column(Integer, default=1, nullable=False)
     status = Column(String(16), nullable=False)  # passed | failed | skipped
+    # Runner 判定结论：passed | assertion_failed | execution_failed。
+    # status 是教学口径（通过/失败/跳过），verdict 保留了「失败在哪一层」，
+    # Agent 证据解析依赖它区分「代码跑不起来」与「代码能跑但断言不符」。
+    verdict = Column(String(24), nullable=True)
     code = Column(Text, default="", nullable=False)
     actual = Column(Text, default="", nullable=False)
     assertions = Column(Text, default="[]", nullable=False)

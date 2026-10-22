@@ -703,3 +703,58 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 删除项：深色 hero 与入场动画、`fetchHomeStats` / `fetchCategoryStats` 调用、`learningTracks` legacy 兜底文案、`learnerState` 依赖、`components/home/ContinueStrip.vue`（职责并入主卡）。文案里不再出现平台级「今日活跃」，`daysSinceActive ≥ 3` 只在概览行点一句「已经 N 天没练了」。
 
 测试：新增 `src/views/__tests__/Home.spec.ts`（10 项：主卡选择与深链、无记录降级、指标与一次通过率、卡点跳转、接下来最多两门、路径进度用后端 `ratio`、三天未练提示、全部完成后主卡退回复习、失败重试、空态 CTA）。前端 113 → **123 passed（18 文件）**；`vue-tsc --build` 通过；`ui_lint` 基线因 `Home.vue` 归零从 63 文件 / 225 处收紧到 **63 文件 / 167 处**。
+## 16. AI 教练 E0：证据链接改版（2026-10-23）
+
+改造前的断点：`app/agent/evidence.py` 只读冻结的 `exercise_attempts`，全项目对 `workspace` / `TaskAttempt` 的引用为 0 —— 在工作区里问 AI，永远返回 `no_evidence`；FC 工具还停留在「练习 + stdout」语境；模型不可用时返回的是按意图预置的话术，像是真的回答过。
+
+### 16.1 用户决定（2026-10-23）
+
+| 决策 | 选择 | 理由 |
+| --- | --- | --- |
+| 角色 | **只解释，不改代码** | 不做 `replace_cell` 等动作白名单，先把「说得对」做扎实 |
+| 第一里程碑 | **先接证据**（evidence 改读 `TaskAttempt` + 断言 `actual`，FC 工具改 task 语境） | 证据不对，介入形态再花哨也没用 |
+| 降级 | **模型不可用就明说不可用** | 不做规则话术兜底，避免"看起来答了其实没答" |
+
+### 16.2 数据与仓储
+
+- `task_attempts` 新增 `verdict`（Runner 原始结论：`passed` / `assertion_failed` / `execution_failed`），迁移 `f4b8d1c6a2e7_task_attempt_verdict` 并回填历史行（`status=passed → passed`、`skipped → execution_failed`、其余 `assertion_failed`）。
+- 新 `app/workspace/repository.py`：`spec_for(lesson_slug)` 与只读仓储 `WorkspaceReadRepository`（`get_attempt` / `latest_attempt` / `recent_attempts` / `passed_task_ids` / `lesson_task_stats` / `progress`）。
+
+### 16.3 证据
+
+`AgentEvidenceResolver` 现在**优先 workspace**：有 workspace spec 的课走 `_resolve_workspace`，否则回落到旧 `_resolve_exercise`（历史数据只读）。
+
+- 五态由 `derive_workspace_state(verdict, status)` 推导：`passed`→`passed_unconfirmed`；`execution_failed`（含 `status=skipped`）→`execution_failed`；`assertion_failed`→`verification_failed`；`status=skipped`→`unverifiable`；无提交→`no_evidence`。
+- 证据里带**任务语境**：`task_id/task_title/task_objective`、`tasks_passed/tasks_total`、`current_task_id`、`lesson_completed`（由通过任务数推导）。
+- 断言结果最多 8 条、**失败在前**，每条带 `detail` 与 `actual`（截断 300 字符）——这是"错在哪"的唯一来源，不用客户端自报。
+- `next_action`：`passed_unconfirmed` 且课程未完成时返回 **`next_task`**（取代 `confirm_lesson`）。
+- 越权防护：`attemptId` 必须属于该访客且属于该课，否则忽略并回落到"该课最近一次提交"。
+
+### 16.4 编辑器代码与证据冲突（实测发现的坑）
+
+真实链路复验时出现过自相矛盾的回答：任务已通过，模型却说「你的代码还缺 orders 列」——因为 `context.currentCode` 是编辑器里的旧代码。
+
+修法：证据新增 `code_matches_editor`（比较 `attempt.code` 与 `context.currentCode`，只比较不入库），不一致时证据块追加「编辑器里的代码不是最近一次提交的代码……不要据此说『你还缺 X』」；上下文块也把代码标注为「可能已改动但尚未提交」。
+
+### 16.5 工具与降级
+
+- FC 工具：`get_exercise_summary` → **`get_task_summary`**（`lesson_slug?` / `task_id?`），返回最近提交的任务、判定结论与失败断言（最多 5 条、单条 240 字符）；`get_learner_progress` 追加工作区任务进度。
+- 模型不可用：`FALLBACK_UNAVAILABLE_CONTENT` —— 明确说「AI 助手暂时不可用（模型调用失败），这次我不会编造回答」，并说明 `teachingFeedback` 仍是服务端权威结果。
+
+### 16.6 实测（真实 Runner + dashscope `qwen3.7-flash`）
+
+| 场景 | 结果 |
+| --- | --- |
+| 提交错误代码（按 `quantity` 求和当 revenue） | `verdict=assertion_failed`；`t1-schema` 回「缺少列 ['orders']（实际列：['region','revenue']）」，`t1-sorted` 回「…为假（实际值：False）」 |
+| 失败后提问 | `usedFallback=False`、`state=verification_failed`、`nextAction=retry_exercise`、`attemptId` 正确；回答准确指出缺 `orders` 列与未排序 |
+| 提交参考解后提问 | `state=passed_unconfirmed`、`nextAction=next_task`；回答「t1 已通过」并提示编辑器代码不是提交版本 |
+
+脚本坑：同一 `requestId` 重复提交会被 `run_events` 幂等缓存返回旧结果，冒烟脚本必须每次用新 requestId。
+
+### 16.7 未做（留给 E1/E2）
+
+- 介入形态（失败卡片、阶梯提示 `POST /workspace/tasks/{id}/hint`、`hint_usages` 表）—— §8.2 的三档仍只有 chat。
+- 动作白名单（§8.3）—— 用户本轮明确不做。
+- 前端入口：`AgentPanel.vue` 仍是死代码，工作区里还没有入口（前端类型已同步 `nextTask` 与 `currentTask`）。
+
+测试：后端 490 → **510 passed**（新增 `tests/unit/test_agent_workspace_evidence.py` 20 项）。

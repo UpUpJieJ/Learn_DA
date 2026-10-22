@@ -385,6 +385,7 @@ class WorkspaceService:
                     task_id=task.task_id,
                     attempt_no=attempt_no,
                     status=attempt_status,
+                    verdict=verdict,
                     code=cells[index].code,
                     actual=first_actual or "",
                     assertions=json.dumps(

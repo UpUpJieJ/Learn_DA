@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
     from app.learner_state.service import LearnerStateService
     from app.practice.service import PracticeService
+    from app.workspace.repository import WorkspaceReadRepository
 
     from .repository import AgentInteractionRepository
 
@@ -36,7 +37,14 @@ from .schemas import (
     AgentFeedbackResponse,
     ToolName,
 )
-from .tools import get_agent_tool
+
+FALLBACK_UNAVAILABLE_CONTENT = (
+    "AI 助手暂时不可用（模型调用失败），这次我不会编造回答。\n\n"
+    "你仍然可以用的：本次的服务端教学状态与任务判定结论已随响应返回"
+    "（teachingFeedback），它来自真实提交记录，不是模型生成的；"
+    "按提示在编辑器里改代码、重新提交，判定与进度照常记录。\n"
+    "等网络或额度恢复后再来问我。"
+)
 
 
 class AgentService:
@@ -48,6 +56,7 @@ class AgentService:
         learner_state_service: "LearnerStateService | None" = None,
         analytics_service: "AnalyticsService | None" = None,
         practice_service: "PracticeService | None" = None,
+        workspace_repo: "WorkspaceReadRepository | None" = None,
         llm_client: AsyncOpenAI | None = None,
         interaction_repo: "AgentInteractionRepository | None" = None,
     ) -> None:
@@ -60,6 +69,8 @@ class AgentService:
         self.learner_state_service = learner_state_service
         self.analytics_service = analytics_service
         self.practice_service = practice_service
+        # 改版 M4：任务提交记录（task_attempts）是当前唯一的教学证据来源
+        self.workspace_repo = workspace_repo
         self.interaction_repo = interaction_repo
         self._reserved_interaction = None
         # lifespan 共享的 LLM client；未注入时 _complete 自建临时 client 并负责关闭
@@ -134,7 +145,7 @@ class AgentService:
                 interaction_id=interaction_id,
                 teaching_feedback=self._maybe_feedback(evidence, hint_level),
             )
-        fallback_content = get_agent_tool(tool_name).fallback_content
+        fallback_content = self._fallback_chat_content(tool_name)
         interaction_id = await self._persist_interaction(
             visitor_id=visitor_id or "",
             evidence=evidence,
@@ -180,6 +191,7 @@ class AgentService:
             learner_state_service=self.learner_state_service,
             recommendation_service=self.recommendation_service,
             practice_service=self.practice_service,
+            workspace_repo=self.workspace_repo,
             current_lesson=current_lesson,
         )
         messages = build_fc_chat_messages(
@@ -269,7 +281,7 @@ class AgentService:
             break
 
         tool_name = self._derive_fc_tool_name(executor.called_tools)
-        fallback_content = get_agent_tool(tool_name).fallback_content
+        fallback_content = self._fallback_chat_content(tool_name)
         log.info(
             "[agent] fc_chat llm_calls={} tools_called={} tool_name={} "
             "used_fallback=True fallback_reason={}",
@@ -398,7 +410,9 @@ class AgentService:
         身份），不阻断回答，evidence 为 None。证据块插入在 system prompt 之后、
         history 之前，确保模型在生成回答前已看到权威练习状态。
         """
-        if self.practice_service is None or not visitor_id:
+        if self.workspace_repo is None and self.practice_service is None:
+            return messages, None
+        if not visitor_id:
             return messages, None
         lesson_slug = (
             payload.context.current_lesson if payload.context else None
@@ -406,15 +420,22 @@ class AgentService:
         attempt_id = (
             payload.context.attempt_id if payload.context else None
         )
+        task_id = payload.context.current_task if payload.context else None
+        editor_code = payload.context.current_code if payload.context else None
         resolver = AgentEvidenceResolver(
-            practice_repo=self.practice_service.repo,
+            practice_repo=(
+                self.practice_service.repo if self.practice_service is not None else None
+            ),
             learner_state_service=self.learner_state_service,
+            workspace_repo=self.workspace_repo,
         )
         try:
             evidence = await resolver.resolve(
                 visitor_id=visitor_id,
                 lesson_slug=lesson_slug,
                 attempt_id=attempt_id,
+                task_id=task_id,
+                editor_code=editor_code,
             )
         except Exception:
             log.exception("[agent] evidence 解析失败，跳过证据块注入")
@@ -679,7 +700,15 @@ class AgentService:
         )
 
     def _fallback_chat_content(self, tool_name: ToolName) -> str:
-        return get_agent_tool(tool_name).fallback_content
+        """模型不可用时的回答（2026-10-23 决策：明说不可用，不编造）。
+
+        以前这里返回按意图预置的确定性话术，看起来像"AI 答了"，但内容与用户
+        当前代码无关，容易被当成真的教学判断。现在统一明说不可用，并说明
+        服务端教学状态（teachingFeedback）仍然可信、仍随响应返回。
+
+        ``tool_name`` 保留在签名里，便于将来按意图做真正有依据的兜底。
+        """
+        return FALLBACK_UNAVAILABLE_CONTENT
 
     def _extract_code_block(self, content: str) -> str | None:
         marker = "```"

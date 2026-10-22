@@ -155,7 +155,7 @@ class TestMetricsFill:
             interaction,
             route="fix_code",
             retrieval_mode="keyword",
-            tool_names=["search_knowledge", "get_exercise_summary"],
+            tool_names=["search_knowledge", "get_task_summary"],
             llm_latency_ms=850,
             input_tokens=1200,
             output_tokens=300,

@@ -43,7 +43,7 @@ const STATE_META: Record<TeachingFeedback["state"], { label: string; tone: strin
 const ACTION_META: Record<TeachingNextAction, { label: string; action: string }> = {
     inspect_result: { label: "查看结果", action: "inspect_result" },
     retry_exercise: { label: "重试练习", action: "retry_exercise" },
-    confirm_lesson: { label: "确认完成课程", action: "confirm_lesson" },
+    next_task: { label: "去下一个任务", action: "next_task" },
     retry_later: { label: "稍后重试", action: "retry_later" },
 };
 

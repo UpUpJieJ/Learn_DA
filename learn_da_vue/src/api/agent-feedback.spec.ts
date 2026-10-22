@@ -44,7 +44,7 @@ describe("TeachingFeedback type contract", () => {
     const actions: TeachingNextAction[] = [
       "inspect_result",
       "retry_exercise",
-      "confirm_lesson",
+      "next_task",
       "retry_later",
     ];
     expect(actions).toHaveLength(4);
@@ -86,16 +86,16 @@ describe("TeachingFeedback type contract", () => {
     expect(keys).not.toContain("fullCode");
   });
 
-  it("passed_unconfirmed maps to confirm_lesson when not completed", () => {
+  it("passed_unconfirmed maps to next_task when not completed", () => {
     const fb: TeachingFeedback = {
       state: "passed_unconfirmed",
       attemptId: 10,
       evidenceSummary: "练习已通过，可以确认课程完成",
       diagnosis: "练习目标已达成",
       hintLevel: 1,
-      nextAction: "confirm_lesson",
+      nextAction: "next_task",
     };
-    expect(fb.nextAction).toBe("confirm_lesson");
+    expect(fb.nextAction).toBe("next_task");
   });
 
   it("unverifiable maps to retry_later", () => {
@@ -110,3 +110,4 @@ describe("TeachingFeedback type contract", () => {
     expect(fb.nextAction).toBe("retry_later");
   });
 });
+

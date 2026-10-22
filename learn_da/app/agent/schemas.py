@@ -30,11 +30,14 @@ TeachingState = Literal[
 ]
 
 # 阶段 3：下一步动作（服务端权威决定，LLM 不得覆盖）
+# 改版 M4 起新增 next_task：工作区的课程完成度由任务通过数推导，任务通过后用
+# 「继续下一个任务」替代旧的「确认完成本课」。
 TeachingNextAction = Literal[
     "inspect_result",
     "retry_exercise",
     "confirm_lesson",
     "retry_later",
+    "next_task",
 ]
 
 AgentFeedbackValue = Literal["helpful", "not_helpful"]
@@ -66,6 +69,13 @@ class AgentContext(BaseModel):
         default=None,
         alias="attemptId",
         ge=1,
+    )
+    # 改版 M4：当前聚焦的任务 id（工作区右栏使用）。仅作证据定位线索，
+    # 提交状态仍由服务端从 task_attempts 读取。
+    current_task: str | None = Field(
+        default=None,
+        alias="currentTask",
+        max_length=64,
     )
     lesson_title: str | None = Field(
         default=None,

@@ -70,7 +70,9 @@ class TestBuildTeachingFeedback:
             _evidence("passed_unconfirmed", lesson_completed=False)
         )
         assert fb.state == "passed_unconfirmed"
-        assert fb.next_action == "confirm_lesson"
+        # 改版 M4：课程完成度由任务通过数推导，任务过了就直接去下一个任务，
+        # 不再有「确认完成本课」这一步动作。
+        assert fb.next_action == "next_task"
 
     def test_passed_unconfirmed_completed(self):
         fb = build_teaching_feedback(
@@ -122,7 +124,7 @@ class TestDeriveNextAction:
             ("execution_failed", True, "retry_exercise"),
             ("verification_failed", False, "retry_exercise"),
             ("verification_failed", True, "retry_exercise"),
-            ("passed_unconfirmed", False, "confirm_lesson"),
+            ("passed_unconfirmed", False, "next_task"),
             ("passed_unconfirmed", True, "inspect_result"),
             ("unverifiable", False, "retry_later"),
             ("unverifiable", True, "retry_later"),

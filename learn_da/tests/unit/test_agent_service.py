@@ -121,7 +121,7 @@ def test_system_prompt_emphasizes_coach_role_and_no_direct_answer_bias():
     assert "专门帮助有 Pandas 或 SQL 基础" not in SYSTEM_PROMPT
     assert "先解释思路" in SYSTEM_PROMPT
     assert "不要直接给最终答案" in SYSTEM_PROMPT
-    assert "围绕当前课程和 Playground 上下文" in SYSTEM_PROMPT
+    assert "围绕当前课程与学习工作区上下文" in SYSTEM_PROMPT
     assert "不是代写工具" in SYSTEM_PROMPT
     assert "如果当前课程涉及 Polars、DuckDB、Pandas 或 SQL" in SYSTEM_PROMPT
     assert "1 到 3 个" in SYSTEM_PROMPT
@@ -273,7 +273,10 @@ async def test_chat_uses_injected_router_decision(monkeypatch):
     result = await service.chat(AgentChatRequest(message="接下来怎么学"))
 
     assert router.messages == ["接下来怎么学"]
-    assert "当前状态：" in result.content
+    # 2026-10-23 决策：模型不可用时明说不可用，不再返回按意图预置的话术
+    assert "AI 助手暂时不可用" in result.content
+    assert "teachingFeedback" in result.content
+    assert result.used_fallback is True
 
 
 @pytest.mark.unit

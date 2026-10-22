@@ -2,9 +2,12 @@
 Task 7: 证据消费测试
 
 - 推荐服务读取练习失败信号触发回补建议
-- Agent FC tool get_exercise_summary 只读摘要
+- Agent FC tool get_task_summary 只读任务摘要（改版 M4 起读 task_attempts）
 - Dashboard practice-stats 端点返回正确指标
 """
+
+import json
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
@@ -172,93 +175,170 @@ class TestRecommendationPracticeSignal:
 
 
 # =====================================================
-# Agent FC Tool: get_exercise_summary
+# Agent FC Tool: get_task_summary（改版 M4：读 task_attempts）
 # =====================================================
 
 
-class TestFCToolExerciseSummary:
-    """Agent get_exercise_summary 工具只读摘要"""
+class TestFCToolTaskSummary:
+    """Agent get_task_summary 工具只读任务摘要"""
+
+    @staticmethod
+    def _attempt(**overrides):
+        from types import SimpleNamespace
+
+        base = {
+            "task_id": "t1",
+            "attempt_no": 2,
+            "status": "failed",
+            "verdict": "assertion_failed",
+            "created_time": datetime(2026, 10, 22, 10, 0, 0),
+            "assertions": json.dumps(
+                [
+                    {"id": "t1-schema", "title": "列齐全", "status": "passed"},
+                    {
+                        "id": "t1-rows",
+                        "title": "分组行数",
+                        "status": "failed",
+                        "detail": "表达式为假",
+                        "actual": "表达式 'region_stats.height == 4' 为假（实际值：False）",
+                    },
+                ],
+                ensure_ascii=False,
+            ),
+        }
+        base.update(overrides)
+        return SimpleNamespace(**base)
 
     @pytest.mark.asyncio
-    async def test_returns_summaries_without_code(self):
-        """返回摘要不包含完整代码"""
+    async def test_returns_failed_assertions_without_code(self):
+        """返回失败断言与实际值，且不含完整代码"""
         from app.agent.fc_tools import FCToolExecutor
 
-        mock_retriever = AsyncMock()
-        mock_practice = AsyncMock()
-        mock_practice.get_attempt_summaries.return_value = [
-            ExerciseAttemptSummary(
-                id=1,
-                attempt_id=1,
-                exercise_id="ex-001",
-                lesson_slug="polars-basics",
-                execution_status="completed",
-                verification_status="passed",
-                failure_reason=None,
-                created_time="2026-07-30 10:00:00",
-                duration_ms=200,
-            )
-        ]
+        mock_repo = AsyncMock()
+        mock_repo.recent_attempts.return_value = [self._attempt()]
 
         executor = FCToolExecutor(
-            knowledge_retriever=mock_retriever,
+            knowledge_retriever=AsyncMock(),
             visitor_id="visitor-1",
-            practice_service=mock_practice,
+            workspace_repo=mock_repo,
+            current_lesson="polars-groupby",
         )
 
-        result = await executor.execute(
-            "get_exercise_summary", '{"lesson_slug": "polars-basics"}'
-        )
+        result = await executor.execute("get_task_summary", "{}")
 
         assert result.ok is True
-        import json
-
         data = json.loads(result.output)
-        assert "attempts" in data
-        assert len(data["attempts"]) == 1
-        # 摘要不含 code 字段
-        assert "code" not in data["attempts"][0]
+        assert data["lesson_slug"] == "polars-groupby"
+        assert data["total"] == 1
+        item = data["attempts"][0]
+        assert item["verdict"] == "assertion_failed"
+        # 只回失败断言（通过的被过滤），并带实际值
+        assert [a["id"] for a in item["failed_assertions"]] == ["t1-rows"]
+        assert "实际值：False" in item["failed_assertions"][0]["actual"]
+        assert "code" not in item
 
     @pytest.mark.asyncio
-    async def test_no_practice_service_returns_error(self):
-        """practice_service 为 None 时返回错误"""
+    async def test_filters_by_task_id(self):
+        """传 task_id 时只返回该任务的提交"""
         from app.agent.fc_tools import FCToolExecutor
 
-        mock_retriever = AsyncMock()
+        mock_repo = AsyncMock()
+        mock_repo.recent_attempts.return_value = [
+            self._attempt(task_id="t1"),
+            self._attempt(task_id="t2", attempt_no=1),
+        ]
         executor = FCToolExecutor(
-            knowledge_retriever=mock_retriever,
+            knowledge_retriever=AsyncMock(),
             visitor_id="visitor-1",
-            practice_service=None,
+            workspace_repo=mock_repo,
         )
 
-        result = await executor.execute("get_exercise_summary", "{}")
-        assert result.ok is False
-        import json
+        result = await executor.execute("get_task_summary", '{"task_id": "t2"}')
 
+        data = json.loads(result.output)
+        assert data["total"] == 1
+        assert data["attempts"][0]["task_id"] == "t2"
+
+    @pytest.mark.asyncio
+    async def test_no_workspace_repo_returns_error(self):
+        """workspace_repo 为 None 时返回 unavailable"""
+        from app.agent.fc_tools import FCToolExecutor
+
+        executor = FCToolExecutor(
+            knowledge_retriever=AsyncMock(),
+            visitor_id="visitor-1",
+            workspace_repo=None,
+        )
+
+        result = await executor.execute("get_task_summary", "{}")
+        assert result.ok is False
         data = json.loads(result.output)
         assert data["error"] == "unavailable"
 
     @pytest.mark.asyncio
     async def test_visitor_isolation(self):
-        """工具使用服务端注入的 visitor_id"""
+        """工具使用服务端注入的 visitor_id，模型无法指定"""
         from app.agent.fc_tools import FCToolExecutor
 
-        mock_retriever = AsyncMock()
-        mock_practice = AsyncMock()
-        mock_practice.get_attempt_summaries.return_value = []
+        mock_repo = AsyncMock()
+        mock_repo.recent_attempts.return_value = []
 
         executor = FCToolExecutor(
-            knowledge_retriever=mock_retriever,
+            knowledge_retriever=AsyncMock(),
             visitor_id="server-visitor-123",
-            practice_service=mock_practice,
+            workspace_repo=mock_repo,
+            current_lesson="polars-basics",
         )
 
-        await executor.execute("get_exercise_summary", "{}")
+        await executor.execute("get_task_summary", '{"visitor_id": "attacker"}')
 
-        # 验证传入的是服务端 visitor_id
-        mock_practice.get_attempt_summaries.assert_called_once_with(
-            visitor_id="server-visitor-123", lesson_slug=None, limit=10
+        mock_repo.recent_attempts.assert_awaited_once_with(
+            "server-visitor-123", lesson_slug="polars-basics", limit=10
         )
+
+    @pytest.mark.asyncio
+    async def test_learner_progress_includes_task_stats(self):
+        """学习进度工具同时给出工作区任务进度"""
+        from app.agent.fc_tools import FCToolExecutor
+
+        mock_repo = AsyncMock()
+        mock_repo.progress.return_value = {
+            "summary": {"tasksPassed": 2, "tasksTotal": 3},
+            "lessons": [
+                {
+                    "lessonSlug": "polars-basics",
+                    "title": "Polars 基础",
+                    "status": "in_progress",
+                    "passedTasks": 2,
+                    "totalTasks": 3,
+                    "currentTaskId": "t3",
+                    "attempts": 4,
+                },
+                {
+                    "lessonSlug": "duckdb-analytics",
+                    "title": "DuckDB 入门",
+                    "status": "not_started",
+                    "passedTasks": 0,
+                    "totalTasks": 3,
+                    "currentTaskId": "t1",
+                    "attempts": 0,
+                },
+            ],
+        }
+
+        executor = FCToolExecutor(
+            knowledge_retriever=AsyncMock(),
+            visitor_id="visitor-1",
+            workspace_repo=mock_repo,
+        )
+
+        result = await executor.execute("get_learner_progress", "{}")
+
+        data = json.loads(result.output)
+        assert data["summary"]["tasksPassed"] == 2
+        # 没进度的课程被过滤，避免把 13 门课全塞给模型
+        assert [item["lesson_slug"] for item in data["lessons"]] == ["polars-basics"]
+        assert data["lessons"][0]["current_task"] == "t3"
 
 
 # =====================================================

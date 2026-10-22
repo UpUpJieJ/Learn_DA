@@ -49,9 +49,12 @@ def get_agent_service(
     # Phase 2: 练习服务（只读摘要）
     from app.practice.repository import PracticeRepository
     from app.practice.service import PracticeService
+    from app.workspace.repository import WorkspaceReadRepository
 
     practice_repo = PracticeRepository(db)
     practice_service = PracticeService(db=db, practice_repo=practice_repo)
+    # 改版 M4：任务提交（task_attempts）是当前唯一写入的证据源
+    workspace_repo = WorkspaceReadRepository(db)
     # 阶段 3：交互审计 repo（与 analytics/practice 共享同一 db session）
     interaction_repo = AgentInteractionRepository(db)
 
@@ -60,6 +63,7 @@ def get_agent_service(
         analytics_service=AnalyticsService(db),
         learner_state_service=LearnerStateService(db),
         practice_service=practice_service,
+        workspace_repo=workspace_repo,
         interaction_repo=interaction_repo,
         # lifespan 共享的 LLM client；为 None 时（无 key / 未经 lifespan 的测试）
         # 由 _complete 自建临时 client 并负责关闭。

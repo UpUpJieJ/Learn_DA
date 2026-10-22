@@ -62,7 +62,7 @@ cases:
     lesson_completed: false
     history_user_turns: 0
     expected_state: passed_unconfirmed
-    expected_next_action: confirm_lesson
+    expected_next_action: next_task
     expected_hint_level: 1
 
   - id: eva-006
@@ -207,7 +207,7 @@ cases:
     history_user_turns: 0
     fallback_reason: timeout
     expected_state: passed_unconfirmed
-    expected_next_action: confirm_lesson
+    expected_next_action: next_task
     expected_hint_level: 1
 
   - id: eva-020
@@ -293,7 +293,7 @@ cases:
     lesson_completed: false
     history_user_turns: 0
     expected_state: passed_unconfirmed
-    expected_next_action: confirm_lesson
+    expected_next_action: next_task
     expected_hint_level: 1
 
   - id: eva-028
@@ -314,7 +314,7 @@ cases:
     lesson_completed: false
     history_user_turns: 5
     expected_state: passed_unconfirmed
-    expected_next_action: confirm_lesson
+    expected_next_action: next_task
     expected_hint_level: 3
 
   # ── 维度 5 补充 ──

@@ -223,6 +223,8 @@ export interface AgentContext {
     stderr?: string;
     /** 阶段 3：可选 attempt 定位线索 */
     attemptId?: number;
+    /** 改版 M4：当前任务（工作区 taskId），证据按任务定位 */
+    currentTask?: string;
 }
 
 /** Agent 对话请求 */
@@ -240,11 +242,15 @@ export type TeachingState =
     | "unverifiable"
     | "no_evidence";
 
-/** 阶段 3：下一步动作（服务端权威决定） */
+/** 阶段 3：下一步动作（服务端权威决定）
+ *
+ * ``next_task`` 取代了旧的 ``confirm_lesson``：改版 M4 起课程完成度由任务
+ * 通过数推导，任务过了就直接去下一个任务，没有「确认完成本课」这一步。
+ */
 export type TeachingNextAction =
     | "inspect_result"
     | "retry_exercise"
-    | "confirm_lesson"
+    | "next_task"
     | "retry_later";
 
 /** 阶段 3：结构化教学反馈 */

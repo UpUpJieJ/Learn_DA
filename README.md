@@ -265,19 +265,24 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 
 ### 3. AI Agent 助手
 
-> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入一起接回（见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §12）。
+> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入一起接回（见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16）。
 
-- 原本悬浮于页面右下角，随时唤起。
-- **学习证据驱动**（阶段 3）：Agent 的练习判断完全基于服务端数据库证据
-  （ExerciseAttempt 执行/验证状态 + LearnerState 课程完成），客户端自报的
-  stdout/stderr 不作为事实来源。每次回答附带结构化 `teachingFeedback`
-  （五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
+- **学习证据驱动**（阶段 3 / 改版 E0）：Agent 的判断完全基于服务端数据库证据
+  —— 有 `workspace:` 的课读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的
+  `actual`），历史课回落到 ExerciseAttempt，客户端自报的 stdout/stderr 不作为
+  事实来源。证据里带任务进度（`0/3 已通过`）、当前未通过任务、失败断言的实际值，
+  所以模型能说清「哪条断言、为什么」而不是泛泛而谈。每次回答附带结构化
+  `teachingFeedback`（五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
+- **模型不可用就明说不可用**：LLM 调用失败时返回「AI 助手暂时不可用（模型调用失败），
+  这次我不会编造回答」，并说明 `teachingFeedback` 仍是服务端权威结果——不再用预置
+  话术伪装成回答。
+- **只解释，不改代码**（当前阶段的边界）：不提供 `replace_cell` 之类直接改工作区的动作。
 - Agent 工具集：
   - **概念解释**：讲解 Polars / DuckDB 核心 API 与原理。
   - **代码生成**：生成可直接运行的示例代码。
   - **代码校验**：检查语法错误、逻辑错误与 API 误用。
   - **对比分析**：Polars vs Pandas、DuckDB vs 传统 SQL。
-  - **实战案例**：数据分析、清洗、批量查询的实战代码推荐。
+  - **学习进度/任务摘要**：`get_learner_progress` / `get_task_summary`（读真实提交记录）。
 - 对话上下文保留短期记忆，支持单轮深度问答。
 
 ### 4. 学习状态与匿名会话
