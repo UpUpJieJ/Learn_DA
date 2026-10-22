@@ -6,8 +6,19 @@
 | 文件 | 行数 | 说明 |
 |---|---|---|
 | `orders.csv` | 5000 | 订单明细：一个订单一行 |
+| `orders_dirty.csv` | 1230 | 上面 1200 行 + 人为注入脏点，供数据清洗课练习 |
 | `customers.csv` | 800 | 客户主数据：`region` 为所属大区 |
 | `products.csv` | 120 | 商品主数据：单价、成本、上架日期 |
+
+`orders_dirty.csv` 故意注入的脏点（字段与 `orders.csv` 相同）：
+
+| 脏点 | 形式 | 处理手段 |
+|---|---|---|
+| `discount` / `quantity` 缺失 | 空单元格 → null | `null_count()` / `fill_null()` |
+| `amount` 出现 `N/A` | 整列被读成字符串 | `cast(pl.Float64, strict=False)` |
+| `order_date` 混格式 | 部分 `2025/11/22` | `str.replace()` 后再 `str.to_date()` |
+| `region` 前后空格、`channel` 大写 | `" 华东"` / `"APP"` | `str.strip_chars()` / `str.to_lowercase()` |
+| 整行重复（含重复 `order_id`） | 追加 30 行 | `unique(subset=["order_id"])` |
 
 `orders.csv` 字段：
 

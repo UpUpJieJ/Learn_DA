@@ -162,6 +162,40 @@ def build_orders(
     return rows
 
 
+def build_dirty_orders(rng: random.Random, orders: list[dict[str, str]]) -> list[dict[str, str]]:
+    """从干净订单里造一张"脏表"，专门给数据清洗课用。
+
+    故意注入的脏点（都可以被 Polars 处理掉，且不依赖随机时间）：
+
+    - `discount` / `quantity` 片段缺失（空字符串 → 读进来是 null）
+    - `amount` 部分行是 `N/A` 字符串（整列只能按 str 读）
+    - `order_date` 部分行是 `2025/11/22` 斜杠格式
+    - `region` 带前后空格、`channel` 大小写不一致
+    - 整行重复（含重复的 `order_id`）
+    """
+    sample = orders[:1200]
+    dirty: list[dict[str, str]] = []
+    for index, row in enumerate(sample):
+        item = dict(row)
+        if index % 37 == 5:
+            item["discount"] = ""
+        if index % 53 == 7:
+            item["quantity"] = ""
+        if index % 41 == 11:
+            item["amount"] = "N/A"
+        if index % 29 == 3:
+            item["order_date"] = item["order_date"].replace("-", "/")
+        if index % 23 == 9:
+            item["region"] = f" {item['region']} "
+        if index % 31 == 13:
+            item["channel"] = item["channel"].upper()
+        dirty.append(item)
+    # 整行重复：挑 30 行原样再追加一次（order_id 也跟着重复）
+    for offset in range(0, 30):
+        dirty.append(dict(sample[offset * 17 % len(sample)]))
+    return dirty
+
+
 def render_csv(rows: list[dict[str, str]], columns: tuple[str, ...]) -> bytes:
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=list(columns), lineterminator="\n")
@@ -180,8 +214,19 @@ def render_readme(counts: dict[str, int]) -> bytes:
 | 文件 | 行数 | 说明 |
 |---|---|---|
 | `orders.csv` | {counts["orders"]} | 订单明细：一个订单一行 |
+| `orders_dirty.csv` | {counts["dirty_orders"]} | 上面 1200 行 + 人为注入脏点，供数据清洗课练习 |
 | `customers.csv` | {counts["customers"]} | 客户主数据：`region` 为所属大区 |
 | `products.csv` | {counts["products"]} | 商品主数据：单价、成本、上架日期 |
+
+`orders_dirty.csv` 故意注入的脏点（字段与 `orders.csv` 相同）：
+
+| 脏点 | 形式 | 处理手段 |
+|---|---|---|
+| `discount` / `quantity` 缺失 | 空单元格 → null | `null_count()` / `fill_null()` |
+| `amount` 出现 `N/A` | 整列被读成字符串 | `cast(pl.Float64, strict=False)` |
+| `order_date` 混格式 | 部分 `2025/11/22` | `str.replace()` 后再 `str.to_date()` |
+| `region` 前后空格、`channel` 大写 | `" 华东"` / `"APP"` | `str.strip_chars()` / `str.to_lowercase()` |
+| 整行重复（含重复 `order_id`） | 追加 30 行 | `unique(subset=["order_id"])` |
 
 `orders.csv` 字段：
 
@@ -210,14 +255,17 @@ def build_all() -> dict[str, bytes]:
     products = build_products(rng)
     customers = build_customers(rng)
     orders = build_orders(rng, products, customers)
+    dirty_orders = build_dirty_orders(random.Random(SEED + 1), orders)
 
     files = {
         "orders.csv": render_csv(orders, ORDERS_COLUMNS),
+        "orders_dirty.csv": render_csv(dirty_orders, ORDERS_COLUMNS),
         "customers.csv": render_csv(customers, CUSTOMERS_COLUMNS),
         "products.csv": render_csv(products, PRODUCTS_COLUMNS),
         "README.md": render_readme(
             {
                 "orders": len(orders),
+                "dirty_orders": len(dirty_orders),
                 "customers": len(customers),
                 "products": len(products),
             }

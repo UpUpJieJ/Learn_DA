@@ -87,6 +87,29 @@ def test_orders_amount_matches_arithmetic():
         assert abs(expected - float(row["amount"])) <= 0.01
 
 
+def test_dirty_orders_keep_the_expected_dirt():
+    """清洗课依赖这些脏点稳定存在；全被"修好"了课就没东西练了。"""
+    rows = _rows("orders_dirty.csv")
+    assert len(rows) == 1230
+
+    nulls = {
+        column: sum(1 for row in rows if row[column] == "")
+        for column in ("discount", "quantity")
+    }
+    assert nulls["discount"] >= 20, nulls
+    assert nulls["quantity"] >= 10, nulls
+
+    assert any(row["amount"] == "N/A" for row in rows), "amount 缺少 N/A 脏值"
+    assert any("/" in row["order_date"] for row in rows), "order_date 缺少斜杠格式"
+
+    order_ids = [row["order_id"] for row in rows]
+    assert len(order_ids) - len(set(order_ids)) == 30, "重复行数量变了"
+
+    region_forms = {row["region"] for row in rows}
+    assert any(value != value.strip() for value in region_forms), "region 缺少前后空格"
+    assert any(value.isupper() for value in {row["channel"] for row in rows}), "channel 缺少大写形式"
+
+
 def test_orders_reference_existing_dimensions():
     orders = _rows("orders.csv")
     customers = {row["customer_id"]: row for row in _rows("customers.csv")}

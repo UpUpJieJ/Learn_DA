@@ -1,9 +1,9 @@
 {
   "files": {
     "README.md": {
-      "bytes": 1282,
+      "bytes": 1983,
       "rows": 0,
-      "sha256": "0ba881c9f03599187ab568843fd2d24288b74b109b878448ddeeeac193af644b"
+      "sha256": "ed26ab6424ed28897baed012661f3aa2f7007db4dc91d7e1ff7f3f13b84aaa3e"
     },
     "customers.csv": {
       "bytes": 38007,
@@ -14,6 +14,11 @@
       "bytes": 365281,
       "rows": 5000,
       "sha256": "1b008685430e087138094eb0cc05cd19e2d1bd4453a6300ab7cb6215715b8496"
+    },
+    "orders_dirty.csv": {
+      "bytes": 89847,
+      "rows": 1230,
+      "sha256": "5ff27d465d2830e146a3fd693dad8078ca1c9055f13312c353511d45b78ce43e"
     },
     "products.csv": {
       "bytes": 4546,

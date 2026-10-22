@@ -61,22 +61,184 @@ exercise:
   validator:
     type: stdout_exact
     expected: "[('华东', 2, 1019), ('华南', 1, 240), ('华北', 1, 59)]"
+# 改版 M1：多 cell 工作区（重放式，严格顺序）
+workspace:
+  datasets:
+    - ecommerce/orders.csv
+  cells:
+    - id: c1
+      kind: starter
+      code: |
+        import duckdb
+
+        con = duckdb.connect()
+        # 先看看这份 CSV 有哪些列、前几行长什么样
+        print(con.sql("DESCRIBE SELECT * FROM read_csv_auto('data/ecommerce/orders.csv')").pl())
+        print(con.sql("SELECT * FROM read_csv_auto('data/ecommerce/orders.csv') LIMIT 3").pl())
+    - id: c2
+      kind: task
+      task_id: t1
+      code: |
+        # TODO: 把 CSV 变成可复用的 orders 表（CREATE TABLE AS 或 con.register），
+        # 再把完整明细取成 orders_df（用 .pl()），行数存进 order_count
+        orders_df = con.sql(
+            "SELECT * FROM read_csv_auto('data/ecommerce/orders.csv') LIMIT 3"
+        ).pl()
+        order_count = 0
+        print(order_count)
+        print(orders_df)
+    - id: c3
+      kind: task
+      task_id: t2
+      code: |
+        # TODO: 用 GROUP BY region 汇总 revenue（SUM(amount)）与 orders（COUNT(*)），
+        # 按 revenue 降序，结果用 .pl() 存进 region_stats
+        region_stats = orders_df
+        print(region_stats)
+    - id: c4
+      kind: task
+      task_id: t3
+      code: |
+        # TODO: 按 amount 降序取金额最大的 5 笔订单，只保留 order_id 和 amount，
+        # 结果用 .pl() 存进 top_orders
+        top_orders = orders_df.head(5)
+        print(top_orders)
+  tasks:
+    - id: t1
+      title: 把订单 CSV 读成可复用的表
+      cell: c2
+      objective: |
+        用 duckdb.connect() 建连接，用 read_csv_auto('data/ecommerce/orders.csv')
+        配合 CREATE TABLE AS（或 con.register）把订单数据读进名为 orders 的表；
+        再把完整明细取成 Polars DataFrame orders_df，行数存进 order_count。
+      assertions:
+        - id: t1-schema
+          type: schema
+          title: 明细包含订单的关键列
+          var: orders_df
+          columns: [order_id, customer_id, product_id, region, channel, amount, refunded]
+        - id: t1-rows
+          type: expr_true
+          title: order_count 等于订单总行数 5000
+          expr: "order_count == 5000"
+        - id: t1-unique
+          type: expr_true
+          title: order_id 有 5000 个不重复值（没读丢、也没读重）
+          expr: "orders_df['order_id'].n_unique() == 5000"
+    - id: t2
+      title: 按区域汇总 revenue 与订单数
+      cell: c3
+      objective: |
+        用 GROUP BY region 汇总每个区域的 revenue（SUM(amount)）与 orders（COUNT(*)），
+        按 revenue 降序排列，结果用 .pl() 存进 region_stats；数据来自 orders 表。
+      assertions:
+        - id: t2-schema
+          type: schema
+          title: region_stats 含 region / revenue / orders
+          var: region_stats
+          columns: [region, revenue, orders]
+        - id: t2-rows
+          type: expr_true
+          title: 四个区域各一行
+          expr: "region_stats.height == 4"
+        - id: t2-total
+          type: expr_true
+          title: 四个区域 revenue 合计 5287843.86
+          expr: "abs(region_stats['revenue'].sum() - 5287843.86) < 0.05"
+        - id: t2-sorted
+          type: expr_true
+          title: 按 revenue 降序
+          expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
+    - id: t3
+      title: 按金额取 Top 5 订单
+      cell: c4
+      objective: |
+        用 ORDER BY amount DESC + LIMIT 5 取金额最大的 5 笔订单，只保留 order_id 与
+        amount 两列，结果用 .pl() 存进 top_orders（金额并列时顺序不唯一，别按 order_id 硬编码）。
+      assertions:
+        - id: t3-schema
+          type: schema
+          title: top_orders 只含 order_id / amount 两列
+          var: top_orders
+          columns: [order_id, amount]
+          exact: true
+        - id: t3-rows
+          type: expr_true
+          title: 恰好 5 行
+          expr: "top_orders.height == 5"
+        - id: t3-max
+          type: expr_true
+          title: 第一行是最大金额 19236.8
+          expr: "abs(top_orders['amount'][0] - 19236.8) < 1e-6"
+        - id: t3-sorted
+          type: expr_true
+          title: 按 amount 降序
+          expr: "top_orders['amount'].to_list() == sorted(top_orders['amount'].to_list(), reverse=True)"
 ---
 
 # DuckDB 查询分析
+
+## 这节课解决什么问题
+
+你已经会用 Polars 处理 DataFrame 了，但有一大类问题用 SQL 表达更自然：**"按区域汇总收入"、"按渠道数订单"、"取金额最大的 5 笔"。**
+
+仓库里的 `orders.csv` 有 5000 条订单、合计 528 万收入，分散在四个区域、四个渠道。运营每周都要看这几张汇总表。
+这一课让你第一次把这份真实数据装进 DuckDB，用 SQL 把明细变成汇总：建连接 → 读 CSV 成表 → `GROUP BY` 汇总 → `ORDER BY` 排序。
 
 ## 什么是 DuckDB？
 
 DuckDB 是一个嵌入式分析数据库，专为 OLAP 工作负载设计。它可以直接在 Python 进程中运行，无需安装服务器。
 
-主要特点：
 - **零配置** - 无需安装服务器，`pip install duckdb` 即可使用
 - **高性能** - 列式存储，向量化执行
 - **SQL 兼容** - 支持标准 SQL 语法
 
-## SQL → Polars 对照
+## 你将用到的数据
 
-如果你已经学过 Polars，下面这张表能帮你理解 SQL 和 Polars 的对应关系：
+文件：`data/ecommerce/orders.csv`（5000 行、11 列）。本课重点用下面这些列：
+
+| 列名 | 类型 | 含义 |
+|------|------|------|
+| `order_id` | 文本 | 唯一订单号，`O000001` 起 |
+| `region` | 文本 | 收货区域：华东 / 华北 / 华南 / 西南 |
+| `channel` | 文本 | 下单渠道：app / web / mini_program / offline |
+| `quantity` / `unit_price` / `discount` | 整数 / 小数 | 件数、单价快照、折扣率 |
+| `amount` | 小数 | **折后金额** = `round(unit_price * quantity * discount, 2)` |
+| `order_date` | 日期 | 2025-01-01 ~ 2025-12-31 |
+| `refunded` | 布尔 | 约 4% 的订单已退款（206 条） |
+
+规模与已知坑：
+
+- 5000 行、`amount` 合计 **5,287,843.86**；四个区域各 1181 ~ 1308 单，单量并不均衡。
+- `read_csv_auto()` 会自动推断类型：`order_date` → `DATE`、`refunded` → `BOOLEAN`，不需要手工转换。
+- `amount` 已经是折后金额，**不要**再乘 `discount`，否则整体偏高。
+
+## 核心概念：连接、建表与聚合
+
+```python
+import duckdb
+
+con = duckdb.connect()  # 内存数据库，关闭连接后数据消失
+
+con.execute(
+    "CREATE TABLE orders AS SELECT * FROM read_csv_auto('data/ecommerce/orders.csv')"
+)
+
+print(con.sql("""
+    SELECT
+        region,
+        COUNT(*) AS order_count,
+        SUM(amount) AS total_amount
+    FROM orders
+    GROUP BY region
+    ORDER BY total_amount DESC
+""").fetchall())
+```
+
+`CREATE TABLE ... AS SELECT` 一行就把 CSV 变成可反复查询的表；`GROUP BY` 后面的列必须和 `SELECT` 里的非聚合列一致；
+聚合结果建议起别名（`total_amount` 比 `sum(amount)` 好读）。`con.sql(...)` 与 `con.execute(...)` 等价，但前者能直接接 `.pl()` 把结果转成 Polars。
+
+## SQL → Polars 对照
 
 | 操作 | Polars | SQL (DuckDB) |
 |------|--------|-------------|
@@ -85,75 +247,6 @@ DuckDB 是一个嵌入式分析数据库，专为 OLAP 工作负载设计。它�
 | 分组聚合 | `df.group_by('g').agg(pl.col('v').sum())` | `GROUP BY g` + `SUM(v)` |
 | 排序 | `df.sort('v', descending=True)` | `ORDER BY v DESC` |
 | 添加列 | `df.with_columns(...)` | `SELECT *, expr AS new_col` |
-
-## 内存连接
-
-```python
-import duckdb
-
-con = duckdb.connect()  # 内存数据库，关闭连接后数据消失
-```
-
-DuckDB 的默认连接是内存数据库，适合临时分析和学习。不需要启动任何服务。
-
-## 创建表和查询
-
-```python
-import duckdb
-
-con = duckdb.connect()
-
-# 用 VALUES 直接构造测试数据
-con.execute("""
-    CREATE TABLE orders AS
-    SELECT * FROM (VALUES
-        (1, '华东', '办公', 120),
-        (2, '华东', '数码', 899),
-        (3, '华南', '办公', 240),
-        (4, '华北', '配件', 59)
-    ) AS t(order_id, region, category, amount)
-""")
-
-# 查询
-result = con.execute("SELECT * FROM orders").fetchall()
-print(result)
-```
-
-## 分组聚合
-
-```python
-result = con.execute("""
-    SELECT
-        region,
-        COUNT(*) AS order_count,
-        SUM(amount) AS total_amount,
-        AVG(amount) AS avg_amount
-    FROM orders
-    GROUP BY region
-    ORDER BY total_amount DESC
-""").fetchall()
-
-print(result)
-```
-
-注意：`GROUP BY` 后面的列必须和 `SELECT` 中非聚合列一致，否则会报错。
-
-## 与 Polars 互通
-
-DuckDB 可以直接查询 Polars DataFrame，无需手动导出：
-
-```python
-import polars as pl
-import duckdb
-
-df = pl.DataFrame({'id': [1, 2], 'name': ['Ada', 'Lin']})
-con = duckdb.connect()
-
-# 注册 Polars DataFrame 为 SQL 表
-con.register('users', df.to_arrow())
-result = con.execute('SELECT * FROM users').fetchall()
-print(result)
-```
 
 ## 练习
 
@@ -193,43 +286,45 @@ result = con.execute("""
 print(result)
 ```
 
-## 常见错误
+## 任务清单
+
+右边的**工作区**按顺序执行 `c1` → `c4`，共享同一个命名空间；通过当前任务的断言才会解锁下一个。
+
+| 任务 | 格子 | 交付物 | 验收标准 |
+|------|------|--------|----------|
+| `t1` 把订单 CSV 读成可复用的表 | `c2` | `orders_df`、`order_count` | 含 `order_id` / `customer_id` / `product_id` / `region` / `channel` / `amount` / `refunded`；`order_count == 5000`；`order_id` 不重复 |
+| `t2` 按区域汇总 revenue 与订单数 | `c3` | `region_stats` | 含 `region` / `revenue` / `orders`；四个区域各一行；revenue 合计 5287843.86；按 revenue 降序 |
+| `t3` 按金额取 Top 5 订单 | `c4` | `top_orders` | 只有 `order_id` / `amount` 两列；恰好 5 行；最大 19236.8；按 amount 降序 |
+
+三点提醒：
+
+1. `c1` 只是让你看见数据长什么样，建表要自己写；`con.register()` 和 `CREATE TABLE AS` 都可以，后者更常用。
+2. 金额最大的前 5 笔里有**并列**（两笔 18298.95、两笔 17758.6），顺序不唯一，别按 `order_id` 硬编码。
+3. 变量名必须是 `orders_df`、`order_count`、`region_stats`、`top_orders`，断言靠名字找结果。
+
+## 常见坑
 
 **错误 1：WHERE 和 HAVING 混淆**
-```sql
--- 错误：WHERE 不能过滤聚合结果
-SELECT category, SUM(amount) FROM orders
-WHERE SUM(amount) > 200
-GROUP BY category
 
--- 正确：用 HAVING 过滤分组后的结果
-SELECT category, SUM(amount) AS total FROM orders
-GROUP BY category
-HAVING SUM(amount) > 200
-```
+`WHERE SUM(amount) > 200` 会直接报错——聚合值在分组之后才存在。过滤明细行用 `WHERE`，过滤分组结果用 `HAVING SUM(amount) > 200`。
 
 **错误 2：GROUP BY 缺少非聚合列**
-```sql
--- 错误：category 不在 GROUP BY 中
-SELECT category, region, SUM(amount) FROM orders
-GROUP BY category
 
--- 正确：所有非聚合列都必须出现在 GROUP BY 中
-SELECT category, region, SUM(amount) FROM orders
-GROUP BY category, region
-```
+`SELECT region, channel, SUM(amount) ... GROUP BY region` 里的 `channel` 会取"任意一行"，结果不可靠；所有非聚合列都要写进 `GROUP BY`。
 
-**错误 3：忘记给聚合列起别名**
-```sql
--- 结果列名会自动生成为 sum(amount)，可读性差
-SELECT category, SUM(amount) FROM orders GROUP BY category
+**错误 3：重复计算折扣**
 
--- 建议起别名
-SELECT category, SUM(amount) AS total FROM orders GROUP BY category
-```
+`amount` 已经是折后金额。写 `SUM(unit_price * quantity * discount)` 看似更"原始"，实际会漏掉 CSV 里已做的取整，
+合计与 5,287,843.86 对不上——汇总一律用 `amount`。
+
+## 自检清单
+
+- [ ] `order_count` 是 5000，`order_id` 没有重复值（没读丢也没读重）
+- [ ] `region_stats` 是 4 行，`revenue` 合计 5,287,843.86，按 revenue 从大到小
+- [ ] `top_orders` 是 5 行、最大金额 19236.8，且只含两列
 
 ## 下一步建议
 
-完成本课后，建议继续：
 - **Polars 分组聚合**：对比 Polars 的 `group_by` 和 SQL 的 `GROUP BY`，理解两种表达方式
-- 在 Playground 中尝试用 `con.register()` 把 Polars DataFrame 注册到 DuckDB 查询
+- **DuckDB JOIN 与 CTE**：把 `products` / `customers` 接进来，按品类和客户分层汇总
+- 在 Playground 中继续用 `con.register()` 把 Polars DataFrame 交给 DuckDB 查询
