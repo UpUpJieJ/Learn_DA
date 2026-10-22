@@ -6,15 +6,17 @@
 
 ## 项目简介
 
-**Learn DA** 是一个以数据分析为核心的交互式学习网站。平台提供结构化教程、可实时运行的代码 Playground，以及内嵌 AI Agent 助手，帮助用户在浏览器中边学边练，快速掌握现代数据分析工具的核心用法与最佳实践。主题与学习路径可按需扩展，不绑定某一组技术栈。
+**Learn DA** 是一个以数据分析为核心的交互式学习网站。平台提供结构化教程、可实时运行的代码工作区（多单元格 + 任务级自动判定），帮助用户在浏览器中边学边练，快速掌握现代数据分析工具的核心用法与最佳实践。主题与学习路径可按需扩展，不绑定某一组技术栈。
 
 核心特性：
 
-- **教程学习**：覆盖 Polars、DuckDB、组合实战与 Python 编程基础等主题，课程列表支持专题、难度与关键词过滤。
-- **交互式 Playground**：左侧代码编辑区（带行号、字号调节、Ctrl+Enter 运行）编写代码，右侧实时查看运行结果、数据预览与执行历史，草稿按课程保存在浏览器本地。
-- **AI Agent 助手**：固定右下角悬浮窗，基于原生 OpenAI Function Calling 实现（受限只读工具 + 硬步数上限，无 key 时确定性降级），支持问答、代码生成、错误排查、API 对比与示例讲解，全程无跳转。
+- **教程学习**：覆盖 Polars、DuckDB、组合实战与 Python 编程基础等主题，共 13 门课，课程地图按专题展示进度与「继续上次」入口。
+- **任务式工作区**：每门课是一个多单元格工作区（读数据 → 逐步加工 → 提交任务），提交时由服务端断言判定对错，失败会回传实际值帮你定位；结果依赖上游，改了上游会标「结果已过期」。
+- **实验室（`/lab`）**：自由沙盒，不挂课程数据、不判定，用来随手试代码；`Ctrl/⌘+Enter` 运行。
+- **学习报告（`/report`）**：只用真实提交记录计算——已通过任务、完成课程、连续学习、能力分布、常见卡点、最近提交。
+- **AI 教练（改版中）**：Agent 后端（证据驱动的五态反馈 + 只读工具链）仍在，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入（失败卡片 / 阶梯提示 / 对话）一起接回。
 - **安全执行策略**：代码执行只走独立 Runner 服务，默认在无网络、只读文件系统、非 root、带内存/CPU/进程数与超时限制的一次性容器里运行；Runner 不可用时后端明确返回 503，不回退本地执行。
-- **无登录本地模式**：无需账号即可使用核心功能；学习进度、界面偏好与 Playground 草稿保存在当前浏览器本地。
+- **无登录本地模式**：无需账号即可使用核心功能；学习进度以服务端匿名会话为准，界面偏好与工作区草稿另存当前浏览器本地。
 
 ---
 
@@ -52,7 +54,8 @@
 │   │   ├── core/             # 数据库、内容索引、会话、异常处理
 │   │   ├── learner_state/    # 服务端学习进度投影（唯一权威状态源）
 │   │   ├── learning/         # 教程内容接口与规则推荐
-│   │   ├── playground/       # Playground 业务逻辑与练习执行
+│   │   ├── playground/       # 代码执行接口（练习执行 / 自由沙盒）
+│   │   ├── workspace/        # 学习工作区（会话 / 单元格外 / 任务判定 / 进度与报告）
 │   │   ├── practice/         # 可验证练习（尝试模型、旧 validator、v2 断言 DSL）
 │   │   ├── sandbox/          # 沙箱执行调度（Runner client）
 │   │   ├── middleware/       # CORS、安全头、访问日志中间件
@@ -74,19 +77,21 @@
         ├── stores/           # Pinia 状态管理（learnerState 服务端为准、localState 离线缓存）
         ├── api/              # Axios API 封装（agent / learning / playground / analytics）
         ├── views/            # 页面级组件
-        │   ├── Home.vue
-        │   ├── Learning.vue
-        │   ├── LessonDetail.vue
-        │   ├── Playground.vue
+        │   ├── Home.vue          # 今日（首页 + 继续上次）
+        │   ├── CourseMap.vue     # /learn 课程地图
+        │   ├── LessonWorkspace.vue # /lesson/:slug 三栏工作区
+        │   ├── Report.vue        # /report 学习报告
+        │   ├── Lab.vue           # /lab 自由实验室
         │   └── NotFound.vue
         ├── components/       # 可复用组件
+        │   ├── ui/           # 基础组件层（AppButton / AppCard / AppInput / StatusPill / CodeOutput / EmptyState / ConfirmDialog / ToastHost）
         │   ├── layout/       # 布局组件（Navbar 等）
-        │   ├── playground/   # Playground 交互组件
-        │   ├── agent/        # AI Agent 面板（AgentPanel.vue）
-        │   └── recommendation/ # 统一推荐卡片（RecommendationPanel.vue）
-        ├── composables/      # 工作流组合式函数（useLessonSession / usePlaygroundSession / useAgentConversation）
+        │   ├── home/         # 首页组件（ContinueStrip 继续上次）
+        │   ├── agent/        # AI Agent 面板（AgentPanel.vue，改版期间待接回）
+        │   └── recommendation/ # 统一推荐卡片（RecommendationPanel.vue，待接回）
+        ├── composables/      # 组合式函数（useAsyncState / useToast / useAgentConversation）
         ├── types/            # TypeScript 类型定义
-        └── assets/           # 样式与静态资源
+        └── assets/           # 样式与静态资源（assets/styles/main.css 定义语义 token）
 ```
 
 ---
@@ -146,11 +151,11 @@ npm run dev
 - **只用语义 token**：颜色 `brand-* / ok-* / warn-* / err-* / ink-* / surface-* / line`，圆角 `rounded-card|control|pill`，阴影 `shadow-card|pop`，全部定义在 `src/assets/styles/main.css` 的 `@theme`。页面里不要直接写 `blue-500`、`emerald-100` 这类原色。
 - **基础组件在 `src/components/ui/`**：`AppButton` / `AppCard` / `AppInput` / `StatusPill` / `CodeOutput` / `EmptyState` / `ConfirmDialog` / `ToastHost`。新页面直接复用，不要再手写一套按钮。
 - **三态与反馈**：网络页面用 `useAsyncState`（idle/loading/ready/empty/error），瞬时反馈用 `useToast()`，危险操作用 `ConfirmDialog`（不用 `window.confirm`），空态必须给 CTA。
-- **提交前跑规范检查**：`npm run lint:ui`。存量违规有基线（`scripts/ui_lint.baseline.json`），新增违规会让命令以非零码退出；`src/components/ui/**` 零容忍。
+- **提交前跑规范检查**：`npm run lint:ui`（或 `npm run check` = type-check + lint:ui）。存量违规有基线（`scripts/ui_lint.baseline.json`，当前 63 个文件 / 225 处），新增违规会让命令以非零码退出；`src/components/ui/**` 零容忍。线上收紧基线后不要随手 `--update-baseline`。
 
 ### Runner 启动（代码执行，必需）
 
-Playground、练习判定、Agent 的证据链都依赖 Runner；后端拿不到 Runner 时执行接口会返回 503。
+工作区执行、练习判定、Agent 的证据链都依赖 Runner；后端拿不到 Runner 时执行接口会返回 503。
 
 ```bash
 cd learn_da_runner
@@ -183,7 +188,7 @@ cd learn_da
 .venv/Scripts/python.exe scripts/verify_exercises.py --base-url http://127.0.0.1:8000
 ```
 
-> 跑全量 13 课会触发 Playground 频率限制（默认 10 次/分钟），自检时把后端以
+> 跑全量 13 课会触发执行接口频率限制（默认 10 次/分钟），自检时把后端以
 > `RATE_LIMIT_ENABLED=False` 启动（该开关会连同按路由的限流一起关掉），或分批执行。
 
 ### Docker Compose 生产部署
@@ -251,18 +256,19 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
   - `GET /api/v1/lessons/{slug}`：获取课程详情。
   - `GET /api/v1/lessons/categories`：获取课程分类统计。
 
-### 2. Playground 代码实操
+### 2. 学习工作区与实验室
 
-- 代码编辑区为带行号的 textarea（语法高亮由后端返回的结构化结果驱动，暂未接入 Monaco）。
+- **工作区**（`/lesson/<slug>`）：一门课 = 一个多单元格工作区，右侧是任务清单。点「运行」或「提交任务」时，服务端按顺序重放前 k 个单元格，再对目标格求值断言；格子结果依赖上游，改上游后下游标「结果已过期」。
+- **实验室**（`/lab`）：自由沙盒，不挂课程数据集、不做判定，用来随手试代码。
+- 代码编辑区为带行号的 textarea（暂未接入 Monaco）；`Ctrl/⌘+Enter` 运行。
 - 用户代码提交至后端，**一律转交 Runner 执行，Runner 不可用时明确拒绝**（fail-closed，不回退本地/模拟执行）。
-- 返回执行结果、标准输出、数据表格预览与报错信息。
-- 当前浏览器会按上下文保存 Playground 草稿：
-  - 普通 Playground 使用 `default` 草稿。
-  - 课程 Playground 使用 `lesson:{slug}` 草稿。
+- 工作区草稿按 `{lesson, cell}` 保存在当前浏览器本地（800ms 去抖后同步到服务端会话）。
 
 ### 3. AI Agent 助手
 
-- 悬浮于页面右下角，随时唤起。
+> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入一起接回（见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §12）。
+
+- 原本悬浮于页面右下角，随时唤起。
 - **学习证据驱动**（阶段 3）：Agent 的练习判断完全基于服务端数据库证据
   （ExerciseAttempt 执行/验证状态 + LearnerState 课程完成），客户端自报的
   stdout/stderr 不作为事实来源。每次回答附带结构化 `teachingFeedback`
@@ -278,8 +284,8 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 ### 4. 学习状态与匿名会话
 
 - 平台不提供账号、登录、注册或 JWT 认证；使用签名匿名 session cookie 标识学习者。
-- 学习进度由服务端 `LearnerState` 模块统一管理（唯一写入口：`POST /analytics/track`），前端 localStorage 仅作离线缓存与重试队列。
-- 编辑器偏好、Playground 草稿等纯 UI 状态仍保存在当前浏览器本地。
+- 学习进度以服务端工作区会话与任务尝试为准（`/api/v1/workspace/*`）；旧 `POST /analytics/track` 事件链仍在，用于历史数据。
+- 编辑器偏好、工作区草稿等纯 UI 状态仍保存在当前浏览器本地。
 - 清理浏览器数据或更换设备后，服务端进度不受影响；离线缓存会丢失但可从服务端恢复。
 
 ---
@@ -348,8 +354,12 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 | `PUT` | `/api/v1/workspace/sessions/{id}/cells/{cellId}` | 改代码（后续格子级联失效） |
 | `POST` | `/api/v1/workspace/sessions/{id}/cells/{cellId}/run` | 重放式执行到该格（`requestId` 幂等） |
 | `POST` | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/submit` | 提交任务（落 `task_attempts`，返回断言明细） |
+| `GET` | `/api/v1/workspace/progress` | 课程级进度（课程地图用） |
+| `GET` | `/api/v1/workspace/report` | 学习报告（指标 / 能力分布 / 常见卡点 / 最近提交） |
 
-后端把这些请求转成 Runner 的 `POST /v1/sessions`（顺序重放 + 单进程），样例课是 `03-polars-groupby`。
+后端把这些请求转成 Runner 的 `POST /v1/sessions`（顺序重放 + 单进程）。**13 门课全部已迁到工作区格式**
+（每课 3 个任务、3–11 条断言），内容写法见
+[`learn_da/docs/workspace-content-spec.md`](learn_da/docs/workspace-content-spec.md)。
 端到端自检（需后端与 Runner 都在跑）：
 
 ```bash
@@ -357,10 +367,20 @@ cd learn_da
 .venv/Scripts/python.exe scripts/verify_workspace.py --base-url http://127.0.0.1:8000
 ```
 
-前端工作区在 `/lesson/<slug>`（例如 `http://localhost:5173/lesson/polars-groupby`）：左任务列表、
-中单元格流（运行 / 提交任务）、右任务目标。课程是否进工作区由后端 `hasWorkspace` 决定（frontmatter
-有 `workspace:` 的课程，课程列表点进去走 `/lesson/:slug`，其余仍走旧课程页）。编辑自动去抖 800ms 落库；
-改第 k 格后其自身与后续格标为「需执行」，上游改动会让已通过任务回到「需复核」。
+前端页面（改版 P1/P3/P4 之后只剩 5 个）：
+
+| 路由 | 页面 | 说明 |
+|---|---|---|
+| `/` | `Home.vue` | 今日：首页 + 顶部「继续上次」条（1 击回到上次任务） |
+| `/learn` | `CourseMap.vue` | 课程地图：按 track 分组的进度与「开始/继续/复习」 |
+| `/lesson/:slug` | `LessonWorkspace.vue` | 三栏工作区：左任务列表、中单元格流（运行 / 提交任务）、右任务目标 |
+| `/report` | `Report.vue` | 学习报告 |
+| `/lab` | `Lab.vue` | 自由实验室（不挂课程数据、不判定） |
+
+工作区示例：`http://localhost:5173/lesson/polars-groupby`（深链 `?task=<taskId>` 可直接定位任务）。
+编辑自动去抖 800ms 落库；改第 k 格后其自身与后续格标为「需执行」，上游改动会让已通过任务回到「需复核」。
+旧的 `/learn/:slug`、`/playground`、`/dashboard` 已下线（对应 `LessonDetail.vue` / `Playground.vue` /
+`Learning.vue` / `Dashboard.vue` 已删除）。
 
 ---
 
@@ -389,7 +409,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ```bash
 cd learn_da_vue
-npm test -- --run      # vitest（112 项）
+npm test -- --run      # vitest（17 文件 / 113 项）
 npm run type-check     # vue-tsc
 npm run lint:ui        # 视觉规范（新增违规即失败）
 npm run build          # 生产构建

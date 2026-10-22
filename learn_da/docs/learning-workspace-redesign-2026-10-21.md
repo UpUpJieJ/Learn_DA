@@ -478,6 +478,68 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 - **仍未做**：`/lab` 自由沙盒、`/report` 学习报告、其余 12 课迁移、教练侧栏接 `frame_equal` 建议动作
   （`propose → 确认` 未接）、旧 `/learn/:slug` 与 `/playground` 下线（留到 P4）。
 
+### 11.4 M4 + P1/P3/P4 完成记录（2026-10-22，13 课迁移与页面重构）
+
+用户验收 M3 后（"试用下来效果可以"）要求：其余 12 课迁工作区并「内容稍微整合一下」（加厚），其余按
+§15.6 推进。本轮全部落地。
+
+**内容（M4）**
+
+- **13 门课全部迁到 `workspace:` 格式**，每课 3 个任务、3–11 条断言。数据课正文 260–330 行、纯 Python 课
+  180–240 行（改前 `12-python-functions.md` 只有 66 行、`13-python-collections.md` 72 行）。
+- 参考解按课拆文件：`learn_da/scripts/solutions/<slug>.py`（`SOLUTIONS: dict[cellId, code]`），由
+  `learn_da/scripts/workspace_solutions.py` 聚合，避免多人并行改同一个 `SOLUTIONS` 字典。
+- 自检 `learn_da/tests/test_workspace_content.py`（26 项 = 13 课 × 2）：进程内用
+  `app/practice/assertion_runtime.py` 求值，逐课验证「起步代码在每个任务下必失败（L3）」+
+  「参考解跑到该任务与整链重放都必全过（L4）」，外加任务数 ≥ 2、数据集 ≤ 5MB。
+- **新增脏数据集** `content/datasets/ecommerce/orders_dirty.csv`（1230 行 = 1200 样本 + 30 整行重复）：
+  `discount` 33 个空、`quantity` 23 个空、`amount` 混入 `N/A`（整列被读成 String）、`order_date` 42 行
+  `2025/11/22` 斜杠格式、`region` 前后空格、`channel` 大写、重复 `order_id`。清洗课（05）用它，
+  干净课继续用 `orders.csv`；生成器固定 seed，`--check` 校验 5 个文件字节一致。
+- 写作规范独立成文：`learn_da/docs/workspace-content-spec.md`（`workspace:` 骨架、单元格约定、
+  四型断言规则、正文 8 段结构、YAML 坑、数据集字段字典）。
+
+**后端（进度与报告）**
+
+- `learn_da/app/workspace/progress.py`：`lesson_progress()` / `learning_report()`，只读 `task_attempts`
+  与内容索引，不依赖 Runner。返回课程级 `status`（`not_started|in_progress|completed`）、`currentTaskId`、
+  track 汇总、`tasksFirstTry`、`activeDays`/`streakDays`、`errorPatterns`（按 `(lesson, task, assertionId)`
+  聚合，带 `lastActual`）、`recent`。
+- 新端点 `GET /api/v1/workspace/progress`、`GET /api/v1/workspace/report`；
+  测试 `learn_da/tests/unit/test_workspace_progress.py`（5 项）。
+
+**前端（P1/P3/P4）**
+
+- `/learn` 换成 `CourseMap.vue`：三个汇总卡 + 「继续上次」+ 按 track 分组的进度与「开始/继续/复习」，
+  1 击直达任务（`?task=`）；首页顶部加 `ContinueStrip.vue`。
+- `/report` → `Report.vue`：5 张指标卡、能力分布、常见卡点（可点回课程）、最近提交表格；一次通过率口径
+  写在小字里（分母 = 已通过任务 + 卡点去重后的失败任务数）。
+- `/lab` → `Lab.vue`：自由沙盒（行号列、`Ctrl/⌘+Enter`、`CodeOutput`、数据集参考侧栏）；语言下拉只启用
+  Python（后端构造 Runner 请求时不传 `language`，沙箱 schema 是 `Literal["python"]`），SQL 置灰。
+- Navbar 导航收敛为 **今日 / 课程 / 报告 / 实验室**，raw palette 清零。
+- **P4 下线旧页**：路由从 9 条降到 6 条（`/`、`/learn`、`/lesson/:slug`、`/report`、`/lab`、404）。
+  删除 `Learning.vue`、`LessonDetail.vue`、`Playground.vue`、`Dashboard.vue`、
+  `composables/useLessonSession.ts`、`composables/usePlaygroundSession.ts` 及其 2 个 spec；
+  `App.vue` 去掉深色全屏分支与 `KeepAlive` 白名单。
+  `ui_lint` 基线从 61 文件 / 558 处收紧到 **63 文件 / 225 处**。
+- **暂时成死代码（待接回）**：`components/agent/AgentPanel.vue` + `composables/useAgentConversation.ts` +
+  `stores/playground.ts`（AI 聊天面板原本只挂在 Playground 上）、`components/recommendation/RecommendationPanel.vue`。
+  Agent 后端与 `/api/v1/agent/chat` 未动，聊天面板将随 §8.2 的分档介入一起接回。
+
+**实测**
+
+- 后端 `pytest -q` → **488 passed**；Runner **39 passed**；前端 **113 passed（17 文件）**；
+  `vue-tsc --build`、`npm run lint:ui`、`content_lint.py`、`build_datasets.py --check` 全通过。
+- `npm run build` 在本机被 esbuild 临时文件权限拦住（`Access is denied` 于 `%TEMP%\esbuild-<hash>`），
+  已排除 tailwind/minify/target/manualChunks/TEMP 位置等因素，判定为 Windows 沙箱/杀毒拦截，
+  换机器或服务器构建验证。
+
+**仍未做**
+
+- AI 教练面板（工作区内分档介入 + 动作白名单）未接回；课程断言实际只用 `schema` + `expr_true`
+  （`frame_equal`/`sql_rows` 需要 `refs`，暂未接入内容管线）。
+- `/lab` 的 SQL 支持、移动端适配、灰度开关 `WORKSPACE_V2`（旧页已删，不再需要）。
+
 ## 12. 测试策略
 
 - **断言 DSL**：每种类型的通过/失败/异常/超时；`expr_true` 的命名空间白名单（禁 import/写文件）。
@@ -614,3 +676,13 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 - **基础组件**：`src/components/ui/` 下 `AppButton`/`AppCard`/`AppInput`/`StatusPill`/`CodeOutput`/`EmptyState`/`ConfirmDialog`/`ToastHost` + `status.ts` + `index.ts`（barrel）；配套 `useAsyncState`（三态 + 竞态丢弃）、`useToast`（模块级队列）两个 composable，`App.vue` 挂 `<ToastHost />`。
 - **测试**：新增 5 个 spec（`useAsyncState`/`useToast`/`AppButton`/`StatusPill`/`ConfirmDialog`），前端 71 → **103 passed**；`vitest.config.ts` 补 `vue()` 插件（此前导入 `.vue` 会报缺少 plugin-vue）。
 - **未做（留到后续阶段）**：`ShortcutHelp`（`?` 快捷键说明）随 P2 快捷键一起做；页面本身未改（旧 `Playground`/`LessonDetail` 仍在，按 §15.6 保留到 P4）。
+
+#### P1/P3/P4 完成记录（2026-10-22）
+
+- **P1 `/learn`**：`src/views/CourseMap.vue`（三个汇总卡 + 「继续上次」+ 按 track 分组进度 + 开始/继续/复习 CTA，直达 `?task=`）；首页顶部 `components/home/ContinueStrip.vue`；数据来自 `GET /api/v1/workspace/progress`。
+- **P2 工作区外壳**：`/lesson/:slug` 三栏（已在 §11.3 记录）；本轮补深链 `?task=<taskId>`（`router.replace` 同步，`onMounted` 命中 query 则聚焦，否则落第一个未通过任务）。
+- **P3 `/report`**：`src/views/Report.vue`（5 张指标卡、能力分布、常见卡点可点回课程、最近提交表格），数据来自 `GET /api/v1/workspace/report`。
+- **P4 `/lab` + 下线旧页**：`src/views/Lab.vue` 自由沙盒（行号列、`Ctrl/⌘+Enter`、`CodeOutput`、数据集参考侧栏，SQL 置灰）；删除 `Learning.vue`/`LessonDetail.vue`/`Playground.vue`/`Dashboard.vue` 与 `useLessonSession`/`usePlaygroundSession` + 2 个 spec；路由 9 → 6 条；`App.vue` 去掉深色全屏与 `KeepAlive`。
+- **导航**：Navbar 4 项（今日 / 课程 / 报告 / 实验室），raw palette 清零。
+- **基线**：后端 488 / Runner 39 / 前端 113；`ui_lint` 基线 63 文件 / 225 处（P0 时 61 / 558）。
+- **仍缺**：`ShortcutHelp`（`?` 说明面板）、AI 教练面板接回、`/lab` 的 SQL 支持。（`npm run build` 在本机被 esbuild 临时文件权限拦住，需在普通终端或服务器验证。）
