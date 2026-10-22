@@ -124,6 +124,7 @@ export interface TrackProgress {
     passedTasks: number;
     lessons: number;
     completedLessons: number;
+    /** 0–1 的小数（后端 round(passedTasks / totalTasks, 3)），渲染百分比时需 ×100 */
     ratio?: number;
 }
 

@@ -1,462 +1,297 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useLearnerStateStore } from '@/stores/learnerState'
-import { learningTracks, platformCopy } from '@/lib/learningTracks'
-import { fetchHomeStats } from '@/api/analytics'
-import { fetchCatalog, fetchCategoryStats, type CategoryStat } from '@/api/learning'
-import type { CatalogTrack, HomeStats, PlatformCatalog } from '@/types/api'
-import ContinueStrip from '@/components/home/ContinueStrip.vue'
+// =====================================================
+// 今日（首页，改版 P5）
+//
+// 单一职责：回答「我现在该做什么」。
+//  - 一张主卡：继续上次那个任务（1 击进入，深链带 ?task=）
+//  - 一条指标带：已通过任务 / 完成课程 / 一次通过率 / 连续学习
+//  - 一张卡点卡：上次没通过的那条断言，点一下就回到那个任务
+//  - 两门「接下来」+ 各路径进度 + 两个入口（实验室 / 学习报告）
+//
+// 数据只来自 GET /workspace/report（task_attempts 真实聚合），没有把营销
+// 文案和平台级「今日活跃」塞进来——首页不编数字。
+// =====================================================
 
-const router = useRouter()
-const learnerStateStore = useLearnerStateStore()
+import { computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { fetchReport, type ErrorPattern, type LessonProgress, type ReportPayload } from "@/api/workspace";
+import { AppButton, AppCard, EmptyState, StatusPill } from "@/components/ui";
+import { useAsyncState } from "@/composables/useAsyncState";
 
-// ---- 动画控制 ----
-const heroVisible = ref(false)
-const cardsVisible = ref(false)
+const router = useRouter();
+
+const report = useAsyncState<ReportPayload>(() => fetchReport(), {
+    isEmpty: (value) => value.lessonProgress.length === 0,
+});
+
+const summary = computed(() => report.data.value?.summary ?? null);
+const lessons = computed(() => report.data.value?.lessonProgress ?? []);
+const tracks = computed(() => report.data.value?.tracks ?? []);
+const topError = computed<ErrorPattern | null>(() => report.data.value?.errorPatterns[0] ?? null);
+
+/** 回访主流程：In-progress 里最近动过的那门课；全新访客落到第一门未完成的课；全做完则回到第一门复习。 */
+const continueTarget = computed<LessonProgress | null>(() => {
+    const started = lessons.value
+        .filter((item) => item.status === "in_progress" && item.lastActivityAt)
+        .sort((left, right) => String(right.lastActivityAt).localeCompare(String(left.lastActivityAt)));
+    if (started.length > 0) return started[0] ?? null;
+    return lessons.value.find((item) => item.status !== "completed") ?? lessons.value[0] ?? null;
+});
+
+const hasHistory = computed(() => (summary.value?.attemptsTotal ?? 0) > 0);
+
+/** 主卡之外，再推荐两门没做完的课。 */
+const nextUp = computed<LessonProgress[]>(() =>
+    lessons.value
+        .filter((item) => item.status !== "completed" && item.lessonSlug !== continueTarget.value?.lessonSlug)
+        .slice(0, 2),
+);
+
+const greeting = computed(() => {
+    const hour = new Date().getHours();
+    if (hour < 6) return "夜深了";
+    if (hour < 12) return "早上好";
+    if (hour < 18) return "下午好";
+    return "晚上好";
+});
+
+const overviewLine = computed(() => {
+    const value = summary.value;
+    if (!value || !hasHistory.value) return "还没有学习记录 —— 从下面这门课的第一个任务开始。";
+    const parts = [`已完成 ${value.tasksPassed}/${value.tasksTotal} 个任务`];
+    if (value.streakDays > 0) parts.push(`连续学习 ${value.streakDays} 天`);
+    if ((value.daysSinceActive ?? 0) >= 3) parts.push(`已经 ${value.daysSinceActive} 天没练了`);
+    return parts.join(" · ");
+});
+
+const firstTryRate = computed(() => {
+    const value = summary.value;
+    if (!value || value.tasksPassed <= 0) return "—";
+    return `${Math.round((Math.min(value.tasksFirstTry, value.tasksPassed) / value.tasksPassed) * 100)}%`;
+});
+
+const metrics = computed(() => {
+    const value = summary.value;
+    return [
+        { label: "已通过任务", value: value ? `${value.tasksPassed}` : "—", suffix: value ? `/ ${value.tasksTotal}` : "" },
+        { label: "完成课程", value: value ? `${value.lessonsCompleted}` : "—", suffix: value ? `/ ${value.lessonsTotal}` : "" },
+        { label: "一次通过率", value: firstTryRate.value, suffix: "" },
+        { label: "连续学习", value: value ? `${value.streakDays}` : "—", suffix: "天" },
+    ];
+});
+
+function primaryLabel(lesson: LessonProgress): string {
+    if (lesson.status === "in_progress") return "继续";
+    if (lesson.status === "completed") return "复习";
+    return "开始学习";
+}
+
+function lessonMeta(lesson: LessonProgress): string {
+    const bits = [`${lesson.passedTasks}/${lesson.totalTasks} 个任务`];
+    if (lesson.estimatedMinutes) bits.push(`约 ${lesson.estimatedMinutes} 分钟`);
+    if (lesson.lastActivityAt) bits.push(`最近 ${lastSeen(lesson.lastActivityAt)}`);
+    return bits.join(" · ");
+}
+
+function lastSeen(value: string): string {
+    const stamp = new Date(value);
+    if (Number.isNaN(stamp.getTime())) return "—";
+    return new Intl.DateTimeFormat("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    }).format(stamp);
+}
+
+function ratio(passed: number, total: number): number {
+    if (total <= 0) return 0;
+    return Math.round((passed / total) * 100);
+}
+
+/** 后端 `ratio` 是 0–1 的小数（`progress.py` 里 round(passed/total, 3)），这里统一换成百分比。 */
+function trackRatio(track: { totalTasks: number; passedTasks: number; ratio?: number }): number {
+    if (typeof track.ratio === "number") return Math.round(track.ratio * 100);
+    return ratio(track.passedTasks, track.totalTasks);
+}
+
+function open(lesson: LessonProgress) {
+    const query =
+        lesson.status !== "completed" && lesson.currentTaskId ? { task: lesson.currentTaskId } : undefined;
+    void router.push({ path: `/lesson/${lesson.lessonSlug}`, query });
+}
+
+function openError(pattern: ErrorPattern) {
+    void router.push({ path: `/lesson/${pattern.lessonSlug}`, query: { task: pattern.taskId } });
+}
 
 onMounted(() => {
-  setTimeout(() => (heroVisible.value = true), 50)
-  setTimeout(() => (cardsVisible.value = true), 300)
-  loadHomeData()
-})
-
-// ---- 平台统计数据（从后端获取） ----
-const homeStats = ref<HomeStats | null>(null)
-const catalog = ref<PlatformCatalog | null>(null)
-const categoryStats = ref<CategoryStat[]>([])
-
-async function loadHomeData() {
-  try {
-    const [statsData, catalogData, categoryStatsData] = await Promise.all([
-      fetchHomeStats().catch(() => null),
-      fetchCatalog().catch(() => null),
-      fetchCategoryStats().catch(() => [] as CategoryStat[]),
-    ])
-    homeStats.value = statsData
-    catalog.value = catalogData
-    categoryStats.value = categoryStatsData
-  } catch {
-    // 静默失败，使用默认值
-  }
-}
-
-// ---- 学习路径数据 ----
-type PathColor = 'blue' | 'yellow' | 'purple' | 'emerald' | 'slate'
-
-const legacyPaths = learningTracks.map((track) => ({
-  id: track.key,
-  title: track.label,
-  subtitle: track.subtitle,
-  description: track.description,
-  targetAudience: track.targetAudience,
-  learningOutcome: track.learningOutcome,
-  recommendedStart: track.recommendedStart,
-  tags: track.tags,
-  color: track.color as PathColor,
-  slug: track.route,
-  lessonCount: 0,
-}))
-
-const topicLabelByKey = computed(() => {
-  return Object.fromEntries(
-    (catalog.value?.topics ?? []).map((topic) => [topic.key, topic.label]),
-  )
-})
-
-const lessonCountByCategory = computed(() => {
-  return Object.fromEntries(
-    categoryStats.value.map((item) => [item.category, item.count]),
-  )
-})
-
-const learningPaths = computed(() => {
-  const tracks = catalog.value?.tracks ?? []
-  if (tracks.length === 0) return legacyPaths
-
-  return tracks.map((track) => buildCatalogPath(track))
-})
-
-const quickStartPaths = computed(() => learningPaths.value.slice(0, 3))
-const platformTitle = computed(() => catalog.value?.platform.title ?? platformCopy.title)
-const heroTitle = computed(() => catalog.value?.platform.name ?? platformCopy.heroTitle)
-const heroTitleHighlight = computed(() => catalog.value?.platform.title ?? platformCopy.heroTitleHighlight)
-const heroSubtitle = computed(() => catalog.value?.platform.subtitle ?? platformCopy.heroSubtitle)
-const currentScope = computed(() => {
-  const totalLessons = homeStats.value?.totalLessons
-  const pathCount = learningPaths.value.length
-  if (totalLessons) return `当前版本包含 ${totalLessons} 节课程与 ${pathCount} 条学习路径`
-  return platformCopy.currentScope
-})
-
-function buildCatalogPath(track: CatalogTrack) {
-  const legacy = learningTracks.find((item) => item.key === track.category || item.key === track.key)
-  const topicLabel = topicLabelByKey.value[track.topic] ?? '学习主题'
-  const category = track.category ?? track.key
-  const lessonCount = track.category ? lessonCountByCategory.value[track.category] ?? 0 : 0
-
-  return {
-    id: track.key,
-    title: track.label,
-    subtitle: legacy?.subtitle ?? topicLabel,
-    description: track.description ?? legacy?.description ?? `围绕 ${track.label} 的系统学习路径。`,
-    targetAudience: legacy?.targetAudience ?? `想学习 ${track.label} 的学习者`,
-    learningOutcome: legacy?.learningOutcome ?? `能完成 ${track.label} 的核心学习任务`,
-    recommendedStart: legacy?.recommendedStart ?? '建议从本路径第一课开始',
-    tags: legacy?.tags ?? [topicLabel, category, '学习路径'],
-    color: normalizePathColor(track.color ?? legacy?.color),
-    slug: track.category ? `/learn?category=${track.category}` : `/learn?track=${track.key}`,
-    lessonCount,
-  }
-}
-
-function normalizePathColor(color?: string): PathColor {
-  if (color === 'blue' || color === 'yellow' || color === 'purple' || color === 'emerald') {
-    return color
-  }
-  return 'slate'
-}
-
-// ---- 统计数据（优先展示后端实时数据） ----
-const stats = computed(() => {
-  if (homeStats.value) {
-    return [
-      { label: '课程总数', value: `${homeStats.value.totalLessons}` },
-      { label: '学习路径', value: `${learningPaths.value.length}` },
-      { label: '今日活跃', value: homeStats.value.todayActiveUsers > 0 ? `${homeStats.value.todayActiveUsers}` : '—' },
-      { label: '代码运行', value: homeStats.value.totalCodeRuns > 0 ? `${homeStats.value.totalCodeRuns}` : '—' },
-    ]
-  }
-  return [
-    { label: '课程总数', value: '-' },
-    { label: '学习路径', value: `${learningPaths.value.length}` },
-    { label: '今日活跃', value: '—' },
-    { label: '代码运行', value: '—' },
-  ]
-})
-
-const lastVisitedSlug = computed(() => learnerStateStore.lastVisitedSlug)
-const hasLearningProgress = computed(() => !!lastVisitedSlug.value)
-
-// ---- 操作 ----
-function continueLearning() {
-  const slug = lastVisitedSlug.value
-  if (slug) {
-    router.push(`/lesson/${slug}`)
-  } else {
-    router.push('/learn')
-  }
-}
-
-function goToLearning() {
-  router.push('/learn')
-}
-
-const colorMap: Record<string, string> = {
-  blue: 'from-blue-500 to-blue-700',
-  yellow: 'from-yellow-400 to-orange-500',
-  purple: 'from-purple-500 to-indigo-600',
-  emerald: 'from-emerald-500 to-teal-600',
-  slate: 'from-slate-500 to-slate-700',
-}
-
-const colorBg: Record<string, string> = {
-  blue: 'bg-blue-50 border-blue-100',
-  yellow: 'bg-yellow-50 border-yellow-100',
-  purple: 'bg-purple-50 border-purple-100',
-  emerald: 'bg-emerald-50 border-emerald-100',
-  slate: 'bg-slate-50 border-slate-100',
-}
-
-const colorTag: Record<string, string> = {
-  blue: 'bg-blue-100 text-blue-700',
-  yellow: 'bg-yellow-100 text-yellow-700',
-  purple: 'bg-purple-100 text-purple-700',
-  emerald: 'bg-emerald-100 text-emerald-700',
-  slate: 'bg-slate-100 text-slate-700',
-}
+    void report.run();
+});
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <!-- 改版 P1：回访主流程——「继续上次」直达上次未完成任务（1 击） -->
-    <ContinueStrip />
-    <!-- ================================================
-         Hero 区域
-    ================================================= -->
-    <section
-      class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white"
-    >
-      <!-- 背景装饰 -->
-      <div class="absolute inset-0 overflow-hidden pointer-events-none">
-        <div
-          class="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-blue-600 opacity-10 blur-3xl"
-        />
-        <div
-          class="absolute -bottom-32 -left-32 w-80 h-80 rounded-full bg-indigo-500 opacity-10 blur-3xl"
-        />
-        <!-- 网格背景 -->
-        <svg
-          class="absolute inset-0 w-full h-full opacity-5"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="white" stroke-width="0.5" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-      </div>
-
-      <div
-        class="relative max-w-6xl mx-auto px-6 py-20 md:py-28 flex flex-col items-center text-center transition-all duration-700"
-        :class="heroVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
-      >
-        <!-- Badge -->
-        <span
-          class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 text-sm font-medium text-blue-200 mb-6 backdrop-blur-sm"
-        >
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          {{ platformTitle }}
-        </span>
-
-        <!-- 标题 -->
-        <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-6 leading-tight">
-          {{ heroTitle }}
-          <br />
-          <span
-            class="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent"
-          >{{ heroTitleHighlight }}</span>
-        </h1>
-
-        <!-- 副标题 -->
-        <p
-          class="text-lg md:text-xl text-slate-300 max-w-2xl mb-4 leading-relaxed"
-        >
-          {{ heroSubtitle }}
-        </p>
-
-        <p class="text-sm text-slate-400 mb-6">
-          {{ currentScope }}
-        </p>
-
-        <!-- 统计数据 -->
-        <div class="flex flex-wrap justify-center gap-8 mt-6 mb-10">
-          <div
-            v-for="stat in stats"
-            :key="stat.label"
-            class="text-center"
-          >
-            <div class="text-2xl font-bold text-white">{{ stat.value }}</div>
-            <div class="text-xs text-slate-400 mt-0.5">{{ stat.label }}</div>
-          </div>
-        </div>
-
-        <!-- CTA 按钮组 -->
-        <div class="flex flex-wrap gap-4 justify-center">
-          <button
-            class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white font-semibold text-base transition-all duration-200 shadow-lg shadow-blue-500/30 hover:shadow-blue-400/40 hover:-translate-y-0.5 active:translate-y-0"
-            @click="hasLearningProgress ? continueLearning() : router.push(learningPaths[0]?.slug ?? '/learn')"
-          >
-            <span>{{ hasLearningProgress ? '继续学习' : '从推荐路径开始' }}</span>
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </button>
-
-          <button
-            class="flex items-center gap-2 px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-base border border-white/20 hover:border-white/30 transition-all duration-200 backdrop-blur-sm hover:-translate-y-0.5 active:translate-y-0"
-            @click="goToLearning"
-          >
-            <span>查看全部学习路径</span>
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          </button>
-        </div>
-
-        <div class="mt-5 flex flex-wrap justify-center gap-3 text-xs text-slate-400">
-          <button
-            v-for="path in quickStartPaths"
-            :key="path.id"
-            class="rounded-full border border-white/10 px-3 py-1 hover:border-blue-300/30 hover:text-blue-200 transition-colors"
-            @click="router.push(path.slug)"
-          >
-            {{ path.title }}
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================
-         学习路径卡片
-    ================================================= -->
-    <section class="max-w-6xl mx-auto px-6 py-16">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold text-slate-800 mb-3">选择你的学习路径</h2>
-        <p class="text-slate-500 max-w-xl mx-auto">
-          根据你的目标和基础，选择最适合的起点开始学习。
-        </p>
-      </div>
-
-      <!-- 推荐起步路径 -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-        <div
-          v-for="path in quickStartPaths"
-          :key="`quick-${path.id}`"
-          class="flex items-center gap-3 p-4 rounded-xl cursor-pointer hover:shadow-md transition-all"
-          :class="colorBg[path.color]"
-          @click="router.push(path.slug)"
-        >
-          <span class="text-2xl">✦</span>
-          <div>
-            <p class="text-sm font-semibold text-slate-800">{{ path.title }}</p>
-            <p class="text-xs text-slate-500">{{ path.subtitle }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="grid grid-cols-1 md:grid-cols-3 gap-6 transition-all duration-700"
-        :class="cardsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
-      >
-        <div
-          v-for="path in learningPaths"
-          :key="path.id"
-          class="group relative rounded-2xl border p-6 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
-          :class="colorBg[path.color]"
-          @click="router.push(path.slug)"
-        >
-          <!-- 顶部渐变条 -->
-          <div
-            class="absolute top-0 left-0 right-0 h-1 rounded-t-2xl bg-gradient-to-r"
-            :class="colorMap[path.color]"
-          />
-
-          <!-- 标题 -->
-          <div class="flex items-start gap-4 mb-4">
+    <div class="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
+        <header class="mb-6 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h3 class="text-xl font-bold text-slate-800">{{ path.title }}</h3>
-              <p class="text-sm text-slate-500 mt-0.5">{{ path.subtitle }}</p>
+                <h1 class="text-2xl font-bold text-ink-900">今日</h1>
+                <p class="mt-1 text-sm text-ink-500">{{ greeting }}，{{ overviewLine }}</p>
             </div>
-          </div>
+            <AppButton variant="ghost" size="sm" @click="router.push('/learn')">课程地图</AppButton>
+        </header>
 
-          <!-- 适合谁 -->
-          <div class="mb-3">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">适合谁</p>
-            <p class="text-sm text-slate-600 leading-relaxed">{{ path.targetAudience }}</p>
-          </div>
-
-          <!-- 你将获得什么 -->
-          <div class="mb-4">
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">你将获得什么</p>
-            <p class="text-sm text-slate-600 leading-relaxed">{{ path.learningOutcome }}</p>
-          </div>
-
-          <!-- 标签 -->
-          <div class="flex flex-wrap gap-2 mb-5">
-            <span
-              v-for="tag in path.tags"
-              :key="tag"
-              class="px-2.5 py-1 rounded-full text-xs font-medium"
-              :class="colorTag[path.color]"
-            >
-              {{ tag }}
-            </span>
-          </div>
-
-          <!-- 底部：推荐起点 + 课程数 + 箭头 -->
-          <div class="mt-auto pt-4 border-t border-black/5">
-            <p class="text-xs text-blue-600/70 mb-2">💡 {{ path.recommendedStart }}</p>
-            <div class="flex items-center justify-between">
-              <span class="text-xs text-slate-400">{{ path.lessonCount ? `${path.lessonCount} 节课程` : '课程数加载中' }}</span>
-              <span
-                class="flex items-center gap-1 text-sm font-medium text-slate-500 group-hover:text-blue-600 transition-colors"
-              >
-                开始学习
-                <svg
-                  class="w-4 h-4 transition-transform group-hover:translate-x-1"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================================
-         迁移价值说明
-    ================================================= -->
-    <section class="bg-white border-y border-slate-100 py-16">
-      <div class="max-w-6xl mx-auto px-6">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl font-bold text-slate-800 mb-3">为什么选择路径化学习</h2>
-          <p class="text-slate-500">从明确目标出发，把课程、练习和回顾串成可持续的学习节奏</p>
+        <!-- 三态：loading -->
+        <div v-if="report.isLoading.value" class="space-y-3">
+            <div class="h-32 animate-pulse rounded-card bg-surface-raised" />
+            <div class="h-20 animate-pulse rounded-card bg-surface-raised" />
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="flex flex-col items-start p-6 rounded-2xl bg-blue-50/50 border border-blue-100">
-            <span class="text-3xl mb-4">🐼</span>
-            <h4 class="font-semibold text-slate-800 mb-2">路径清晰，降低起步成本</h4>
-            <p class="text-sm text-slate-500 leading-relaxed">
-              每条路径都有推荐起点和阶段目标，不需要在零散资料里反复判断下一步该学什么。
-            </p>
-          </div>
-          <div class="flex flex-col items-start p-6 rounded-2xl bg-yellow-50/50 border border-yellow-100">
-            <span class="text-3xl mb-4">🦆</span>
-            <h4 class="font-semibold text-slate-800 mb-2">边学边练，形成真实反馈</h4>
-            <p class="text-sm text-slate-500 leading-relaxed">
-              课程、Playground 和 AI 助手结合在一起，能把概念理解快速落到可运行的代码和练习上。
-            </p>
-          </div>
-          <div class="flex flex-col items-start p-6 rounded-2xl bg-purple-50/50 border border-purple-100">
-            <span class="text-3xl mb-4">⚡</span>
-            <h4 class="font-semibold text-slate-800 mb-2">主题可扩展，内容可持续沉淀</h4>
-            <p class="text-sm text-slate-500 leading-relaxed">
-              新主题和新路径可以通过目录配置逐步接入，平台不再被固定在某一组技术栈上。
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
+        <!-- 三态：error -->
+        <AppCard v-else-if="report.isError.value" title="加载失败">
+            <p class="text-sm text-ink-500">{{ report.error.value }}</p>
+            <template #footer>
+                <AppButton variant="primary" :loading="report.isLoading.value" @click="report.retry()">
+                    重试
+                </AppButton>
+            </template>
+        </AppCard>
 
-    <!-- ================================================
-         底部 CTA
-    ================================================= -->
-    <section class="max-w-6xl mx-auto px-6 py-16">
-      <div class="rounded-3xl border border-slate-200 bg-gradient-to-r from-white to-slate-100 p-8 md:p-10">
-        <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div class="max-w-2xl">
-            <p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">准备开始</p>
-            <h2 class="text-2xl font-bold text-slate-900 md:text-3xl">
-              从一个清晰起点出发，完成第一条学习路径
-            </h2>
-            <p class="mt-3 text-sm leading-relaxed text-slate-500 md:text-base">
-              不需要从零散资料里摸索，直接沿着一条路径推进，把知识点、练习和复盘串起来。
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-3">
-            <button
-              class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
-              @click="goToLearning"
-            >
-              查看全部路径
-            </button>
-            <button
-              class="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
-              @click="hasLearningProgress ? continueLearning() : router.push(learningPaths[1]?.slug ?? learningPaths[0]?.slug ?? '/learn')"
-            >
-              {{ hasLearningProgress ? '继续学习' : '从推荐路径开始' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-  </div>
+        <!-- 三态：empty -->
+        <EmptyState
+            v-else-if="report.isEmpty.value"
+            title="还没有可以练习的课"
+            hint="课程内容正在准备中，先到实验室跑一段代码熟悉一下。"
+            cta="打开实验室"
+            @action="router.push('/lab')"
+        />
+
+        <template v-else>
+            <!-- 主卡：继续上次 -->
+            <section v-if="continueTarget" class="mb-4">
+                <AppCard>
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-medium text-brand-600">
+                                {{ hasHistory ? "继续上次" : "从这里开始" }}
+                            </p>
+                            <h2 class="mt-1 text-lg font-semibold text-ink-900">{{ continueTarget.title }}</h2>
+                            <p class="mt-1 text-sm text-ink-500">{{ lessonMeta(continueTarget) }}</p>
+                            <div class="mt-3 flex items-center gap-3">
+                                <div class="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface-raised">
+                                    <div
+                                        class="h-full rounded-full"
+                                        :class="continueTarget.status === 'completed' ? 'bg-ok-500' : 'bg-brand-500'"
+                                        :style="{ width: `${ratio(continueTarget.passedTasks, continueTarget.totalTasks)}%` }"
+                                    />
+                                </div>
+                                <span class="shrink-0 text-xs text-ink-500">
+                                    {{ ratio(continueTarget.passedTasks, continueTarget.totalTasks) }}%
+                                </span>
+                            </div>
+                        </div>
+                        <AppButton variant="primary" @click="open(continueTarget)">
+                            {{ primaryLabel(continueTarget) }}
+                        </AppButton>
+                    </div>
+                </AppCard>
+            </section>
+
+            <!-- 指标带 -->
+            <section class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <AppCard v-for="metric in metrics" :key="metric.label" dense>
+                    <p class="text-xs font-medium text-ink-500">{{ metric.label }}</p>
+                    <p class="mt-1 text-xl font-bold text-ink-900">
+                        {{ metric.value }}
+                        <span v-if="metric.suffix" class="text-sm font-medium text-ink-300">{{ metric.suffix }}</span>
+                    </p>
+                </AppCard>
+            </section>
+
+            <!-- 上次卡在哪 -->
+            <section v-if="topError" class="mb-6">
+                <AppCard>
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <p class="text-xs font-medium text-ink-500">上次卡住的地方</p>
+                                <StatusPill status="failed" :label="`失败 ${topError.count} 次`" size="sm" />
+                            </div>
+                            <p class="mt-1 text-sm font-semibold text-ink-900">
+                                {{ topError.lessonTitle }} › {{ topError.taskTitle }}
+                            </p>
+                            <p class="mt-1 text-sm text-ink-500">{{ topError.title }}</p>
+                            <pre
+                                v-if="topError.lastActual"
+                                class="mt-2 overflow-x-auto rounded-control bg-surface-raised px-3 py-2 font-mono text-xs text-ink-700"
+                            >{{ topError.lastActual }}</pre>
+                        </div>
+                        <AppButton variant="secondary" size="sm" @click="openError(topError)">
+                            回去看看
+                        </AppButton>
+                    </div>
+                </AppCard>
+            </section>
+
+            <!-- 接下来 -->
+            <section v-if="nextUp.length > 0" class="mb-6">
+                <div class="mb-2 flex items-center justify-between">
+                    <h2 class="text-base font-semibold text-ink-900">接下来</h2>
+                    <AppButton variant="ghost" size="sm" @click="router.push('/learn')">全部课程</AppButton>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <AppCard v-for="lesson in nextUp" :key="lesson.lessonSlug" dense>
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-semibold text-ink-900">{{ lesson.title }}</p>
+                                <p class="mt-1 text-xs text-ink-500">{{ lessonMeta(lesson) }}</p>
+                            </div>
+                            <AppButton :variant="lesson.status === 'in_progress' ? 'primary' : 'secondary'" size="sm" @click="open(lesson)">
+                                {{ primaryLabel(lesson) }}
+                            </AppButton>
+                        </div>
+                    </AppCard>
+                </div>
+            </section>
+
+            <!-- 路径进度 -->
+            <section v-if="tracks.length > 0" class="mb-6">
+                <h2 class="mb-2 text-base font-semibold text-ink-900">学习路径</h2>
+                <AppCard dense>
+                    <div class="space-y-3">
+                        <div v-for="track in tracks" :key="track.track" class="flex items-center gap-3">
+                            <span class="w-28 shrink-0 truncate text-xs text-ink-700">{{ track.label }}</span>
+                            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-raised">
+                                <div class="h-full rounded-full bg-brand-500" :style="{ width: `${trackRatio(track)}%` }" />
+                            </div>
+                            <span class="w-16 shrink-0 text-right text-xs text-ink-500">
+                                {{ track.passedTasks }}/{{ track.totalTasks }}
+                            </span>
+                        </div>
+                    </div>
+                </AppCard>
+            </section>
+
+            <!-- 入口 -->
+            <section class="grid gap-3 sm:grid-cols-2">
+                <AppCard dense>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-semibold text-ink-900">实验室</p>
+                            <p class="mt-0.5 text-xs text-ink-500">不挂课程，随手跑一段 Python。</p>
+                        </div>
+                        <AppButton variant="secondary" size="sm" @click="router.push('/lab')">打开</AppButton>
+                    </div>
+                </AppCard>
+                <AppCard dense>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-sm font-semibold text-ink-900">学习报告</p>
+                            <p class="mt-0.5 text-xs text-ink-500">能力分布、常见卡点与最近提交。</p>
+                        </div>
+                        <AppButton variant="secondary" size="sm" @click="router.push('/report')">查看</AppButton>
+                    </div>
+                </AppCard>
+            </section>
+        </template>
+    </div>
 </template>

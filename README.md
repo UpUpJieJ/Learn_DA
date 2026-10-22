@@ -77,7 +77,7 @@
         ├── stores/           # Pinia 状态管理（learnerState 服务端为准、localState 离线缓存）
         ├── api/              # Axios API 封装（agent / learning / playground / analytics）
         ├── views/            # 页面级组件
-        │   ├── Home.vue          # 今日（首页 + 继续上次）
+        │   ├── Home.vue          # 今日（继续上次 + 指标 + 卡点 + 接下来）
         │   ├── CourseMap.vue     # /learn 课程地图
         │   ├── LessonWorkspace.vue # /lesson/:slug 三栏工作区
         │   ├── Report.vue        # /report 学习报告
@@ -86,8 +86,7 @@
         ├── components/       # 可复用组件
         │   ├── ui/           # 基础组件层（AppButton / AppCard / AppInput / StatusPill / CodeOutput / EmptyState / ConfirmDialog / ToastHost）
         │   ├── layout/       # 布局组件（Navbar 等）
-        │   ├── home/         # 首页组件（ContinueStrip 继续上次）
-        │   ├── agent/        # AI Agent 面板（AgentPanel.vue，改版期间待接回）
+                │   ├── agent/        # AI Agent 面板（AgentPanel.vue，改版期间待接回）
         │   └── recommendation/ # 统一推荐卡片（RecommendationPanel.vue，待接回）
         ├── composables/      # 组合式函数（useAsyncState / useToast / useAgentConversation）
         ├── types/            # TypeScript 类型定义
@@ -371,7 +370,7 @@ cd learn_da
 
 | 路由 | 页面 | 说明 |
 |---|---|---|
-| `/` | `Home.vue` | 今日：首页 + 顶部「继续上次」条（1 击回到上次任务） |
+| `/` | `Home.vue` | 今日：主卡「继续上次」（1 击回到上次任务）、指标带、卡点卡、接下来两门、路径进度 |
 | `/learn` | `CourseMap.vue` | 课程地图：按 track 分组的进度与「开始/继续/复习」 |
 | `/lesson/:slug` | `LessonWorkspace.vue` | 三栏工作区：左任务列表、中单元格流（运行 / 提交任务）、右任务目标 |
 | `/report` | `Report.vue` | 学习报告 |
@@ -409,7 +408,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ```bash
 cd learn_da_vue
-npm test -- --run      # vitest（17 文件 / 113 项）
+npm test -- --run      # vitest（18 文件 / 123 项）
 npm run type-check     # vue-tsc
 npm run lint:ui        # 视觉规范（新增违规即失败）
 npm run build          # 生产构建

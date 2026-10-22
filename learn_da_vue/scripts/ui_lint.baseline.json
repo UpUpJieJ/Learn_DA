@@ -25,11 +25,6 @@
       "palette": 44,
       "shadow": 8
     },
-    "src/views/Home.vue": {
-      "palette": 45,
-      "radius": 10,
-      "shadow": 3
-    },
     "src/views/NotFound.vue": {
       "palette": 4,
       "radius": 3,

@@ -593,7 +593,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 
 | 路由 | 页面 | 单一职责 | 出口（"下一步"去哪） |
 |---|---|---|---|
-| `/` | Home（**保留现有营销结构**） | 首访理解这是什么 | 顶部新增「继续上次」条 → 直达上次会话未完成任务 |
+| `/` | 今日（Home，P5 已重构） | 回答「我现在该做什么」：继续上次 + 卡点 + 接下来 | 主卡「继续」→ 上次未完成任务；卡点卡「回去看看」→ 该任务；两条入口 → `/lab`、`/report` |
 | `/learn` | 课程地图 | 按 track 纵览，看清每课任务级进度 | 点课 → `/lesson/:slug`；「继续」→ 上次任务 |
 | `/lesson/:slug` | 工作区（三栏） | 读懂任务 → 写 cell → 提交验证 | 任务完成 → 就地展开下一任务；课程完成 → `/learn` |
 | `/lab` | 自由沙盒 | 不判定的试手区（数据集浏览 + 快跑） | 无强制出口 |
@@ -653,7 +653,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 
 1. 导航：任一课程任务 ≤2 次点击可达；回访「继续」= 1 次点击。
 2. 视觉：`npm run lint:ui` 0 违规；`src/**` 中 raw palette 引用为 0（token 定义除外）。
-3. 交互：`/learn`、`/lesson/:slug`、`/report`、`/lab` 四页均具备 skeleton/empty/error 三态；工作区刷新后 cell 内容与最近运行结果不丢。
+3. 交互：`/`、`/learn`、`/lesson/:slug`、`/report`、`/lab` 五页均具备 skeleton/empty/error 三态；工作区刷新后 cell 内容与最近运行结果不丢。
 4. 组件：手写 `<button>` 归零（工作区 cell 内微型图标钮除外，需在 lint 白名单注明原因）。
 5. 测试：新增 vitest 用例覆盖 `useAsyncState`、`useToast`、`StatusPill`、`AppButton loading`；`npm test` 与 `vue-tsc --build` 全绿。
 
@@ -679,10 +679,27 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 
 #### P1/P3/P4 完成记录（2026-10-22）
 
-- **P1 `/learn`**：`src/views/CourseMap.vue`（三个汇总卡 + 「继续上次」+ 按 track 分组进度 + 开始/继续/复习 CTA，直达 `?task=`）；首页顶部 `components/home/ContinueStrip.vue`；数据来自 `GET /api/v1/workspace/progress`。
+- **P1 `/learn`**：`src/views/CourseMap.vue`（三个汇总卡 + 「继续上次」+ 按 track 分组进度 + 开始/继续/复习 CTA，直达 `?task=`）；首页顶部 `components/home/ContinueStrip.vue`（P5 已并入首页主卡，组件删除）；数据来自 `GET /api/v1/workspace/progress`。
 - **P2 工作区外壳**：`/lesson/:slug` 三栏（已在 §11.3 记录）；本轮补深链 `?task=<taskId>`（`router.replace` 同步，`onMounted` 命中 query 则聚焦，否则落第一个未通过任务）。
 - **P3 `/report`**：`src/views/Report.vue`（5 张指标卡、能力分布、常见卡点可点回课程、最近提交表格），数据来自 `GET /api/v1/workspace/report`。
 - **P4 `/lab` + 下线旧页**：`src/views/Lab.vue` 自由沙盒（行号列、`Ctrl/⌘+Enter`、`CodeOutput`、数据集参考侧栏，SQL 置灰）；删除 `Learning.vue`/`LessonDetail.vue`/`Playground.vue`/`Dashboard.vue` 与 `useLessonSession`/`usePlaygroundSession` + 2 个 spec；路由 9 → 6 条；`App.vue` 去掉深色全屏与 `KeepAlive`。
 - **导航**：Navbar 4 项（今日 / 课程 / 报告 / 实验室），raw palette 清零。
 - **基线**：后端 488 / Runner 39 / 前端 113；`ui_lint` 基线 63 文件 / 225 处（P0 时 61 / 558）。
-- **仍缺**：`ShortcutHelp`（`?` 说明面板）、AI 教练面板接回、`/lab` 的 SQL 支持。（`npm run build` 在本机被 esbuild 临时文件权限拦住，需在普通终端或服务器验证。）
+- **仍缺**：`ShortcutHelp`（`?` 说明面板）、AI 教练面板接回、`/lab` 的 SQL 支持。（`npm run build` 在本机被 esbuild 临时文件权限拦住，需在普通终端或服务器验证；2026-10-22 用户已在普通终端验证通过。）
+
+#### P5 首页重构为「今日」（2026-10-22，用户追加要求）
+
+改造前 `Home.vue`（462 行）是营销页：深色渐变 hero + 平台级统计（今日活跃 / 代码运行次数）+ 三张路径卡（与 `/learn` 重复）+ 「为什么选择路径化学习」+ 底部大 CTA，raw palette 45 处 / 圆角 10 处 / 阴影 3 处，且首页对「回访者下一步做什么」没有答案。
+
+改造后单一职责 = 「我现在该做什么」，数据只取 `GET /workspace/report`（`task_attempts` 真实聚合）：
+
+1. **主卡**：最近动过的 in-progress 课（没有记录则第一门未完成课）→ 标题 + `passedTasks/totalTasks` + 估时 + 进度条 + 主按钮「继续/开始学习」，跳转带 `?task=<currentTaskId>`。
+2. **指标带**：已通过任务、完成课程、一次通过率（`tasksFirstTry / tasksPassed`）、连续学习天数。
+3. **卡点卡**：`errorPatterns[0]` → 「课程 › 任务」+ 失败次数 + `lastActual`（截断后的实际值）+ 「回去看看」直达该任务。
+4. **接下来**：最多两门未完成课（排除主卡那门），各带一个 CTA。
+5. **学习路径**：4 条 track 的进度条（`ratio` 是 0–1 小数，渲染时 ×100）。
+6. **入口**：`/lab`、`/report` 两张卡。
+
+删除项：深色 hero 与入场动画、`fetchHomeStats` / `fetchCategoryStats` 调用、`learningTracks` legacy 兜底文案、`learnerState` 依赖、`components/home/ContinueStrip.vue`（职责并入主卡）。文案里不再出现平台级「今日活跃」，`daysSinceActive ≥ 3` 只在概览行点一句「已经 N 天没练了」。
+
+测试：新增 `src/views/__tests__/Home.spec.ts`（10 项：主卡选择与深链、无记录降级、指标与一次通过率、卡点跳转、接下来最多两门、路径进度用后端 `ratio`、三天未练提示、全部完成后主卡退回复习、失败重试、空态 CTA）。前端 113 → **123 passed（18 文件）**；`vue-tsc --build` 通过；`ui_lint` 基线因 `Home.vue` 归零从 63 文件 / 225 处收紧到 **63 文件 / 167 处**。
