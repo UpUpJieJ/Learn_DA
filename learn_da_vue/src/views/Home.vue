@@ -6,6 +6,7 @@ import { learningTracks, platformCopy } from '@/lib/learningTracks'
 import { fetchHomeStats } from '@/api/analytics'
 import { fetchCatalog, fetchCategoryStats, type CategoryStat } from '@/api/learning'
 import type { CatalogTrack, HomeStats, PlatformCatalog } from '@/types/api'
+import ContinueStrip from '@/components/home/ContinueStrip.vue'
 
 const router = useRouter()
 const learnerStateStore = useLearnerStateStore()
@@ -141,7 +142,7 @@ const hasLearningProgress = computed(() => !!lastVisitedSlug.value)
 function continueLearning() {
   const slug = lastVisitedSlug.value
   if (slug) {
-    router.push(`/learn/${slug}`)
+    router.push(`/lesson/${slug}`)
   } else {
     router.push('/learn')
   }
@@ -178,6 +179,8 @@ const colorTag: Record<string, string> = {
 
 <template>
   <div class="min-h-screen bg-slate-50">
+    <!-- 改版 P1：回访主流程——「继续上次」直达上次未完成任务（1 击） -->
+    <ContinueStrip />
     <!-- ================================================
          Hero 区域
     ================================================= -->

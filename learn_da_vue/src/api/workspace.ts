@@ -97,3 +97,97 @@ export function submitTask(sessionId: number, taskId: string, requestId: string)
         { timeout: 60000 },
     );
 }
+
+// =====================================================
+// 课程地图进度与学习报告（改版 P1 / P3）
+// =====================================================
+
+export interface LessonProgress {
+    lessonSlug: string;
+    title: string;
+    track: string | null;
+    order: number;
+    difficulty: string | null;
+    estimatedMinutes: number | null;
+    totalTasks: number;
+    passedTasks: number;
+    status: "not_started" | "in_progress" | "completed";
+    currentTaskId: string | null;
+    attempts: number;
+    lastActivityAt: string | null;
+}
+
+export interface TrackProgress {
+    track: string;
+    label: string;
+    totalTasks: number;
+    passedTasks: number;
+    lessons: number;
+    completedLessons: number;
+    ratio?: number;
+}
+
+export interface ProgressPayload {
+    lessons: LessonProgress[];
+    tracks: TrackProgress[];
+    summary: {
+        lessonsTotal: number;
+        lessonsStarted: number;
+        lessonsCompleted: number;
+        tasksTotal: number;
+        tasksPassed: number;
+        attemptsTotal: number;
+    };
+}
+
+export interface ErrorPattern {
+    lessonSlug: string;
+    lessonTitle: string;
+    taskId: string;
+    taskTitle: string;
+    assertionId: string;
+    title: string;
+    status: string;
+    count: number;
+    lastActual: string;
+}
+
+export interface RecentAttempt {
+    lessonSlug: string;
+    lessonTitle: string;
+    taskId: string;
+    taskTitle: string;
+    status: TaskStatus;
+    attemptNo: number;
+    createdAt: string | null;
+}
+
+export interface ReportPayload {
+    lessonProgress: LessonProgress[];
+    tracks: TrackProgress[];
+    summary: {
+        lessonsTotal: number;
+        lessonsStarted: number;
+        lessonsCompleted: number;
+        tasksTotal: number;
+        tasksPassed: number;
+        attemptsTotal: number;
+        tasksFirstTry: number;
+        activeDays: number;
+        streakDays: number;
+        lastActiveAt: string | null;
+        daysSinceActive: number | null;
+    };
+    errorPatterns: ErrorPattern[];
+    recent: RecentAttempt[];
+    windowDays: number;
+    generatedAt: string;
+}
+
+export function fetchProgress() {
+    return get<ProgressPayload>("/workspace/progress");
+}
+
+export function fetchReport() {
+    return get<ReportPayload>("/workspace/report");
+}

@@ -24,7 +24,7 @@ const navItems = [
     exact: true,
   },
   {
-    name: '学习中心',
+    name: '课程',
     path: '/learn',
     icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168
@@ -33,8 +33,8 @@ const navItems = [
     exact: false,
   },
   {
-    name: 'Playground',
-    path: '/playground',
+    name: '实验室',
+    path: '/lab',
     icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1
             1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -42,8 +42,8 @@ const navItems = [
     exact: true,
   },
   {
-    name: '看板',
-    path: '/dashboard',
+    name: '报告',
+    path: '/report',
     icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />`,
     exact: true,
@@ -73,7 +73,7 @@ const progressText = computed(() => {
 
 <template>
   <nav
-    class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-sm"
+    class="sticky top-0 z-50 bg-surface-card/90 backdrop-blur-md border-b border-line shadow-card"
   >
     <div class="max-w-7xl mx-auto px-4 sm:px-6">
       <div class="flex items-center justify-between h-14">
@@ -87,17 +87,17 @@ const progressText = computed(() => {
         >
           <!-- Logo 图标 -->
           <div
-            class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-200 group-hover:shadow-blue-300 transition-shadow"
+            class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-card group-hover:shadow-pop transition-shadow"
           >
             <span class="text-base leading-none select-none">🦆</span>
           </div>
 
           <!-- 品牌文字 -->
           <div class="hidden sm:block">
-            <span class="text-sm font-bold text-slate-800 leading-none">
+            <span class="text-sm font-bold text-ink-900 leading-none">
               {{ platformCopy.name }}
             </span>
-            <span class="hidden md:block text-xs text-slate-400 leading-none mt-0.5">
+            <span class="hidden md:block text-xs text-ink-300 leading-none mt-0.5">
               {{ platformCopy.title }}
             </span>
           </div>
@@ -113,8 +113,8 @@ const progressText = computed(() => {
             class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-150"
             :class="
               isActive(item)
-                ? 'bg-blue-50 text-blue-600'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                ? 'bg-brand-50 text-brand-700'
+                : 'text-ink-700 hover:text-ink-900 hover:bg-surface-raised'
             "
             @click="router.push(item.path)"
           >
@@ -132,7 +132,7 @@ const progressText = computed(() => {
             <!-- 活跃指示点 -->
             <span
               v-if="isActive(item)"
-              class="hidden sm:inline-block w-1 h-1 rounded-full bg-blue-500"
+              class="hidden sm:inline-block w-1 h-1 rounded-full bg-brand-500"
             />
           </button>
         </div>
@@ -145,20 +145,20 @@ const progressText = computed(() => {
           <!-- 学习进度 badge -->
           <div
             v-if="progressText"
-            class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium cursor-default"
+            class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ok-50 border border-ok-600/30 text-ok-700 text-xs font-medium cursor-default"
           >
-            <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 text-ok-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             {{ progressText }}
           </div>
 
           <!-- 分隔线 -->
-          <div class="hidden md:block w-px h-5 bg-slate-200" />
+          <div class="hidden md:block w-px h-5 bg-line" />
 
           <!-- 主题切换按钮 -->
           <button
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-ink-500 hover:text-ink-700 hover:bg-surface-raised transition-colors"
             :title="localStateStore.editorTheme === 'vs-dark' ? '切换到亮色主题' : '切换到暗色主题'"
             @click="localStateStore.toggleEditorTheme()"
           >
@@ -196,8 +196,8 @@ const progressText = computed(() => {
 
           <!-- 侧边栏切换（学习详情页时展示） -->
           <button
-            v-if="route.path.startsWith('/learn/')"
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            v-if="route.path.startsWith('/lesson/')"
+            class="w-8 h-8 rounded-lg flex items-center justify-center text-ink-500 hover:text-ink-700 hover:bg-surface-raised transition-colors"
             :title="localStateStore.isSidebarOpen ? '收起侧边栏' : '展开侧边栏'"
             @click="localStateStore.toggleSidebar()"
           >
@@ -214,17 +214,17 @@ const progressText = computed(() => {
          移动端底部导航提示条（仅在 md 以下显示）
     ============================================= -->
     <div
-      v-if="route.path.startsWith('/learn/') && learnerStateStore.lastVisitedSlug"
-      class="sm:hidden border-t border-slate-100 px-4 py-2 bg-slate-50 flex items-center justify-between text-xs text-slate-500"
+      v-if="route.path.startsWith('/lesson/') && learnerStateStore.lastVisitedSlug"
+      class="sm:hidden border-t border-line px-4 py-2 bg-surface-page flex items-center justify-between text-xs text-ink-500"
     >
       <span class="flex items-center gap-1">
-        <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-3.5 h-3.5 text-ok-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4" />
         </svg>
         {{ progressText ?? '开始学习' }}
       </span>
       <button
-        class="text-blue-500 font-medium"
+        class="text-brand-600 font-medium"
         @click="router.push('/learn')"
       >
         课程列表 →

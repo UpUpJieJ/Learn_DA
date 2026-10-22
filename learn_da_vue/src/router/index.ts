@@ -17,26 +17,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    // 改版 P1：课程地图（任务级进度）；旧 Learning.vue 已由它取代
     path: '/learn',
-    name: 'Learning',
-    component: () => import('@/views/Learning.vue'),
+    name: 'CourseMap',
+    component: () => import('@/views/CourseMap.vue'),
     meta: {
-      title: '学习中心',
-      keepAlive: true,
-    },
-  },
-  {
-    path: '/learn/:slug',
-    name: 'LessonDetail',
-    component: () => import('@/views/LessonDetail.vue'),
-    meta: {
-      title: '课程详情',
+      title: '课程地图',
       keepAlive: false,
     },
-    props: true,
   },
   {
-    // 改版 M1：多 cell 任务式工作区（与旧 /learn/:slug 并存，灰度期两套入口）
+    // 改版 M1：多 cell 任务式工作区（唯一课程入口；旧 /learn/:slug 与 /playground 已下线）
     path: '/lesson/:slug',
     name: 'LessonWorkspace',
     component: () => import('@/views/LessonWorkspace.vue'),
@@ -46,21 +37,22 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/playground/:slug?',
-    name: 'Playground',
-    component: () => import('@/views/Playground.vue'),
+    // 改版 P3：学习报告（真实任务级记录；取代旧 /dashboard 看板）
+    path: '/report',
+    name: 'Report',
+    component: () => import('@/views/Report.vue'),
     meta: {
-      title: 'Playground',
-      keepAlive: true,
+      title: '学习报告',
+      keepAlive: false,
     },
-    props: true,
   },
   {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: () => import('@/views/Dashboard.vue'),
+    // 改版 P4：自由沙盒（不判定、不落证据；取代旧 /playground）
+    path: '/lab',
+    name: 'Lab',
+    component: () => import('@/views/Lab.vue'),
     meta: {
-      title: '学习看板',
+      title: '实验室',
       keepAlive: false,
     },
   },

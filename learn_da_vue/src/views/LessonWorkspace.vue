@@ -409,6 +409,7 @@ function focusCell(cellId: string) {
     activeCellId.value = cellId;
     const task = tasks.value.find((item) => item.cellId === cellId);
     activeTaskId.value = task?.taskId ?? null;
+    syncTaskQuery(activeTaskId.value);
     const element = document.getElementById(`cell-${cellId}`);
     element?.scrollIntoView({ behavior: "smooth", block: "start" });
     const textarea = element?.querySelector("textarea");
@@ -419,16 +420,40 @@ async function run(cellId: string) {
     activeCellId.value = cellId;
     const task = tasks.value.find((item) => item.cellId === cellId);
     activeTaskId.value = task?.taskId ?? null;
+    syncTaskQuery(activeTaskId.value);
     await store.runCell(cellId);
 }
 
 async function submit(taskId: string) {
     activeTaskId.value = taskId;
+    syncTaskQuery(taskId);
     await store.submitTask(taskId);
+}
+
+/** 把当前任务写回地址栏，刷新/分享都能回到同一个任务（设计稿 §15.2 深链）。 */
+function syncTaskQuery(taskId: string | null) {
+    const query = { ...route.query } as Record<string, string | string[]>;
+    if (taskId) query.task = taskId;
+    else delete query.task;
+    void router.replace({ query });
+}
+
+function focusTask(taskId: string) {
+    const task = tasks.value.find((item) => item.taskId === taskId);
+    if (!task) return;
+    focusCell(task.cellId);
 }
 
 onMounted(async () => {
     await load(slug.value);
+    const deepLink = typeof route.query.task === "string" ? route.query.task : null;
+    if (deepLink) {
+        focusTask(deepLink);
+    } else {
+        // 没有深链就落到第一个未通过的任务上，省掉「自己找学到哪」的一步
+        const current = tasks.value.find((task) => task.status !== "passed");
+        if (current) activeTaskId.value = current.taskId;
+    }
     void fetchLessonBySlug(slug.value)
         .then((detail) => {
             lesson.value = detail;

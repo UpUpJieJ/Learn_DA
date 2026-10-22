@@ -8,9 +8,7 @@
       "shadow": 3
     },
     "src/components/layout/Navbar.vue": {
-      "palette": 13,
-      "radius": 4,
-      "shadow": 2
+      "radius": 4
     },
     "src/components/playground/TutorialSidebar.vue": {
       "palette": 10,
@@ -27,33 +25,14 @@
       "palette": 44,
       "shadow": 8
     },
-    "src/views/Dashboard.vue": {
-      "palette": 33,
-      "radius": 13
-    },
     "src/views/Home.vue": {
       "palette": 45,
       "radius": 10,
       "shadow": 3
     },
-    "src/views/Learning.vue": {
-      "palette": 46,
-      "radius": 9,
-      "shadow": 2
-    },
-    "src/views/LessonDetail.vue": {
-      "palette": 88,
-      "radius": 31,
-      "shadow": 4
-    },
     "src/views/NotFound.vue": {
       "palette": 4,
       "radius": 3,
-      "shadow": 1
-    },
-    "src/views/Playground.vue": {
-      "palette": 79,
-      "radius": 12,
       "shadow": 1
     }
   }
