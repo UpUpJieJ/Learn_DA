@@ -239,12 +239,6 @@ async def test_unknown_lesson_and_cell_are_404(client):
     )
     assert missing_lesson.json()["code"] == 404
 
-    # 有课程但尚未提供 workspace 块
-    no_workspace = await client.post(
-        "/api/v1/workspace/sessions", json={"lessonSlug": "polars-basics"}
-    )
-    assert no_workspace.json()["code"] == 404
-
     data = await _create(client)
     unknown_cell = await client.post(
         f"/api/v1/workspace/sessions/{data['sessionId']}/cells/nope/run",

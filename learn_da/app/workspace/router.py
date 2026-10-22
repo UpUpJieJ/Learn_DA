@@ -16,6 +16,7 @@ from app.sandbox.client import RunnerUnavailableError
 from app.utils.base_response import StdResp
 
 from .content import WorkspaceContentError
+from .progress import learning_report, lesson_progress
 from .schemas import (
     CreateSessionRequest,
     RunCellRequest,
@@ -33,6 +34,24 @@ def get_service(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> WorkspaceService:
     return WorkspaceService(db=db, runner_client=request.app.state.runner_client)
+
+
+@router.get("/progress")
+async def get_progress(
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """课程地图用：每门课的任务级进度。"""
+    return StdResp.success(data=await lesson_progress(db, visitor_id))
+
+
+@router.get("/report")
+async def get_report(
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """学习报告用：真实能力、失败模式与最近提交。"""
+    return StdResp.success(data=await learning_report(db, visitor_id))
 
 
 @router.post("/sessions")

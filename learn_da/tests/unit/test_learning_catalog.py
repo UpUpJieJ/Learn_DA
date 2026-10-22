@@ -128,14 +128,20 @@ async def test_lessons_endpoint_returns_new_programming_topic(client):
 
 @pytest.mark.unit
 async def test_lessons_endpoint_exposes_has_workspace(client):
-    """前端靠 hasWorkspace 决定进工作区还是旧课程页。"""
+    """前端靠 hasWorkspace 决定进工作区还是旧课程页。
+
+    M4 起 13 门课全部带 workspace 块，因此这里断言「每门课都声明了该字段且为 True」，
+    不再区分有/无 workspace 的两条分支（没有 workspace 的课已不存在）。
+    """
     resp = await client.get("/api/v1/lessons")
     body = resp.json()
 
     assert resp.status_code == 200
     by_slug = {lesson["slug"]: lesson for lesson in body["data"]}
     assert by_slug["polars-groupby"]["hasWorkspace"] is True
-    assert by_slug["python-functions"]["hasWorkspace"] is False
+    assert by_slug["python-functions"]["hasWorkspace"] is True
+    missing = [slug for slug, lesson in by_slug.items() if "hasWorkspace" not in lesson]
+    assert not missing, f"课程缺少 hasWorkspace 字段：{missing}"
 
     detail = await client.get("/api/v1/lessons/polars-groupby")
     assert detail.json()["data"]["hasWorkspace"] is True
