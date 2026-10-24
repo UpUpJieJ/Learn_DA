@@ -30,7 +30,7 @@
 | 后端服务层 | FastAPI + Python 3.12 + Uvicorn | 接口中转、业务逻辑、数据持久化、Agent 调度、沙箱通信 |
 | AI Agent 层 | 原生 OpenAI API（Function Calling） | 概念解释、代码生成、代码校验、对比分析、实战案例推荐 |
 | 安全执行层 | 独立 Runner 服务 + Docker 容器隔离（默认） / 宿主解释器（仅开发） | 运行用户代码，限制网络、资源与超时；生产只用容器隔离 |
-| 数据存储层 | SQLite（SQLAlchemy 异步 + Alembic 迁移） | 学习事件、练习尝试、交互审计与学习状态 |
+| 数据存储层 | SQLite（SQLAlchemy 异步 + Alembic 迁移） | 学习事件、任务尝试、交互审计与学习状态 |
 
 ---
 
@@ -54,9 +54,9 @@
 │   │   ├── core/             # 数据库、内容索引、会话、异常处理
 │   │   ├── learner_state/    # 服务端学习进度投影（唯一权威状态源）
 │   │   ├── learning/         # 教程内容接口与规则推荐
-│   │   ├── playground/       # 代码执行接口（练习执行 / 自由沙盒）
+│   │   ├── playground/       # 自由代码执行接口（/playground/execute）
 │   │   ├── workspace/        # 学习工作区（会话 / 单元格外 / 任务判定 / 进度与报告）
-│   │   ├── practice/         # 可验证练习（尝试模型、旧 validator、v2 断言 DSL）
+│   │   ├── practice/         # 断言 DSL v2（assertion_runtime + assertions）与冻结的 exercise_attempts 表
 │   │   ├── sandbox/          # 沙箱执行调度（Runner client）
 │   │   ├── middleware/       # CORS、安全头、访问日志中间件
 │   │   └── utils/            # 通用工具、自动路由注册、SlowAPI 限流
@@ -149,11 +149,11 @@ npm run dev
 - **只用语义 token**：颜色 `brand-* / ok-* / warn-* / err-* / ink-* / surface-* / line`，圆角 `rounded-card|control|pill`，阴影 `shadow-card|pop`，全部定义在 `src/assets/styles/main.css` 的 `@theme`。页面里不要直接写 `blue-500`、`emerald-100` 这类原色。
 - **基础组件在 `src/components/ui/`**：`AppButton` / `AppCard` / `AppInput` / `StatusPill` / `CodeOutput` / `EmptyState` / `ConfirmDialog` / `ToastHost`。新页面直接复用，不要再手写一套按钮。
 - **三态与反馈**：网络页面用 `useAsyncState`（idle/loading/ready/empty/error），瞬时反馈用 `useToast()`，危险操作用 `ConfirmDialog`（不用 `window.confirm`），空态必须给 CTA。
-- **提交前跑规范检查**：`npm run lint:ui`（或 `npm run check` = type-check + lint:ui）。存量违规有基线（`scripts/ui_lint.baseline.json`，当前 63 个文件 / 225 处），新增违规会让命令以非零码退出；`src/components/ui/**` 零容忍。线上收紧基线后不要随手 `--update-baseline`。
+- **提交前跑规范检查**：`npm run lint:ui`（或 `npm run check` = type-check + lint:ui）。存量违规有基线（`scripts/ui_lint.baseline.json`，当前 3 个文件 / 14 处），新增违规会让命令以非零码退出；`src/components/ui/**` 零容忍。收紧基线后不要随手 `--update-baseline`。
 
 ### Runner 启动（代码执行，必需）
 
-工作区执行、练习判定、Agent 的证据链都依赖 Runner；后端拿不到 Runner 时执行接口会返回 503。
+工作区执行、任务判定、Agent 的证据链都依赖 Runner；后端拿不到 Runner 时执行接口会返回 503。
 
 ```bash
 cd learn_da_runner
@@ -179,15 +179,17 @@ RUNNER_LOCAL_PYTHON=<解释器绝对路径，需装好 polars/duckdb/pyarrow>
 
 `RUNNER_ENV=production` 时 Runner 拒绝以 local 方式启动；生产必须用 docker provider。
 
-一键自检（13 门课的练习：starter 必须判不通过、标准解必须判通过）：
+一键自检（工作区链路：建会话 → 跑 starter → 提交参考解 → 校验任务状态）：
 
 ```bash
 cd learn_da
-.venv/Scripts/python.exe scripts/verify_exercises.py --base-url http://127.0.0.1:8000
+.venv/Scripts/python.exe scripts/verify_workspace.py --base-url http://127.0.0.1:8000
 ```
 
-> 跑全量 13 课会触发执行接口频率限制（默认 10 次/分钟），自检时把后端以
-> `RATE_LIMIT_ENABLED=False` 启动（该开关会连同按路由的限流一起关掉），或分批执行。
+> 内容侧的全量校验（13 门课 × 38 个任务：起步代码必须判不通过、参考解必须全过）
+> 不需要后端与 Runner，直接跑 `pytest tests/test_workspace_content.py -q`。
+> 跑真实执行链路时会受执行接口频率限制（默认 10 次/分钟），可把后端以
+> `RATE_LIMIT_ENABLED=False` 启动（该开关会连同按路由的限流一起关掉）。
 
 ### Docker Compose 生产部署
 
@@ -237,7 +239,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `RUNNER_URL` | — | 专用 Runner 的私网 URL，生产环境必填 |
 | `RUNNER_TOKEN` | — | Backend 与 Runner 共用的内部认证密钥，至少 32 字符 |
 | `SESSION_SECRET` | — | Backend 匿名会话签名密钥，生产环境至少 32 字符 |
-| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,practice,workspace` | 启用的业务模块 |
+| `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,workspace` | 启用的业务模块 |
 
 完整配置定义见 [`learn_da/config/settings.py`](learn_da/config/settings.py)。
 
@@ -445,7 +447,7 @@ npm run build          # 生产构建
 ## 技术亮点
 
 - **无 LangChain**：Agent 层完全基于原生 OpenAI Function Calling 实现（只读工具集、模型不参与推荐排序、硬步数上限），零冗余依赖，调用链路可控，成本更低；离线评测集验证意图准确率 90.2%（关键词基线 43.9%）。
-- **学习证据驱动**：Agent 练习判断基于服务端数据库证据（五态教学反馈），客户端自报状态不可影响教学结论；`AgentInteraction` 表以 request_id 幂等关联 ai_help，相同请求重放不重复计数，不持久化完整代码/prompt/token/cookie。
+- **学习证据驱动**：Agent 的任务判断基于服务端数据库证据（五态教学反馈），客户端自报状态不可影响教学结论；`AgentInteraction` 表以 request_id 幂等关联 ai_help，相同请求重放不重复计数，不持久化完整代码/prompt/token/cookie。
 - **安全沙箱**：用户代码不直接运行在主服务进程，Docker 容器隔离 + 白名单库 + 资源配额 + 超时销毁，保障服务安全。
 - **模块热插拔**：通过 `ENABLED_APP_MODULES` 按需启用 learning / playground / agent 模块，便于功能灰度与维护。
 - **自动路由注册**：后端基于约定自动扫描注册 APIRouter，减少手动维护路由表的成本。

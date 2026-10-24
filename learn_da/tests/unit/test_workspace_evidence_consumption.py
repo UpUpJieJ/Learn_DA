@@ -1,34 +1,31 @@
 """
-Task 7: 证据消费测试
+证据消费测试（改版 M4 起全部读工作区 ``task_attempts``）
 
-- 推荐服务读取练习失败信号触发回补建议
-- Agent FC tool get_task_summary 只读任务摘要（改版 M4 起读 task_attempts）
-- Dashboard practice-stats 端点返回正确指标
+- 推荐服务读取任务连续失败信号触发回补建议
+- Agent FC tool get_task_summary 只读任务摘要
 """
 
 import json
 from datetime import datetime
 
 import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.learning.recommendation import RecommendationService
-from app.practice.schemas import ExerciseAttemptSummary
 
 
 # =====================================================
-# 推荐服务：练习失败触发回补
+# 推荐服务：任务连续失败触发回补
 # =====================================================
 
 
-class TestRecommendationPracticeSignal:
-    """推荐服务能读取练习失败信号"""
+class TestRecommendationTaskSignal:
+    """推荐服务能读取工作区任务连续失败信号"""
 
     def _make_service(
-        self, practice_summaries: list[ExerciseAttemptSummary] | None = None
+        self, attempts: list | None = None, *, side_effect: Exception | None = None
     ) -> RecommendationService:
-        """构造带 mock practice_service 的推荐服务"""
+        """构造带 mock workspace_repo 的推荐服务"""
         mock_repo = MagicMock()
         # 返回两节课：基础课 + 进阶课
         lesson_basic = {
@@ -74,38 +71,40 @@ class TestRecommendationPracticeSignal:
         mock_learner_state.is_in_cooldown.return_value = False
         mock_learner_state.set_cooldown.return_value = None
 
-        mock_practice = AsyncMock()
-        if practice_summaries is not None:
-            mock_practice.get_attempt_summaries.return_value = practice_summaries
+        mock_workspace = AsyncMock()
+        if side_effect is not None:
+            mock_workspace.recent_attempts.side_effect = side_effect
         else:
-            mock_practice.get_attempt_summaries.return_value = []
+            mock_workspace.recent_attempts.return_value = attempts or []
 
         return RecommendationService(
             repository=mock_repo,
             analytics_service=mock_analytics,
             learner_state_service=mock_learner_state,
-            practice_service=mock_practice,
+            workspace_repo=mock_workspace,
         )
 
-    @pytest.mark.asyncio
-    async def test_practice_failures_trigger_review(self):
-        """连续 3 次练习失败应触发回补建议"""
-        # 构造 3 条失败摘要
-        failures = [
-            ExerciseAttemptSummary(
-                id=i,
-                attempt_id=i,
-                exercise_id="ex-001",
+    @staticmethod
+    def _attempts(statuses: list[str]) -> list:
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                id=index,
+                task_id="t1",
+                status=status,
+                verdict="assertion_failed" if status != "passed" else "passed",
                 lesson_slug="polars-groupby",
-                execution_status="completed",
-                verification_status="failed",
-                failure_reason="stdout_mismatch",
-                created_time="2026-07-30 10:00:00",
-                duration_ms=100,
+                attempt_no=index,
+                created_time=datetime(2026, 7, 30, 10, 0, 0),
             )
-            for i in range(1, 4)
+            for index, status in enumerate(statuses, start=1)
         ]
-        service = self._make_service(practice_summaries=failures)
+
+    @pytest.mark.asyncio
+    async def test_task_failures_trigger_review(self):
+        """连续 3 次任务未通过应触发回补建议"""
+        service = self._make_service(self._attempts(["failed", "failed", "failed"]))
 
         result = await service.get_recommendation(
             visitor_id="visitor-1",
@@ -119,22 +118,9 @@ class TestRecommendationPracticeSignal:
         assert "polars-basics" == result.primary.target_slug
 
     @pytest.mark.asyncio
-    async def test_no_practice_failures_no_review(self):
-        """练习全部通过时不触发回补"""
-        passed = [
-            ExerciseAttemptSummary(
-                id=1,
-                attempt_id=1,
-                exercise_id="ex-001",
-                lesson_slug="polars-groupby",
-                execution_status="completed",
-                verification_status="passed",
-                failure_reason=None,
-                created_time="2026-07-30 10:00:00",
-                duration_ms=100,
-            )
-        ]
-        service = self._make_service(practice_summaries=passed)
+    async def test_no_task_failures_no_review(self):
+        """任务全部通过时不触发回补"""
+        service = self._make_service(self._attempts(["passed"]))
 
         result = await service.get_recommendation(
             visitor_id="visitor-1",
@@ -146,10 +132,10 @@ class TestRecommendationPracticeSignal:
             assert result.primary.reason_code != "prerequisite_weak"
 
     @pytest.mark.asyncio
-    async def test_practice_service_none_graceful(self):
-        """practice_service 为 None 时不报错"""
+    async def test_workspace_repo_none_graceful(self):
+        """workspace_repo 为 None 时不报错"""
         service = self._make_service()
-        service.practice_service = None
+        service.workspace_repo = None
 
         result = await service.get_recommendation(
             visitor_id="visitor-1",
@@ -159,12 +145,9 @@ class TestRecommendationPracticeSignal:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_practice_service_exception_graceful(self):
-        """practice_service 抛异常时静默降级"""
-        service = self._make_service()
-        service.practice_service.get_attempt_summaries.side_effect = RuntimeError(
-            "db error"
-        )
+    async def test_workspace_repo_exception_graceful(self):
+        """读任务记录抛异常时静默降级"""
+        service = self._make_service(side_effect=RuntimeError("db error"))
 
         result = await service.get_recommendation(
             visitor_id="visitor-1",
@@ -339,120 +322,3 @@ class TestFCToolTaskSummary:
         # 没进度的课程被过滤，避免把 13 门课全塞给模型
         assert [item["lesson_slug"] for item in data["lessons"]] == ["polars-basics"]
         assert data["lessons"][0]["current_task"] == "t3"
-
-
-# =====================================================
-# Dashboard practice-stats 逻辑测试
-# =====================================================
-
-
-class TestPracticeStatsLogic:
-    """Dashboard 练习指标逻辑（服务层）"""
-
-    @pytest.mark.asyncio
-    async def test_count_passed_exercises(self):
-        """count_passed_exercises 正确去重"""
-        from app.practice.repository import PracticeRepository
-        from app.practice.models import ExerciseAttempt
-
-        # 使用内存 SQLite
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-        from sqlalchemy.orm import sessionmaker
-        from app.core.database.base import Base
-
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-        async_session = sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
-        async with async_session() as db:
-            repo = PracticeRepository(db)
-
-            # 同一 exercise 两次 passed → 只算 1
-            await repo.create_attempt(
-                visitor_id="v1",
-                request_id="r1",
-                lesson_slug="l1",
-                exercise_id="ex-001",
-                execution_id=None,
-                source="playground",
-                language="python",
-                code="print(1)",
-                execution_status="completed",
-                verification_status="passed",
-            )
-            await repo.create_attempt(
-                visitor_id="v1",
-                request_id="r2",
-                lesson_slug="l1",
-                exercise_id="ex-001",
-                execution_id=None,
-                source="playground",
-                language="python",
-                code="print(2)",
-                execution_status="completed",
-                verification_status="passed",
-            )
-            # 不同 exercise passed → 算 1
-            await repo.create_attempt(
-                visitor_id="v1",
-                request_id="r3",
-                lesson_slug="l2",
-                exercise_id="ex-002",
-                execution_id=None,
-                source="playground",
-                language="python",
-                code="print(3)",
-                execution_status="completed",
-                verification_status="passed",
-            )
-            await db.commit()
-
-            count = await repo.count_passed_exercises("v1")
-            assert count == 2  # ex-001 + ex-002
-
-        await engine.dispose()
-
-    @pytest.mark.asyncio
-    async def test_error_categories_aggregation(self):
-        """错误类别正确聚合"""
-        from app.practice.repository import PracticeRepository
-        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-        from sqlalchemy.orm import sessionmaker
-        from app.core.database.base import Base
-
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-        async_session = sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
-        async with async_session() as db:
-            repo = PracticeRepository(db)
-
-            for i, reason in enumerate(
-                ["stdout_mismatch", "stdout_mismatch", "execution_error"]
-            ):
-                await repo.create_attempt(
-                    visitor_id="v1",
-                    request_id=f"r{i}",
-                    lesson_slug="l1",
-                    exercise_id="ex-001",
-                    execution_id=None,
-                    source="playground",
-                    language="python",
-                    code=f"print({i})",
-                    execution_status="completed",
-                    verification_status="failed",
-                    failure_reason=reason,
-                )
-            await db.commit()
-
-            errors = await repo.count_recent_errors("v1", "ex-001", 10)
-            assert errors["stdout_mismatch"] == 2
-            assert errors["execution_error"] == 1
-
-        await engine.dispose()

@@ -60,8 +60,6 @@ class LearningRepository:
                     skill_tags=raw.get("skill_tags", []),
                     is_review_friendly=raw.get("is_review_friendly", False),
                     is_branch_point=raw.get("is_branch_point", False),
-                    # Phase 2: 正式练习定义
-                    exercise=raw.get("exercise"),
                     # 改版 M1: 是否带可交互工作区
                     has_workspace=bool(raw.get("workspace")),
                 )

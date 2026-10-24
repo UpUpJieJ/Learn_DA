@@ -29,18 +29,15 @@ def get_recommendation_service(
     db: AsyncSession = Depends(get_db),
 ) -> RecommendationService:
     from app.agent.repository import AgentInteractionRepository
-    from app.practice.repository import PracticeRepository
-    from app.practice.service import PracticeService
+    from app.workspace.repository import WorkspaceReadRepository
 
-    practice_repo = PracticeRepository(db)
-    practice_service = PracticeService(db=db, practice_repo=practice_repo)
     interaction_repo = AgentInteractionRepository(db)
 
     return RecommendationService(
         repository=LearningRepository(),
         analytics_service=AnalyticsService(db),
         learner_state_service=LearnerStateService(db),
-        practice_service=practice_service,
+        workspace_repo=WorkspaceReadRepository(db),
         interaction_repo=interaction_repo,
     )
 

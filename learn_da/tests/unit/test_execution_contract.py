@@ -101,8 +101,10 @@ def test_public_execution_models_serialize_only_the_stable_contract():
         "outputTruncated": False,
         "resultType": "text",
         "dataframe": None,
-        "attemptId": None,
-        "verification": None,
     }
+    # 练习时代字段已下线：执行契约不再回 attemptId / verification
+    dumped = response.model_dump(by_alias=True)
+    assert "attemptId" not in dumped
+    assert "verification" not in dumped
     assert "mocked" not in response.model_dump(by_alias=True).values()
     assert "usedSandbox" not in response.model_dump(by_alias=True)

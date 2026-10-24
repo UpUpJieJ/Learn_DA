@@ -1,21 +1,23 @@
-"""阶段 3 Task 5：学习证据驱动 Agent 离线评测。
+"""阶段 3 Task 5：学习证据驱动 Agent 离线评测（改版 M4 起为工作区语义）。
 
 加载 ``tests/eval/phase3_evidence_cases.yml``，对每条 case 用
-``AgentEvidenceResolver`` + ``build_teaching_feedback`` + ``derive_state``
-做确定性断言（不调用 LLM），覆盖 7 个评测维度：
+``AgentEvidenceResolver`` + ``build_teaching_feedback`` + ``derive_next_action``
+做确定性断言（不调用 LLM），覆盖 6 个评测维度：
 
-1. evidence_accuracy   证据五态推导
+1. evidence_accuracy   证据五态推导（由 Runner verdict + 教学状态推导）
 2. next_action          下一步动作映射
 3. hint_escalation     分级提示逐级升高
-4. code_leak           证据/反馈不泄露历史 Attempt 完整代码
+4. code_leak           证据/反馈不泄露历史提交的完整代码
 5. fallback_class      fallback 原因分类
-6. visitor_isolation   伪造 attemptId 得不到他人证据
-7. runner_unavailable   Runner 不可用不进入 execution_failed
+6. runner_unavailable   Runner 不可用 / 断言未求值不进入 execution_failed
+
+case 里的 ``verdict`` / ``status`` 与 ``task_attempts`` 落库的字段一致；
+``verdict`` / ``status`` 同时为 null 表示该学习者还没有任何提交。
 """
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,15 +25,13 @@ import yaml
 
 from app.agent.evidence import (
     AgentEvidenceResolver,
-    AgentLearningEvidence,
     build_teaching_feedback,
     derive_next_action,
-    derive_state,
 )
-from app.agent.schemas import AgentChatMessage, AgentChatRequest, AgentContext
-from app.practice.models import ExerciseAttempt
 
 EVAL_YML = Path(__file__).parent.parent / "eval" / "phase3_evidence_cases.yml"
+LESSON = "polars-groupby"
+LESSON_TASKS = ("t1", "t2")
 
 
 def _load_cases() -> list[dict]:
@@ -43,44 +43,39 @@ def _load_cases() -> list[dict]:
 CASES = _load_cases()
 
 
-def _make_attempt(case: dict) -> ExerciseAttempt | None:
-    """从 case 构造内存 Attempt（None 表示无 attempt）。"""
-    if case["execution_status"] is None and case["verification_status"] is None:
+def _make_attempt(case: dict) -> SimpleNamespace | None:
+    """从 case 构造内存 TaskAttempt 替身（verdict/status 都为 null 表示无提交）。"""
+    if case["verdict"] is None and case["status"] is None:
         return None
-    a = ExerciseAttempt()
-    a.id = case.get("attempt_id", 1)
-    a.visitor_id = "visitor-A"
-    a.request_id = f"req-{case['id']}"
-    a.lesson_slug = "polars-basics"
-    a.exercise_id = "ex-001"
-    a.execution_id = None
-    a.source = "playground"
-    a.language = "python"
-    a.code = "SECRET_CODE_THAT_MUST_NOT_LEAK"
-    a.execution_status = case["execution_status"]
-    a.verification_status = case["verification_status"]
-    a.failure_reason = "test_failure"
-    a.stdout = "some stdout"
-    a.stderr = "some stderr"
-    a.duration_ms = 100
-    a.created_time = datetime(2026, 7, 31, tzinfo=timezone.utc)
-    a.is_deleted = False
-    return a
-
-
-def _make_resolver(attempt: ExerciseAttempt | None, lesson_completed: bool):
-    repo = MagicMock()
-    repo.get_by_id = AsyncMock(return_value=attempt)
-    repo.get_latest_by_lesson = AsyncMock(return_value=attempt)
-
-    learner_state = AsyncMock()
-    progress = MagicMock()
-    progress.status = "completed" if lesson_completed else "started"
-    learner_state.get_lesson_progress = AsyncMock(return_value=progress)
-
-    return AgentEvidenceResolver(
-        practice_repo=repo, learner_state_service=learner_state
+    return SimpleNamespace(
+        id=case.get("attempt_id", 1),
+        visitor_id="visitor-A",
+        lesson_slug=LESSON,
+        task_id="t1",
+        attempt_no=1,
+        status=case["status"],
+        verdict=case["verdict"],
+        # 证据链禁止泄露完整代码，这里放一个哨兵值用于断言
+        code="SECRET_CODE_THAT_MUST_NOT_LEAK",
+        actual="表达式为假",
+        assertions="[]",
+        created_time=datetime(2026, 7, 31, tzinfo=timezone.utc),
     )
+
+
+def _make_repo(attempt: SimpleNamespace | None, lesson_completed: bool) -> MagicMock:
+    repo = MagicMock()
+    repo.get_attempt = AsyncMock(return_value=attempt)
+    repo.latest_attempt = AsyncMock(return_value=attempt)
+    passed = set(LESSON_TASKS) if lesson_completed else set()
+    repo.lesson_task_stats = AsyncMock(return_value=(passed, len(LESSON_TASKS)))
+    return repo
+
+
+def _make_resolver(
+    attempt: SimpleNamespace | None, lesson_completed: bool
+) -> AgentEvidenceResolver:
+    return AgentEvidenceResolver(workspace_repo=_make_repo(attempt, lesson_completed))
 
 
 def _hint_level_from_turns(turns: int) -> int:
@@ -102,7 +97,7 @@ async def test_phase3_eval_case(case: dict):
 
     evidence = await resolver.resolve(
         visitor_id="visitor-A",
-        lesson_slug="polars-basics",
+        lesson_slug=LESSON,
         attempt_id=case.get("attempt_id", 1),
     )
 
@@ -140,52 +135,34 @@ class TestVisitorIsolation:
     async def test_forged_attempt_id_no_evidence(self):
         """攻击者用他人的 attemptId 查不到证据。"""
         repo = MagicMock()
-        # get_by_id 按 visitor 过滤，攻击者查不到 victim 的 attempt
-        repo.get_by_id = AsyncMock(return_value=None)
-        repo.get_latest_by_lesson = AsyncMock(return_value=None)
+        # get_attempt 按 visitor 过滤，攻击者查不到 victim 的提交
+        repo.get_attempt = AsyncMock(return_value=None)
+        repo.latest_attempt = AsyncMock(return_value=None)
+        repo.lesson_task_stats = AsyncMock(return_value=(set(), len(LESSON_TASKS)))
 
-        learner_state = AsyncMock()
-        learner_state.get_lesson_progress = AsyncMock(return_value=None)
-
-        resolver = AgentEvidenceResolver(
-            practice_repo=repo, learner_state_service=learner_state
-        )
+        resolver = AgentEvidenceResolver(workspace_repo=repo)
         evidence = await resolver.resolve(
             visitor_id="attacker",
-            lesson_slug="polars-basics",
+            lesson_slug=LESSON,
             attempt_id=999,
         )
         assert evidence.state == "no_evidence"
-        # 校验用了攻击者身份
-        repo.get_by_id.assert_called_once_with(999, "attacker")
+        # 校验用了攻击者身份（参数顺序：visitor_id, attempt_id）
+        repo.get_attempt.assert_called_once_with("attacker", 999)
 
     @pytest.mark.asyncio
     async def test_victim_evidence_not_leaked_to_attacker(self):
-        """victim 的 attempt 存在，但攻击者查不到。"""
-        victim_attempt = ExerciseAttempt()
-        victim_attempt.id = 42
-        victim_attempt.visitor_id = "victim"
-        victim_attempt.lesson_slug = "polars-basics"
-        victim_attempt.execution_status = "error"
-        victim_attempt.verification_status = "not_run"
-        victim_attempt.code = "VICTIM_SECRET"
-        victim_attempt.created_time = datetime(2026, 7, 31, tzinfo=timezone.utc)
-        victim_attempt.is_deleted = False
-
+        """victim 的提交存在，但攻击者查不到。"""
         repo = MagicMock()
         # 攻击者查 attempt_id=42 -> None（visitor 不匹配）
-        repo.get_by_id = AsyncMock(return_value=None)
-        repo.get_latest_by_lesson = AsyncMock(return_value=None)
+        repo.get_attempt = AsyncMock(return_value=None)
+        repo.latest_attempt = AsyncMock(return_value=None)
+        repo.lesson_task_stats = AsyncMock(return_value=(set(), len(LESSON_TASKS)))
 
-        learner_state = AsyncMock()
-        learner_state.get_lesson_progress = AsyncMock(return_value=None)
-
-        resolver = AgentEvidenceResolver(
-            practice_repo=repo, learner_state_service=learner_state
-        )
+        resolver = AgentEvidenceResolver(workspace_repo=repo)
         evidence = await resolver.resolve(
             visitor_id="attacker",
-            lesson_slug="polars-basics",
+            lesson_slug=LESSON,
             attempt_id=42,
         )
         assert evidence.state == "no_evidence"
@@ -200,36 +177,38 @@ class TestVisitorIsolation:
 class TestCodeLeakage:
     @pytest.mark.asyncio
     async def test_evidence_never_contains_code(self):
-        """无论何种状态，证据都不含 code 字段。"""
-        for exec_status, ver_status in [
-            ("error", "not_run"),
-            ("success", "failed"),
-            ("success", "passed"),
-            ("unavailable", "not_run"),
+        """无论何种 verdict/status，证据都不含 code 字段。"""
+        for verdict, status in [
+            ("execution_failed", "failed"),
+            ("assertion_failed", "failed"),
+            ("passed", "passed"),
+            (None, "skipped"),
         ]:
-            attempt = ExerciseAttempt()
-            attempt.id = 1
-            attempt.visitor_id = "v1"
-            attempt.lesson_slug = "l1"
-            attempt.execution_status = exec_status
-            attempt.verification_status = ver_status
-            attempt.code = f"SECRET_{exec_status}"
-            attempt.created_time = datetime(2026, 7, 31, tzinfo=timezone.utc)
-            attempt.is_deleted = False
-
-            repo = MagicMock()
-            repo.get_by_id = AsyncMock(return_value=attempt)
-            repo.get_latest_by_lesson = AsyncMock(return_value=attempt)
-            learner_state = AsyncMock()
-            learner_state.get_lesson_progress = AsyncMock(return_value=None)
-
-            resolver = AgentEvidenceResolver(
-                practice_repo=repo, learner_state_service=learner_state
+            attempt = SimpleNamespace(
+                id=1,
+                visitor_id="v1",
+                lesson_slug=LESSON,
+                task_id="t1",
+                attempt_no=1,
+                status=status,
+                verdict=verdict,
+                code=f"SECRET_{status}",
+                actual="表达式为假",
+                assertions="[]",
+                created_time=datetime(2026, 7, 31, tzinfo=timezone.utc),
             )
-            evidence = await resolver.resolve("v1", "l1", 1)
+            repo = MagicMock()
+            repo.get_attempt = AsyncMock(return_value=attempt)
+            repo.latest_attempt = AsyncMock(return_value=attempt)
+            repo.lesson_task_stats = AsyncMock(
+                return_value=(set(), len(LESSON_TASKS))
+            )
+
+            resolver = AgentEvidenceResolver(workspace_repo=repo)
+            evidence = await resolver.resolve("v1", LESSON, 1)
             dumped = str(evidence.model_dump())
             assert "code" not in evidence.model_dump()
-            assert f"SECRET_{exec_status}" not in dumped
+            assert f"SECRET_{status}" not in dumped
 
 
 # =====================================================
@@ -260,5 +239,4 @@ def test_eval_summary(capsys: pytest.CaptureFixture[str]):
         lines.append(f"  {dim}: {dim_total[dim]} 条 case，断言由参数化测试执行")
     lines.append("  visitor_isolation: 由独立归属隔离测试执行")
     lines.append(f"  总计: {len(CASES)} 条 case")
-    capsys.writeouterr = capsys.readouterr()  # consume
     print("\n".join(lines))

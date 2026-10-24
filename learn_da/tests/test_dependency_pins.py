@@ -1,6 +1,6 @@
 """依赖版本锁定的一致性守卫。
 
-沙箱镜像（执行用户代码）与后端（练习 validator 判定）必须用同一份
+沙箱镜像（执行用户代码）与后端（工作区断言 DSL 求值）必须用同一份
 polars / duckdb 版本，否则同一个脚本在本地通过、线上判定为不通过。
 这里把「三处版本」锁在一起：
 
@@ -9,7 +9,7 @@ polars / duckdb 版本，否则同一个脚本在本地通过、线上判定为�
 3. 当前解释器里实际安装的版本
 
 任何一处改动而没同步，测试就会失败——升级流程是：三处一起改，
-再跑 ``scripts/verify_exercises.py`` 复核 13 课。
+再跑 ``tests/test_workspace_content.py``（13 课起步代码必失败 + 参考解必全过）复核。
 """
 
 from __future__ import annotations

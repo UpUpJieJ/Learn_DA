@@ -30,15 +30,13 @@ from app.agent.schemas import (
 def _evidence(state: str, **kw) -> AgentLearningEvidence:
     defaults = dict(
         state=state,
-        lesson_slug="polars-basics",
-        exercise_id="ex-001",
+        source="workspace",
+        lesson_slug="polars-groupby",
         attempt_id=42,
-        execution_status="success",
-        verification_status="passed",
-        failure_reason=None,
-        duration_ms=120,
-        stdout_summary=None,
-        stderr_summary=None,
+        attempt_no=1,
+        task_id="t1",
+        task_title="按区域聚合",
+        verdict="passed",
         lesson_completed=False,
         evidence_time="2026-07-31 10:00:00",
     )
@@ -49,7 +47,7 @@ def _evidence(state: str, **kw) -> AgentLearningEvidence:
 class TestBuildTeachingFeedback:
     def test_execution_failed(self):
         fb = build_teaching_feedback(
-            _evidence("execution_failed", execution_status="error")
+            _evidence("execution_failed", verdict="execution_failed")
         )
         assert fb.state == "execution_failed"
         assert fb.attempt_id == 42
@@ -60,7 +58,7 @@ class TestBuildTeachingFeedback:
 
     def test_verification_failed(self):
         fb = build_teaching_feedback(
-            _evidence("verification_failed", verification_status="failed")
+            _evidence("verification_failed", verdict="assertion_failed")
         )
         assert fb.state == "verification_failed"
         assert fb.next_action == "retry_exercise"
@@ -88,8 +86,8 @@ class TestBuildTeachingFeedback:
 
     def test_no_evidence(self):
         fb = build_teaching_feedback(
-            _evidence("no_evidence", attempt_id=None, execution_status=None,
-                      verification_status=None)
+            _evidence("no_evidence", attempt_id=None, attempt_no=None,
+                      task_id=None, verdict=None)
         )
         assert fb.state == "no_evidence"
         assert fb.next_action == "inspect_result"
@@ -145,15 +143,40 @@ class TestDeriveNextAction:
 class TestServiceTeachingFeedback:
     """AgentService 在有证据时返回 teaching_feedback；无证据时为 None。"""
 
-    def _make_service(self, *, evidence_return):
+    LESSON = "polars-groupby"
+    TASKS = ("t1", "t2")
+
+    @staticmethod
+    def _attempt_row(**overrides):
+        from datetime import datetime, timezone
+        from types import SimpleNamespace
+
+        base = dict(
+            id=7,
+            visitor_id="v1",
+            lesson_slug="polars-groupby",
+            task_id="t1",
+            attempt_no=1,
+            status="failed",
+            verdict="execution_failed",
+            code="x",
+            actual=None,
+            assertions="[]",
+            created_time=datetime(2026, 7, 31, tzinfo=timezone.utc),
+        )
+        base.update(overrides)
+        return SimpleNamespace(**base)
+
+    def _make_service(self, *, attempt=None, passed_tasks=()):
+        """构造带 workspace 仓库替身的 AgentService（不再有 practice_service）。"""
         from app.agent.service import AgentService
 
-        practice_repo = MagicMock()
-        practice_repo.get_by_id = AsyncMock(return_value=None)
-        practice_repo.get_latest_by_lesson = AsyncMock(return_value=evidence_return)
-
-        practice_service = MagicMock()
-        practice_service.repo = practice_repo
+        repo = MagicMock()
+        repo.get_attempt = AsyncMock(return_value=None)
+        repo.latest_attempt = AsyncMock(return_value=attempt)
+        repo.lesson_task_stats = AsyncMock(
+            return_value=(set(passed_tasks), len(self.TASKS))
+        )
 
         learner_state = AsyncMock()
         progress = MagicMock()
@@ -161,36 +184,15 @@ class TestServiceTeachingFeedback:
         learner_state.get_lesson_progress = AsyncMock(return_value=progress)
 
         return AgentService(
-            practice_service=practice_service,
+            workspace_repo=repo,
             learner_state_service=learner_state,
         )
 
     @pytest.mark.asyncio
     async def test_chat_returns_feedback_when_evidence_exists(self):
-        from datetime import datetime, timezone
+        attempt = self._attempt_row()
 
-        from app.practice.models import ExerciseAttempt
-
-        attempt = ExerciseAttempt()
-        attempt.id = 7
-        attempt.visitor_id = "v1"
-        attempt.request_id = "r1"
-        attempt.lesson_slug = "polars-basics"
-        attempt.exercise_id = "ex-001"
-        attempt.execution_id = None
-        attempt.source = "playground"
-        attempt.language = "python"
-        attempt.code = "x"
-        attempt.execution_status = "error"
-        attempt.verification_status = "not_run"
-        attempt.failure_reason = "SyntaxError"
-        attempt.stdout = None
-        attempt.stderr = "Traceback"
-        attempt.duration_ms = 10
-        attempt.created_time = datetime(2026, 7, 31, tzinfo=timezone.utc)
-        attempt.is_deleted = False
-
-        service = self._make_service(evidence_return=attempt)
+        service = self._make_service(attempt=attempt)
 
         # mock _complete 返回成功内容
         from app.agent.llm_client import LLMResult
@@ -201,7 +203,7 @@ class TestServiceTeachingFeedback:
 
         payload = AgentChatRequest(
             message="帮我修错",
-            context=AgentContext(currentLesson="polars-basics"),
+            context=AgentContext(currentLesson=self.LESSON),
         )
         data = await service.chat(payload, visitor_id="v1")
 
@@ -213,11 +215,11 @@ class TestServiceTeachingFeedback:
         assert data.teaching_feedback.next_action == "retry_exercise"
 
     @pytest.mark.asyncio
-    async def test_chat_no_feedback_without_practice_service(self):
+    async def test_chat_no_feedback_without_workspace_repo(self):
         from app.agent.service import AgentService
         from app.agent.llm_client import LLMResult
 
-        service = AgentService()  # 无 practice_service
+        service = AgentService()  # 无 workspace_repo
         service._complete = AsyncMock(  # type: ignore[method-assign]
             return_value=LLMResult(content="hi", error_reason=None, latency_ms=0)
         )
@@ -230,7 +232,7 @@ class TestServiceTeachingFeedback:
     @pytest.mark.asyncio
     async def test_chat_no_feedback_without_visitor_id(self):
         """降级路径未带 visitor_id 时不构造反馈（无法做归属隔离）。"""
-        service = self._make_service(evidence_return=None)
+        service = self._make_service(attempt=self._attempt_row())
         from app.agent.llm_client import LLMResult
 
         service._complete = AsyncMock(  # type: ignore[method-assign]
@@ -248,18 +250,7 @@ class TestServiceTeachingFeedback:
         from app.agent.service import AgentService
         from app.agent.llm_client import LLMResult
 
-        practice_repo = MagicMock()
-        practice_repo.get_by_id = AsyncMock(return_value=None)
-        practice_repo.get_latest_by_lesson = AsyncMock(return_value=None)
-        practice_service = MagicMock()
-        practice_service.repo = practice_repo
-        learner_state = AsyncMock()
-        learner_state.get_lesson_progress = AsyncMock(return_value=None)
-
-        service = AgentService(
-            practice_service=practice_service,
-            learner_state_service=learner_state,
-        )
+        service = self._make_service()
         service._complete = AsyncMock(  # type: ignore[method-assign]
             return_value=LLMResult(content="hi", error_reason=None, latency_ms=0)
         )

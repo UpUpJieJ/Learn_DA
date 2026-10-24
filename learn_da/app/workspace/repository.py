@@ -108,6 +108,27 @@ class WorkspaceReadRepository:
             passed &= known
         return passed, total
 
+    async def passed_after(
+        self,
+        visitor_id: str,
+        lesson_slug: str,
+        task_id: str,
+        after,
+    ) -> TaskAttempt | None:
+        """某任务在给定时间点之后是否已经通过（用于判断"求助后是否解决"）。"""
+        return await self._one(
+            select(TaskAttempt)
+            .where(
+                TaskAttempt.visitor_id == visitor_id,
+                TaskAttempt.lesson_slug == lesson_slug,
+                TaskAttempt.task_id == task_id,
+                TaskAttempt.status == "passed",
+                TaskAttempt.created_time >= after,
+            )
+            .order_by(TaskAttempt.created_time.asc(), TaskAttempt.id.asc())
+            .limit(1)
+        )
+
     async def progress(self, visitor_id: str) -> dict[str, Any]:
         """全量课程进度（复用 progress 模块的聚合口径）。"""
         from .progress import lesson_progress

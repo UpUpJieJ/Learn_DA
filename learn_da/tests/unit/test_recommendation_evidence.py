@@ -60,7 +60,7 @@ class FakeLearnerStateService:
         return []
 
 
-def _make_service(stats=None, interaction_repo=None):
+def _make_service(stats=None, interaction_repo=None, workspace_repo=None):
     lessons = [
         {"slug": "current", "title": "Current", "topic": "programming",
          "category": "polars", "difficulty": "intermediate", "order": 2,
@@ -73,6 +73,7 @@ def _make_service(stats=None, interaction_repo=None):
         repository=FakeRepository(lessons),
         analytics_service=FakeAnalyticsService(stats_by_lesson=stats or {}),
         learner_state_service=FakeLearnerStateService(),
+        workspace_repo=workspace_repo,
         interaction_repo=interaction_repo,
     )
 
@@ -140,21 +141,23 @@ class TestAgentEvidenceInMainRecommendation:
                 )
             ]
         )
-        attempt = SimpleNamespace(exercise_id="ex-1")
-        practice_repo = MagicMock()
-        practice_repo.get_by_id = AsyncMock(return_value=attempt)
-        practice_repo.get_passed_after = AsyncMock(return_value=object())
-        practice_service = SimpleNamespace(repo=practice_repo)
+        # 工作区链路：求助关联的提交存在，且该任务在求助之后又通过了
+        attempt = SimpleNamespace(
+            lesson_slug="current", task_id="t1", status="failed"
+        )
+        workspace_repo = MagicMock()
+        workspace_repo.get_attempt = AsyncMock(return_value=attempt)
+        workspace_repo.passed_after = AsyncMock(return_value=object())
         service = _make_service(
             stats={"current": {"codeRuns": 1, "aiHelps": 0, "completed": False}},
             interaction_repo=interaction_repo,
+            workspace_repo=workspace_repo,
         )
-        service.practice_service = practice_service
 
         result = await service.get_recommendation("v1", current_lesson_slug="current")
 
         assert result.primary is None
-        practice_repo.get_passed_after.assert_awaited_once()
+        workspace_repo.passed_after.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_ai_helps_without_code_runs_does_not_trigger_review(self):

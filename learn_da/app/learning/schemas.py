@@ -37,32 +37,6 @@ class LessonDetail(LessonSummary):
     skill_tags: list[str] = []  # → skillTags in JSON
     is_review_friendly: bool = False  # → isReviewFriendly in JSON
     is_branch_point: bool = False  # → isBranchPoint in JSON
-    # Phase 2: 正式练习定义（可选，有则优先于 practice_objective）
-    exercise: "ExerciseDefinition | None" = None
-
-
-# =====================================================
-# Phase 2: 可验证练习定义
-# =====================================================
-
-
-class ExerciseDefinition(BaseResponseModel):
-    """课程练习定义（来自 frontmatter exercise 字段）"""
-
-    id: str
-    title: str
-    language: str = "python"
-    starter_code: str = ""
-    objective: str = ""
-    hints: list[str] = []
-    validator: "ExerciseValidator"
-
-
-class ExerciseValidator(BaseResponseModel):
-    """判定器定义（声明式、确定性）"""
-
-    type: str  # stdout_exact / stdout_contains / dataframe_rows
-    expected: str | list[str] | dict | None = None
 
 
 # =====================================================

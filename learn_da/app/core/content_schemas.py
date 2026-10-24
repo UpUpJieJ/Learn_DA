@@ -20,18 +20,6 @@ class ContentLintError(Exception):
         super().__init__(f"[{file_name}] {message}" if file_name else message)
 
 
-class ExerciseFrontmatter(BaseModel):
-    """frontmatter 中的练习定义（确定性判定）"""
-
-    id: str
-    title: str = ""
-    language: str = "python"
-    starter_code: str = ""
-    objective: str = ""
-    hints: list[str] = Field(default_factory=list)
-    validator: dict[str, Any]
-
-
 class LessonFrontmatter(BaseModel):
     """课程 frontmatter 的发布 schema（字段级校验）"""
 
@@ -55,7 +43,6 @@ class LessonFrontmatter(BaseModel):
     is_branch_point: bool = False
     practice_objective: str = ""
     completion_criteria: list[str] = Field(default_factory=list)
-    exercise: ExerciseFrontmatter | None = None
 
 
 class CatalogTopic(BaseModel):

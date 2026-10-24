@@ -47,7 +47,7 @@ services:
       PUBLIC_SCHEME: ${PUBLIC_SCHEME:-http}
       DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:///./data/learn_da.db}
       CORS_ORIGINS: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN in deploy/app.env}
-      ENABLED_APP_MODULES: learning,playground,agent,analytics,learner_state,practice,workspace
+      ENABLED_APP_MODULES: learning,playground,agent,analytics,learner_state,workspace
       RUNNER_URL: ${RUNNER_URL:?Set the private Runner URL in deploy/app.env}
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/app.env}
       RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-7}

@@ -547,7 +547,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 - **lint**：构造 8 类坏课程（L1-L8 各一），必须 fail-closed 并给文件名。
 - **数据集可复现**：同种子两次生成字节一致，hash 稳定。
 - **端到端**：一课的完整链路（建会话 → 跑 starter 失败 → 应用提示 → 通过 → 提交 → 下一任务解锁），
-  用 `scripts/verify_workspace.py` 跑真实 Runner（沿用 `verify_exercises.py` 的做法）。
+  用 `scripts/verify_workspace.py` 跑真实 Runner（脚本已在 M1+M2 落地；练习时代的 `verify_exercises.py` 已随旧链路下线删除）。
 - **回归**：现有后端 409 / Runner 29 / 前端 71 必须持续通过；旧 `/execute` 行为不变。
 
 ## 13. 风险与缓解
@@ -722,7 +722,7 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 
 ### 16.3 证据
 
-`AgentEvidenceResolver` 现在**优先 workspace**：有 workspace spec 的课走 `_resolve_workspace`，否则回落到旧 `_resolve_exercise`（历史数据只读）。
+`AgentEvidenceResolver` 现在**只读 workspace**：有 workspace spec 的课走 `_resolve_workspace`；没有 workspace 的课直接返回 `no_evidence`（旧的 `_resolve_exercise` 回落分支已于 §18 收口时删除）。
 
 - 五态由 `derive_workspace_state(verdict, status)` 推导：`passed`→`passed_unconfirmed`；`execution_failed`（含 `status=skipped`）→`execution_failed`；`assertion_failed`→`verification_failed`；`status=skipped`→`unverifiable`；无提交→`no_evidence`。
 - 证据里带**任务语境**：`task_id/task_title/task_objective`、`tasks_passed/tasks_total`、`current_task_id`、`lesson_completed`（由通过任务数推导）。
@@ -800,3 +800,73 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 - ladder 阶梯提示（`hint_usages` 表 + `POST /workspace/tasks/{id}/hint` + 越层校验）。
 - 真流式（SSE / FC 增量）。
 - 动作白名单（§8.3）—— 用户明确不做。
+
+## 18. 收口旧练习体系（2026-10-24）
+
+改造完成后，工作区链路与练习链路在代码里长期并存：13 课 frontmatter 仍带 `exercise:` 块，`app/practice/` 还留着 validator / repository / service / router，`deploy/acceptance.sh` 的 17 项冒烟全走练习链路——**跑它会给人虚假安全感**。本章记录一次性收口。
+
+### 18.1 删除边界
+
+保留（新链路在用）：
+
+- `app/practice/assertion_runtime.py` + `app/practice/assertions.py`（断言 DSL v2，`workspace/content.py` 与 `test_workspace_content.py` 依赖）。
+- `app/practice/models.py` 的 `ExerciseAttempt`（表 `exercise_attempts` 冻结只读，仍登记在 `model_registry.py` 供 Alembic 识别；历史数据留存，**不要再写入**）。
+- `app/playground/validators.py`（`validate_playground_code` 校验自由沙盒的代码非空，`playground/service.py` 在用）。
+
+删除：
+
+| 范围 | 内容 |
+|---|---|
+| 内容 | 13 课 frontmatter 的 `exercise:` 块（`scripts/content_lint.py` 不再校验 exercise） |
+| practice 包 | `validator.py` / `repository.py` / `service.py` / `router.py` / `schemas.py` |
+| playground | `POST /playground/exercises/{id}/resume|attempts|stats`、`POST /playground/format`（black 唯一引用点）、`_execute_exercise` 编排、`ExerciseVerification` |
+| analytics | `GET /analytics/practice-stats`、`GET /analytics/recommended-lessons`（deprecated、前端零调用）、`_compute_help_then_pass_rate` |
+| 推荐 | `practice_service` 依赖 → 改读 `workspace_repo.recent_attempts()` 统计连续未通过任务；`get_passed_after` → 新增 `WorkspaceReadRepository.passed_after()` |
+| Agent | `evidence.py` 的 `derive_state` / `_resolve_exercise` / 旧字段（execution_status、verification_status、stdout_summary…）；`service.py` / `router.py` / `fc_tools.py` / `prompts.py` 的 practice 依赖 |
+| 前端 | `api/playground.ts` 的 `formatCode`/`resumeExercise`/`listExerciseAttempts`/`getExerciseStats`、`api/analytics.ts` 的 6 个零调用函数、`api/recommendation.ts` 整文件、`types/api.ts` 的 15 个练习/推荐类型 |
+| 脚本 | `learn_da/scripts/verify_exercises.py`（旧链路自检，已被 `verify_workspace.py` 与 `test_workspace_content.py` 取代） |
+| 依赖 | `learn_da/pyproject.toml` 运行时依赖里的 `black`（dev 依赖保留） |
+| 测试 | 删 `test_practice_resume` / `test_practice_repository` / `test_practice_validator` / `test_playground_exercise` / `test_agent_evidence`；`test_practice_evidence` 改名 `test_workspace_evidence_consumption` |
+
+### 18.2 两处语义迁移（不是简单删除）
+
+- **推荐的回流信号**：原来统计 `verification_status in ("failed","unverifiable")`，改为 `workspace_repo.recent_attempts(...)` 里 `status != "passed"` 的条数，阈值仍是 `PRACTICE_FAILURES_THRESHOLD = 3`，理由文案改为「你在这节课的任务中连续 N 次未通过判定」。
+- **`/analytics/practice-stats` 与 `_agent_help_then_pass_rate`**：整段删除而不是改写——工作区的 `/workspace/report` 已提供 `tasksFirstTry`、`errorPatterns`、`recent` 三块等价信息（`Report.vue` 在用）。
+
+### 18.3 测试口径转换
+
+`learn_da/tests/eval/phase3_evidence_cases.yml` 的 31 条 case 原来以 `(execution_status, verification_status)` 二元组描述证据，改为 `(verdict, status)`：
+
+| 旧 | 新 |
+|---|---|
+| `error/timeout/rejected` + `not_run` | `execution_failed` / `failed` |
+| `success` + `failed` | `assertion_failed` / `failed` |
+| `success` + `passed` | `passed` / `passed` |
+| `unavailable`，或 verification ∈ {`unverifiable`,`not_run`} | `null` / `skipped` |
+
+`test_agent_eval.py` 随之改用 `SimpleNamespace` 造 attempt + `MagicMock` 的 `WorkspaceReadRepository`（`get_attempt` / `latest_attempt` / `lesson_task_stats`），4 个维度（state / next_action / hint_level / 代码不泄露）全部保留。
+
+### 18.4 `deploy/acceptance.sh` 重写（11 组 19 项）
+
+A1 `/lessons` 13 门课 → A2 会话 cookie（`/workspace/progress` 触发签发、无 Secure）→ A3 建工作区会话 → A4 c1 真实执行 → A5 起步代码提交必判 `assertion_failed` 且回传实际值 → A6 参考解逐格通过 t1/t2 → A7 同 `requestId` 幂等 → A8 进度与报告接口 → A9 Agent 三场景（`no_evidence` / `passed_unconfirmed` / 跨访客隔离）→ A10 改上游代码下游失效 → A11 `/analytics/track` 幂等。默认打 `http://127.0.0.1:8000`，可用 `LEARN_DA_BASE_URL` 覆盖。
+
+两个脚本级坑（写进脚本注释，避免重犯）：
+
+1. `command -v python3` 在 Windows 可能命中应用商店占位程序（存在但执行无输出），导致所有 JSON 解析静默返回空串、整批检查假失败 → 用 `pick_python()` 逐个候选跑 `-c "print(1)"` 验证。
+2. Git Bash 把中文 payload 传给原生 `curl.exe` 会被转成系统 ANSI 代码页，后端回 `400 There was an error parsing the body` → 一律把 payload 写文件后用 `--data-binary @file`，不要 `-d "$payload"`。
+
+### 18.5 实测（2026-10-24）
+
+| 项目 | 结果 |
+|---|---|
+| `bash deploy/acceptance.sh` | **19 PASS / 0 FAIL** |
+| 后端 pytest | **435 passed**（529 → 435，删掉练习时代测试的净值） |
+| Runner pytest | 39 passed |
+| 前端 vitest | **115 passed（16 文件）** |
+| `vue-tsc --build` / `npm run lint:ui` | 通过（基线 3 文件 / 14 处） |
+| `content_lint.py` / `build_datasets.py --check` | 通过（13 课 / 5 个数据集） |
+
+### 18.6 遗留（未做）
+
+- 7 个旧运行时依赖仍留在 `learn_da/pyproject.toml`（`aiomysql`、`databases`、`docker`、`python-magic`、`aiofiles`、`fastapi-utils`、`typing-inspect`），实测全项目零 import，属历史债。
+- `exercise_attempts` 表与 `CodeSnapshot` 表仍保留（数据留存），未做删除迁移。

@@ -72,8 +72,6 @@ export interface LessonDetail extends LessonSummary {
     skillTags?: string[];
     isReviewFriendly?: boolean;
     isBranchPoint?: boolean;
-    /** Phase 2: 正式练习定义（可选，有则优先于 practiceObjective） */
-    exercise?: ExerciseDefinition | null;
 }
 
 export interface LessonNav {
@@ -90,9 +88,6 @@ export interface ExecuteRequest {
     language?: "python" | "sql";
     requestId?: string;
     source?: ExecutionSource;
-    /** Phase 2: 练习执行（可选） */
-    lessonSlug?: string;
-    exerciseId?: string;
 }
 
 export type ExecutionSource = "playground" | "agent_suggested";
@@ -122,72 +117,6 @@ export interface ExecuteResponse {
     source?: ExecutionSource;
     errorType?: string | null;
     outputTruncated?: boolean;
-    /** Phase 2: 练习执行结果 */
-    attemptId?: number;
-    verification?: ExerciseVerification | null;
-}
-
-/** Phase 2: 练习验证结果 */
-export interface ExerciseVerification {
-    status: VerificationStatus;
-    failureReason?: string | null;
-    validatorType?: string | null;
-}
-
-export type VerificationStatus = "passed" | "failed" | "unverifiable" | "not_run";
-
-/** Phase 2: 练习定义 */
-export interface ExerciseDefinition {
-    id: string;
-    title: string;
-    language: string;
-    starterCode: string;
-    objective: string;
-    hints: string[];
-    validator: {
-        type: string;
-        expected?: string | string[] | Record<string, unknown> | null;
-    };
-}
-
-/** Phase 2: 练习尝试摘要 */
-export interface ExerciseAttemptSummary {
-    id: number;
-    attemptId: number;
-    exerciseId: string;
-    lessonSlug: string;
-    executionStatus: ExecuteStatus;
-    verificationStatus: VerificationStatus;
-    failureReason?: string | null;
-    createdTime?: string | null;
-    durationMs?: number | null;
-}
-
-/** Phase 2: 练习恢复响应 */
-export interface ExerciseResumeResponse {
-    exerciseId: string;
-    lessonSlug: string;
-    code: string;
-    language: string;
-    isResumed: boolean;
-    lastAttempt?: ExerciseAttemptSummary | null;
-    exerciseTitle: string;
-    objective: string;
-    hints: string[];
-    starterCode: string;
-}
-
-/** Phase 2: Dashboard 可验证练习指标 */
-export interface PracticeStats {
-    passedExercises: number;
-    totalAttempts: number;
-    recentAttempts: ExerciseAttemptSummary[];
-    resumableExercises: Array<{
-        exerciseId: string;
-        lessonSlug: string;
-        lastStatus: VerificationStatus;
-    }>;
-    errorCategories: Record<string, number>;
 }
 
 // =====================================================
@@ -355,55 +284,6 @@ export interface EventTrackResponse {
 /** 代码快照响应 */
 /** 代码快照列表项 */
 /** 代码快照分页响应 */
-/** 首页统计数据 */
-export interface HomeStats {
-    totalLearners: number;
-    todayActiveUsers: number;
-    totalCodeRuns: number;
-    totalLessons: number;
-}
-
-/** 用户画像 */
-export interface UserProfile {
-    totalLearningMinutes: number;
-    lessonsCompleted: number;
-    codeRuns: number;
-    aiHelps: number;
-    currentStreak: number;
-    longestStreak: number;
-    lastActiveDate: string | null;
-    polarsScore: number;
-    duckdbScore: number;
-    sqlScore: number;
-    dataProcessingScore: number;
-    apiMasteryScore: number;
-}
-
-/** 课程学习统计 */
-export interface LessonStat {
-    slug: string;
-    codeRuns: number;
-    aiHelps: number;
-    completed: boolean;
-}
-
-/** 用户课程统计 */
-export interface UserLessonStats {
-    completedLessons: string[];
-    lessonDetails: LessonStat[];
-}
-
-/** 每日趋势数据 */
-export interface DailyTrendItem {
-    date: string;
-    activeUsers: number;
-    codeRuns: number;
-    lessonsCompleted: number;
-    aiHelps: number;
-}
-
-/** 分类进度 */
-export type CategoryProgress = Record<string, number>;
 
 // =====================================================
 // 阶段 1：统一学习事实 - Learner State
@@ -431,41 +311,9 @@ export interface LearnerProgressSummary {
 
 // 状态变更没有专用响应体：完成 / 撤销 / 开始统一走 EventTrackRequest
 // 上报到 /analytics/track，由后端同事务联动 LearnerState 投影。
+//
+// 说明：Phase 3 的「学习建议」类型（RecommendationType / LearningRecommendation /
+// RecommendationResponse）已随前端 `api/recommendation.ts` 一起删除 ——
+// `/api/v1/recommendations` 后端仍在，但改版 P4 后前端改为读
+// `/workspace/progress` 与 `/workspace/report`，没有任何页面消费建议接口。
 
-// =====================================================
-// Phase 3: 学习建议系统
-// =====================================================
-
-/** 建议类型 */
-export type RecommendationType =
-    | "next_lesson" // 顺学建议：继续下一课
-    | "review_lesson" // 回补建议：回看前置课
-    | "branch_path" // 分支建议：切换学习路径
-    | "resume_session"; // 回流建议：恢复中断的学习
-
-/** 建议理由代码 */
-export type RecommendationReasonCode =
-    | "sequential_progress" // 顺序推进
-    | "prerequisite_weak" // 前置知识薄弱
-    | "stuck_on_practice" // 练习卡住
-    | "path_completed" // 路径完成
-    | "long_absence" // 长时间未学习
-    | "incomplete_practice"; // 未完成的练习
-
-/** 学习建议 */
-export interface LearningRecommendation {
-    type: RecommendationType;
-    targetSlug: string;
-    targetTitle: string;
-    reason: string;
-    reasonCode: RecommendationReasonCode;
-    priority: number;
-    actionLabel: string;
-    context?: Record<string, unknown> | null;
-}
-
-/** 建议响应 */
-export interface RecommendationResponse {
-    primary: LearningRecommendation | null;
-    alternatives: LearningRecommendation[];
-}

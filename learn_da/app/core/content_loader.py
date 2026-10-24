@@ -15,11 +15,6 @@ from .content_schemas import (
     validate_lesson_frontmatter,
 )
 
-# Phase 2: 可验证练习判定器白名单
-ALLOWED_VALIDATOR_TYPES = frozenset(
-    {"stdout_exact", "stdout_contains", "dataframe_rows"}
-)
-ALLOWED_EXERCISE_LANGUAGES = frozenset({"python", "sql"})
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -91,9 +86,6 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
         # 提取代码示例
         code_example = extract_code_example(content)
 
-        # Phase 2: 解析并校验练习定义
-        exercise = _parse_exercise(frontmatter, file_path.name)
-
         lesson = {
             "id": frontmatter.get("id"),
             "slug": frontmatter.get("slug"),
@@ -112,8 +104,6 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
             # Phase 2: 练习结构字段（可选）
             "practice_objective": frontmatter.get("practice_objective", ""),
             "completion_criteria": frontmatter.get("completion_criteria", []),
-            # Phase 2: 正式练习定义
-            "exercise": exercise,
             # 改版 M1：多 cell 工作区定义（可选，结构由 app/workspace/content.py 校验）
             "workspace": frontmatter.get("workspace"),
             # Phase 3: 建议系统元数据（可选）
@@ -144,75 +134,12 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
         raise ContentLintError(f"课程文件加载失败: {e}", file_path.name) from e
 
 
-def _parse_exercise(
-    frontmatter: dict[str, Any], file_name: str
-) -> dict[str, Any] | None:
-    """解析并校验 frontmatter 中的 exercise 字段。
-
-    fail closed：有 exercise 但非法 → 抛出 ContentLintError。
-    无 exercise → 返回 None（纯内容课程）。
-    """
-    raw = frontmatter.get("exercise")
-    if raw is None:
-        return None
-
-    if not isinstance(raw, dict):
-        raise ContentLintError("exercise 必须是字典", file_name)
-
-    # 必填字段
-    exercise_id = raw.get("id")
-    if not exercise_id or not isinstance(exercise_id, str):
-        raise ContentLintError("exercise.id 缺失或非字符串", file_name)
-
-    title = raw.get("title", "")
-    language = raw.get("language", "python")
-    if language not in ALLOWED_EXERCISE_LANGUAGES:
-        raise ContentLintError(
-            f"exercise.language '{language}' 不在允许列表中: {sorted(ALLOWED_EXERCISE_LANGUAGES)}",
-            file_name,
-        )
-
-    starter_code = raw.get("starter_code", "")
-    objective = raw.get("objective", "")
-    hints = raw.get("hints", [])
-    if not isinstance(hints, list):
-        raise ContentLintError("exercise.hints 必须是列表", file_name)
-
-    validator_raw = raw.get("validator")
-    if not isinstance(validator_raw, dict):
-        raise ContentLintError("exercise.validator 缺失或非字典", file_name)
-
-    validator_type = validator_raw.get("type", "")
-    if validator_type not in ALLOWED_VALIDATOR_TYPES:
-        raise ContentLintError(
-            f"exercise.validator.type '{validator_type}' 不在允许列表中: {sorted(ALLOWED_VALIDATOR_TYPES)}",
-            file_name,
-        )
-
-    return {
-        "id": exercise_id,
-        "title": title,
-        "language": language,
-        "starter_code": starter_code,
-        "objective": objective,
-        "hints": hints,
-        "validator": {
-            "type": validator_type,
-            "expected": validator_raw.get("expected"),
-        },
-    }
-
-
 def lint_content(content_dir: Path | None = None) -> list[str]:
     """校验所有内容的合法性。
 
     返回错误列表；空列表表示全部通过。错误格式 ``[file:field] message``。
     校验项：
     - 每个课程文件必须有可解析的非空 frontmatter（YAML 损坏即报错，不跳过）
-    - 有 exercise 的课程必须完整合法
-    - exercise.id 不能重复
-    - 语言必须在允许列表
-    - validator type 必须在白名单
     - catalog.yml 存在时必须自身合法（损坏即报错，不静默禁用一致性校验）
     - track 必须存在于 catalog（catalog.yml 存在时）
     - category 必须与 track.category 一致（catalog.yml 存在时）
@@ -227,7 +154,6 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     if not lessons_dir.exists():
         return [f"Lessons directory not found: {lessons_dir}"]
 
-    seen_exercise_ids: set[str] = set()
     seen_slugs: set[str] = set()
     lessons: dict[str, dict[str, Any]] = {}
 
@@ -259,20 +185,6 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
                 if slug in seen_slugs:
                     errors.append(f"[{file_name}:slug] slug '{slug}' 重复")
                 seen_slugs.add(slug)
-
-            # 有 exercise 字段时强制校验
-            if "exercise" in frontmatter:
-                try:
-                    exercise = _parse_exercise(frontmatter, file_name)
-                    if exercise:
-                        eid = exercise["id"]
-                        if eid in seen_exercise_ids:
-                            errors.append(
-                                f"[{file_name}:exercise.id] exercise.id '{eid}' 重复"
-                            )
-                        seen_exercise_ids.add(eid)
-                except ContentLintError as e:
-                    errors.append(str(e))
 
             # 与 catalog 的一致性校验（catalog.yml 存在时）
             if track_by_key:

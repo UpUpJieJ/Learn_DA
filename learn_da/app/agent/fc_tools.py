@@ -25,7 +25,6 @@ from app.utils import log
 if TYPE_CHECKING:
     from app.learner_state.service import LearnerStateService
     from app.learning.recommendation import RecommendationService
-    from app.practice.service import PracticeService
     from app.workspace.repository import WorkspaceReadRepository
 
     from .knowledge import KnowledgeRetriever
@@ -145,7 +144,6 @@ class FCToolExecutor:
         visitor_id: str,
         learner_state_service: "LearnerStateService | None" = None,
         recommendation_service: "RecommendationService | None" = None,
-        practice_service: "PracticeService | None" = None,
         workspace_repo: "WorkspaceReadRepository | None" = None,
         current_lesson: str | None = None,
     ) -> None:
@@ -153,7 +151,6 @@ class FCToolExecutor:
         self.visitor_id = visitor_id
         self.learner_state_service = learner_state_service
         self.recommendation_service = recommendation_service
-        self.practice_service = practice_service
         self.workspace_repo = workspace_repo
         self.current_lesson = current_lesson
         # 编排循环用：本次会话内已成功执行过的工具名（意图标签来源）

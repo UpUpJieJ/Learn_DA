@@ -1,18 +1,10 @@
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, Field
 
 from app.sandbox.schemas import ExecutionSource, ExecutionStatus
 from app.utils.base_response import BaseResponseModel
-
-
-class ExerciseVerification(BaseResponseModel):
-    """练习验证结果"""
-
-    status: str  # passed / failed / unverifiable
-    failure_reason: str | None = None
-    validator_type: str | None = None
 
 
 class ExecuteCodeRequest(BaseResponseModel):
@@ -21,19 +13,6 @@ class ExecuteCodeRequest(BaseResponseModel):
     language: Literal["python", "sql"] = "python"
     source: ExecutionSource = "playground"
     session_id: str | None = None
-    # Phase 2: 练习执行（可选）
-    lesson_slug: str | None = None
-    exercise_id: str | None = None
-
-
-class FormatCodeRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=5000)
-    language: Literal["python"] = "python"
-
-
-class FormatCodeResponse(BaseResponseModel):
-    formatted: str
-    changed: bool
 
 
 class DataFrameResult(BaseResponseModel):
@@ -64,6 +43,3 @@ class ExecuteCodeResponse(BaseResponseModel):
     output_truncated: bool = False
     result_type: Literal["text", "dataframe", "error"] = "text"
     dataframe: DataFrameResult | None = None
-    # Phase 2: 练习执行结果
-    attempt_id: int | None = None
-    verification: ExerciseVerification | None = None

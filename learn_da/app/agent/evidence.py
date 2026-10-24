@@ -1,11 +1,8 @@
-"""服务端教学证据解析器（阶段 3 建立，改版 M4 起改读工作区记录）。
+"""服务端教学证据解析器（阶段 3 建立，改版 M4 起只读工作区记录）。
 
-每次 Agent chat 调用模型前，按服务端身份构造可信教学上下文。证据来源是数据库：
-
-* 改版后：``task_attempts``（任务提交，含 Runner verdict 与每条断言的
-  ``actual``）+ 内容侧任务总数。这是唯一还在写入的证据表。
-* 改版前：``exercise_attempts``（旧练习链路，已冻结只读），仅当课程没有
-  ``workspace`` 定义时才会走到。
+每次 Agent chat 调用模型前，按服务端身份构造可信教学上下文。证据来源是数据库
+里的 ``task_attempts``（任务提交，含 Runner verdict 与每条断言的 ``actual``）
+与内容侧任务总数——这是唯一还在写入的证据表。
 
 客户端自报的 ``stdout`` / ``stderr`` / ``lastError`` 不作为事实来源，避免伪造
 状态进入教学判断。
@@ -28,9 +25,6 @@ from pydantic import Field
 from app.utils.base_response import BaseResponseModel
 
 if TYPE_CHECKING:
-    from app.learner_state.service import LearnerStateService
-    from app.practice.models import ExerciseAttempt
-    from app.practice.repository import PracticeRepository
     from app.workspace.models import TaskAttempt
     from app.workspace.repository import WorkspaceReadRepository
 
@@ -43,16 +37,9 @@ EvidenceState = Literal[
     "unverifiable",
     "no_evidence",
 ]
-EvidenceSource = Literal["workspace", "exercise"]
-
-# 执行状态归一化：写入路径用 ExecutionStatus 枚举值（success/error/timeout/
-# rejected/unavailable）；部分历史测试用 "completed"，一并视为成功。
-_SUCCESS_EXECUTION = frozenset({"success", "completed", "ok"})
-_UNAVAILABLE_EXECUTION = frozenset({"unavailable"})
+EvidenceSource = Literal["workspace"]
 
 # 截断长度：注入给模型的摘要上限，避免 prompt 膨胀。
-MAX_STDOUT_SUMMARY = 500
-MAX_STDERR_SUMMARY = 500
 MAX_DETAIL_SUMMARY = 300
 MAX_ASSERTIONS_IN_EVIDENCE = 8
 
@@ -76,13 +63,6 @@ class AgentLearningEvidence(BaseResponseModel):
     state: EvidenceState
     source: EvidenceSource | None = None
     lesson_slug: str | None = None
-    # 旧练习链路字段
-    exercise_id: str | None = None
-    execution_status: str | None = None
-    verification_status: str | None = None
-    failure_reason: str | None = None
-    stdout_summary: str | None = None
-    stderr_summary: str | None = None
     # 工作区链路字段
     attempt_id: int | None = None
     attempt_no: int | None = None
@@ -94,43 +74,12 @@ class AgentLearningEvidence(BaseResponseModel):
     tasks_passed: int | None = None
     tasks_total: int | None = None
     current_task_id: str | None = None
-    duration_ms: int | None = None
     lesson_completed: bool = False
     evidence_time: str | None = None
     # 客户端编辑器里的代码是否就是这次的提交代码。False 表示用户改过但没提交，
     # 此时 prompt 必须提醒模型"编辑器代码可能未保存/未提交"，避免它拿旧代码
     # 解释任务状态（曾出现「已通过」的同时说"你还缺 X 列"的自相矛盾回答）。
     code_matches_editor: bool | None = None
-
-
-def derive_state(
-    execution_status: str | None,
-    verification_status: str | None,
-) -> EvidenceState:
-    """旧练习链路的五态推导（保留给冻结的 exercise_attempts 数据）。
-
-    五态对应计划：execution_failed / verification_failed /
-    passed_unconfirmed / unverifiable / no_evidence。
-    """
-    if execution_status is None and verification_status is None:
-        return "no_evidence"
-
-    if execution_status in _UNAVAILABLE_EXECUTION:
-        return "unverifiable"
-    if verification_status == "unverifiable":
-        return "unverifiable"
-
-    if execution_status not in _SUCCESS_EXECUTION:
-        # error / timeout / rejected / 未知失败值
-        return "execution_failed"
-
-    # 执行成功后看验证结果
-    if verification_status == "failed":
-        return "verification_failed"
-    if verification_status == "passed":
-        return "passed_unconfirmed"
-    # not_run：执行成功但未跑断言，无法判定目标是否达成 -> 不可验证
-    return "unverifiable"
 
 
 def derive_workspace_state(
@@ -188,19 +137,12 @@ def _parse_assertions(raw: str | None) -> list[AgentAssertionEvidence]:
 
 
 class AgentEvidenceResolver:
-    """按服务端身份解析当前学习者最近一次可信任务提交。
-
-    优先读工作区记录；课程没有 ``workspace`` 定义时退回冻结的练习记录。
-    """
+    """按服务端身份解析当前学习者最近一次可信任务提交。"""
 
     def __init__(
         self,
-        practice_repo: "PracticeRepository | None" = None,
-        learner_state_service: "LearnerStateService | None" = None,
         workspace_repo: "WorkspaceReadRepository | None" = None,
     ) -> None:
-        self.practice_repo = practice_repo
-        self.learner_state_service = learner_state_service
         self.workspace_repo = workspace_repo
 
     async def resolve(
@@ -216,23 +158,21 @@ class AgentEvidenceResolver:
         ``editor_code`` 只用来判断「编辑器里的代码是否就是这次提交的代码」，
         不会出现在证据里，也不会落库。
         """
-        if self.workspace_repo is not None and lesson_slug:
-            from app.workspace.repository import spec_for
+        if self.workspace_repo is None or not lesson_slug:
+            return AgentLearningEvidence(state="no_evidence")
 
-            spec = spec_for(lesson_slug)
-            if spec is not None:
-                return await self._resolve_workspace(
-                    visitor_id=visitor_id,
-                    lesson_slug=lesson_slug,
-                    task_id=task_id or self._guess_task(lesson_slug),
-                    attempt_id=attempt_id,
-                    spec=spec,
-                    editor_code=editor_code,
-                )
-        return await self._resolve_exercise(
+        from app.workspace.repository import spec_for
+
+        spec = spec_for(lesson_slug)
+        if spec is None:
+            return AgentLearningEvidence(state="no_evidence")
+        return await self._resolve_workspace(
             visitor_id=visitor_id,
             lesson_slug=lesson_slug,
+            task_id=task_id or self._guess_task(lesson_slug),
             attempt_id=attempt_id,
+            spec=spec,
+            editor_code=editor_code,
         )
 
     @staticmethod
@@ -305,7 +245,6 @@ class AgentEvidenceResolver:
             tasks_passed=len(passed_ids),
             tasks_total=total,
             current_task_id=current_task,
-            duration_ms=None,
             lesson_completed=lesson_completed,
             code_matches_editor=matches,
             evidence_time=(
@@ -313,92 +252,6 @@ class AgentEvidenceResolver:
                 if attempt.created_time
                 else None
             ),
-        )
-
-    async def _resolve_exercise(
-        self,
-        visitor_id: str,
-        lesson_slug: str | None,
-        attempt_id: int | None,
-    ) -> AgentLearningEvidence:
-        """旧练习链路（``exercise_attempts`` 已冻结，只为读历史数据保留）。"""
-        if self.practice_repo is None:
-            return AgentLearningEvidence(state="no_evidence")
-
-        attempt: ExerciseAttempt | None = None
-
-        # 1) 优先按客户端提供的 attemptId 定位（服务端校验归属）
-        if attempt_id is not None:
-            attempt = await self.practice_repo.get_by_id(attempt_id, visitor_id)
-            # 校验 attempt 与客户端声明的 lesson 一致；不一致则不采信该 attempt
-            if attempt is not None and lesson_slug and attempt.lesson_slug != lesson_slug:
-                lesson_completed = await self._read_lesson_completed(
-                    visitor_id, lesson_slug
-                )
-                return AgentLearningEvidence(
-                    state="no_evidence",
-                    source="exercise",
-                    lesson_slug=attempt.lesson_slug,
-                    lesson_completed=lesson_completed,
-                )
-
-        # 2) 回退到该课程最近一次 Attempt
-        if attempt is None and lesson_slug:
-            attempt = await self.practice_repo.get_latest_by_lesson(
-                visitor_id, lesson_slug
-            )
-
-        # 3) 解析课程完成状态（单独查询，不依赖客户端）
-        lesson_completed = await self._read_lesson_completed(visitor_id, lesson_slug)
-
-        if attempt is None:
-            return AgentLearningEvidence(
-                state="no_evidence",
-                source="exercise",
-                lesson_completed=lesson_completed,
-            )
-
-        return self._build_evidence(attempt, lesson_completed)
-
-    async def _read_lesson_completed(
-        self, visitor_id: str, lesson_slug: str | None
-    ) -> bool:
-        if not lesson_slug or self.learner_state_service is None:
-            return False
-        try:
-            progress = await self.learner_state_service.get_lesson_progress(
-                visitor_id, lesson_slug
-            )
-        except Exception:
-            # 读取完成状态失败不应阻断 Agent 回答；按未完成处理
-            return False
-        return progress is not None and progress.status == "completed"
-
-    @staticmethod
-    def _build_evidence(
-        attempt: "ExerciseAttempt",
-        lesson_completed: bool,
-    ) -> AgentLearningEvidence:
-        state = derive_state(attempt.execution_status, attempt.verification_status)
-        evidence_time = (
-            attempt.created_time.strftime("%Y-%m-%d %H:%M:%S")
-            if attempt.created_time
-            else None
-        )
-        return AgentLearningEvidence(
-            state=state,
-            source="exercise",
-            lesson_slug=attempt.lesson_slug,
-            exercise_id=attempt.exercise_id,
-            attempt_id=attempt.id,
-            execution_status=attempt.execution_status,
-            verification_status=attempt.verification_status,
-            failure_reason=attempt.failure_reason,
-            duration_ms=attempt.duration_ms,
-            stdout_summary=_truncate(attempt.stdout, MAX_STDOUT_SUMMARY),
-            stderr_summary=_truncate(attempt.stderr, MAX_STDERR_SUMMARY),
-            lesson_completed=lesson_completed,
-            evidence_time=evidence_time,
         )
 
 

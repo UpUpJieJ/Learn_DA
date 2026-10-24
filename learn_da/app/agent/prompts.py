@@ -167,22 +167,6 @@ def build_evidence_block(
     if evidence.verdict:
         lines.append(f"判定结论：{evidence.verdict}")
 
-    # 旧练习链路的字段（历史数据）
-    if evidence.exercise_id:
-        lines.append(f"练习：{evidence.exercise_id}")
-    if evidence.execution_status:
-        lines.append(f"执行状态：{evidence.execution_status}")
-    if evidence.verification_status:
-        lines.append(f"验证状态：{evidence.verification_status}")
-    if evidence.failure_reason:
-        lines.append(f"失败原因：{evidence.failure_reason[:300]}")
-    if evidence.duration_ms is not None:
-        lines.append(f"耗时：{evidence.duration_ms}ms")
-    if evidence.stdout_summary:
-        lines.append(f"标准输出摘要：\n{evidence.stdout_summary}")
-    if evidence.stderr_summary:
-        lines.append(f"标准错误摘要：\n{evidence.stderr_summary}")
-
     if evidence.assertions:
         lines.append("断言结果（失败在前）：")
         for index, item in enumerate(evidence.assertions, start=1):

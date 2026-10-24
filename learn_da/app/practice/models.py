@@ -1,10 +1,14 @@
 """
-Phase 2: 可验证练习闭环 - 数据模型
+Phase 2 遗留表：``exercise_attempts``（改版 M4 起冻结只读）
 
-ExerciseAttempt: 每次练习提交的持久化尝试记录
-- (visitor_id, request_id) 唯一约束保证重放幂等
-- 代码和输出长度受限
-- 按 visitor + exercise 查询最近 Attempt
+练习链路已于 2026-10-24 下线，工作区的任务提交写入 ``task_attempts``。
+本表保留只为：
+
+- 迁移历史完整（``2e532d3dd383_phase2_exercise_attempts`` 已建表，删表需要新迁移）；
+- 老数据留存，便于追溯改版前的历史记录。
+
+**不要再往这张表写入新数据**：``app.practice`` 里已没有 repository / service，
+``model_registry`` 仍登记它以便 Alembic 不把表当成孤儿。
 """
 
 from sqlalchemy import Column, String, Integer, Text, DateTime, Index, UniqueConstraint

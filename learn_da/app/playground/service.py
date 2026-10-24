@@ -1,19 +1,12 @@
 import json
 import logging
-from typing import Any
 
-from app.practice.repository import PracticeRepository
-from app.practice.service import PracticeService
-from app.practice.validator import verify
 from app.sandbox import SandboxService
 
 from .schemas import (
     DataFrameResult,
     ExecuteCodeRequest,
     ExecuteCodeResponse,
-    ExerciseVerification,
-    FormatCodeRequest,
-    FormatCodeResponse,
 )
 from .validators import validate_playground_code
 
@@ -24,17 +17,16 @@ DATAFRAME_PREVIEW_LIMIT = 50
 
 
 class PlaygroundService:
-    def __init__(
-        self,
-        sandbox_service: SandboxService,
-        practice_service: PracticeService | None = None,
-    ):
-        self.sandbox_service = sandbox_service
-        self.practice_service = practice_service
+    """自由沙盒执行（``/lab`` 与普通 ``/playground/execute`` 共用）。
 
-    async def execute(
-        self, payload: ExecuteCodeRequest, *, visitor_id: str | None = None
-    ) -> ExecuteCodeResponse:
+    改版 M4 起练习判定走工作区（``/workspace/...``），本服务只负责把代码交给
+    Runner 并把结构化输出（dataframe 探针）还原成响应，不写任何数据库记录。
+    """
+
+    def __init__(self, sandbox_service: SandboxService):
+        self.sandbox_service = sandbox_service
+
+    async def execute(self, payload: ExecuteCodeRequest) -> ExecuteCodeResponse:
         code = validate_playground_code(payload.code)
         result = await self.sandbox_service.execute(
             self._with_dataframe_probe(code),
@@ -44,7 +36,7 @@ class PlaygroundService:
         cleaned_stdout, dataframe = self._extract_dataframe_result(result.stdout)
         result_type = self._resolve_result_type(result.status, dataframe)
 
-        response = ExecuteCodeResponse(
+        return ExecuteCodeResponse(
             request_id=payload.request_id,
             execution_id=result.execution_id,
             source=payload.source,
@@ -57,103 +49,6 @@ class PlaygroundService:
             result_type=result_type,
             dataframe=dataframe,
         )
-
-        # Phase 2: 练习执行编排
-        if (
-            self.practice_service is not None
-            and payload.lesson_slug
-            and payload.exercise_id
-            and visitor_id
-        ):
-            response = await self._orchestrate_exercise(
-                payload=payload,
-                response=response,
-                cleaned_stdout=cleaned_stdout,
-                dataframe=dataframe,
-                visitor_id=visitor_id,
-            )
-
-        return response
-
-    async def _orchestrate_exercise(
-        self,
-        *,
-        payload: ExecuteCodeRequest,
-        response: ExecuteCodeResponse,
-        cleaned_stdout: str,
-        dataframe: DataFrameResult | None,
-        visitor_id: str,
-    ) -> ExecuteCodeResponse:
-        """编排练习执行：创建 Attempt → 判定 → 返回结果"""
-        exercise_def = self.practice_service.get_exercise_definition(
-            payload.lesson_slug, payload.exercise_id
-        )
-        if exercise_def is None:
-            return response
-
-        # 创建或重放 Attempt
-        attempt, created = await self.practice_service.create_or_replay_attempt(
-            visitor_id=visitor_id,
-            request_id=str(payload.request_id),
-            lesson_slug=payload.lesson_slug,
-            exercise_id=payload.exercise_id,
-            execution_id=str(response.execution_id),
-            source=payload.source,
-            language=payload.language,
-            code=payload.code,
-            execution_status=response.status,
-            stdout=cleaned_stdout,
-            stderr=response.stderr,
-            duration_ms=response.duration_ms,
-        )
-
-        # 仅对新创建的 Attempt 进行判定
-        if created:
-            validator_def = exercise_def["validator"]
-            result = verify(
-                validator_type=validator_def["type"],
-                expected=validator_def.get("expected"),
-                stdout=cleaned_stdout,
-                stderr=response.stderr,
-                execution_status=response.status,
-                dataframe=(dataframe.model_dump() if dataframe else None),
-            )
-            attempt.verification_status = result.status
-            attempt.failure_reason = result.failure_reason
-
-            response.attempt_id = attempt.id
-            response.verification = ExerciseVerification(
-                status=result.status,
-                failure_reason=result.failure_reason,
-                validator_type=result.validator_type,
-            )
-        else:
-            # 重放：返回已有验证状态
-            response.attempt_id = attempt.id
-            response.verification = ExerciseVerification(
-                status=attempt.verification_status,
-                failure_reason=attempt.failure_reason,
-                validator_type=(
-                    exercise_def["validator"]["type"] if exercise_def else None
-                ),
-            )
-
-        return response
-
-    def format_code(self, payload: FormatCodeRequest) -> FormatCodeResponse:
-        try:
-            import black
-
-            mode = black.FileMode()
-            formatted = black.format_str(payload.code, mode=mode)
-            return FormatCodeResponse(
-                formatted=formatted,
-                changed=formatted != payload.code,
-            )
-        except ImportError:
-            return FormatCodeResponse(formatted=payload.code, changed=False)
-        except Exception:
-            return FormatCodeResponse(formatted=payload.code, changed=False)
 
     def _resolve_result_type(
         self,

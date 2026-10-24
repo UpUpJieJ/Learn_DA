@@ -1,16 +1,11 @@
-"""
-Phase 2: 可验证练习闭环 - Practice 模块
-"""
+"""练习判定相关的共享实现。
 
-from .models import ExerciseAttempt
-from .repository import PracticeRepository
-from .service import PracticeService
-from .validator import verify, VerificationResult
+改版 M4 起，旧练习链路（``exercise_attempts`` + validator/repository/service）
+已下线，本包只剩两件事：
 
-__all__ = [
-    "ExerciseAttempt",
-    "PracticeRepository",
-    "PracticeService",
-    "verify",
-    "VerificationResult",
-]
+* ``assertion_runtime``：v2 断言 DSL 的求值运行时（沙箱内也能跑）；
+* ``assertions``：断言定义的校验、尾巴渲染与结果汇总。
+
+``models`` 里的 ``ExerciseAttempt`` 仅为历史数据留存（表已冻结只读，不再写入），
+不再是本包的对外入口。
+"""

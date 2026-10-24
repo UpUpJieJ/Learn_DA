@@ -2,7 +2,8 @@
 
 曾经的问题：`RATE_LIMIT_ENABLED=False` 只跳过 `setup_limiter_middleware()`，
 而各路由上的 `@limiter.limit(...)` 装饰器仍独立计数并抛 429 —— 于是"关掉限流"
-再跑全量练习，第 11 次请求直接 429（`scripts/verify_exercises.py` 的文档因此失效）。
+再跑全量练习，第 11 次请求直接 429（当时 `scripts/verify_exercises.py` 的文档因此失效；
+该脚本已随练习链路下线，现由 `scripts/verify_workspace.py` 承担）。
 """
 
 from unittest.mock import AsyncMock

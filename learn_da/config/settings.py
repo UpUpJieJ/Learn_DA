@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     OPENAPI_ENABLED: bool = False
 
     ENABLED_APP_MODULES: str = (
-        "learning,playground,agent,analytics,learner_state,practice,workspace"
+        "learning,playground,agent,analytics,learner_state,workspace"
     )
 
     model_config = SettingsConfigDict(

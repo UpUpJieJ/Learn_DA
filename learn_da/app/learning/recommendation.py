@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from app.agent.repository import AgentInteractionRepository
     from app.learner_state.service import LearnerStateService
     from app.learning.repository import LearningRepository
-    from app.practice.service import PracticeService
+    from app.workspace.repository import WorkspaceReadRepository
 
 
 # =====================================================
@@ -164,7 +164,7 @@ class RecommendationService:
         ],
     }
 
-    # Phase 2: 练习失败触发回补的阈值
+    # 任务连续失败触发回补的阈值
     PRACTICE_FAILURES_THRESHOLD = 3
 
     def __init__(
@@ -172,13 +172,13 @@ class RecommendationService:
         repository: "LearningRepository | None" = None,
         analytics_service: "AnalyticsService | None" = None,
         learner_state_service: "LearnerStateService | None" = None,
-        practice_service: "PracticeService | None" = None,
+        workspace_repo: "WorkspaceReadRepository | None" = None,
         interaction_repo: "AgentInteractionRepository | None" = None,
     ):
         self.repository = repository
         self.analytics_service = analytics_service
         self.learner_state_service = learner_state_service
-        self.practice_service = practice_service
+        self.workspace_repo = workspace_repo
         # 阶段 3：Agent 交互审计（读取帮助后仍未通过的聚合信号）
         self.interaction_repo = interaction_repo
         self.CODE_RUNS_THRESHOLD = settings.RECOMMENDATION_CODE_RUNS_THRESHOLD
@@ -590,16 +590,16 @@ class RecommendationService:
                 f"你在这节课停留了较长时间，建议先回顾 {{review_lesson}} 打好基础再继续"
             )
 
-        # Phase 2: 练习连续失败也是回补信号
+        # 工作区任务连续失败也是回补信号
         practice_failures = 0
-        if not needs_review and self.practice_service and current_lesson_slug:
+        if not needs_review and self.workspace_repo and current_lesson_slug:
             practice_failures = await self._count_practice_failures(
                 visitor_id, current_lesson_slug
             )
             if practice_failures >= self.PRACTICE_FAILURES_THRESHOLD:
                 needs_review = True
                 reason_template = (
-                    f"你在这节课的练习中连续 {practice_failures} 次未通过验证，"
+                    f"你在这节课的任务中连续 {practice_failures} 次未通过判定，"
                     f"建议回顾 {{review_lesson}} 巩固基础后再尝试"
                 )
 
@@ -679,16 +679,12 @@ class RecommendationService:
     async def _count_practice_failures(
         self, visitor_id: str, lesson_slug: str
     ) -> int:
-        """Phase 2: 统计某课程最近练习中未通过验证的次数"""
+        """统计某课程最近任务提交里未通过的次数（工作区 task_attempts）。"""
         try:
-            summaries = await self.practice_service.get_attempt_summaries(
+            attempts = await self.workspace_repo.recent_attempts(
                 visitor_id=visitor_id, lesson_slug=lesson_slug, limit=10
             )
-            return sum(
-                1
-                for s in summaries
-                if s.verification_status in ("failed", "unverifiable")
-            )
+            return sum(1 for item in attempts if item.status != "passed")
         except Exception:
             return 0
 
@@ -725,15 +721,16 @@ class RecommendationService:
             # 才把它视为未解决失败；旧数据缺少 attempt_id 时保守保留信号。
             attempt_id = getattr(interaction, "attempt_id", None)
             occurred_at = getattr(interaction, "created_time", None)
-            if self.practice_service is not None and attempt_id and occurred_at:
+            if self.workspace_repo is not None and attempt_id and occurred_at:
                 try:
-                    attempt = await self.practice_service.repo.get_by_id(
-                        attempt_id, visitor_id
+                    attempt = await self.workspace_repo.get_attempt(
+                        visitor_id, attempt_id
                     )
-                    if attempt and attempt.exercise_id:
-                        passed_after = await self.practice_service.repo.get_passed_after(
+                    if attempt is not None and attempt.task_id:
+                        passed_after = await self.workspace_repo.passed_after(
                             visitor_id,
-                            attempt.exercise_id,
+                            attempt.lesson_slug,
+                            attempt.task_id,
                             occurred_at,
                         )
                         if passed_after is not None:

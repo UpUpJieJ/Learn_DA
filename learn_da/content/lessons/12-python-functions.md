@@ -22,23 +22,6 @@ recommended_next: [python-collections]
 skill_tags: [function, parameter, return_value]
 is_review_friendly: true
 is_branch_point: false
-exercise:
-  id: python-functions-add-bonus-v1
-  title: 为成绩添加 bonus
-  language: python
-  starter_code: |
-    def add_bonus(score):
-        # TODO
-        pass
-    print(add_bonus(95))
-  objective: 定义接收 score 的函数，返回加 5 后的值。
-  hints:
-    - 先把 score 放在函数参数中
-    - 用 return 返回 score + 5
-  validator:
-    type: stdout_exact
-    expected: "100"
-# 改版 M4：多 cell 工作区（重放式，严格顺序）
 workspace:
   cells:
     - id: c1

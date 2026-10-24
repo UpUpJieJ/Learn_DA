@@ -13,7 +13,6 @@ from config.settings import settings
 if TYPE_CHECKING:
     from app.analytics.service import AnalyticsService
     from app.learner_state.service import LearnerStateService
-    from app.practice.service import PracticeService
     from app.workspace.repository import WorkspaceReadRepository
 
     from .repository import AgentInteractionRepository
@@ -60,7 +59,6 @@ class AgentService:
         recommendation_service: RecommendationService | None = None,
         learner_state_service: "LearnerStateService | None" = None,
         analytics_service: "AnalyticsService | None" = None,
-        practice_service: "PracticeService | None" = None,
         workspace_repo: "WorkspaceReadRepository | None" = None,
         llm_client: AsyncOpenAI | None = None,
         interaction_repo: "AgentInteractionRepository | None" = None,
@@ -73,7 +71,6 @@ class AgentService:
         self.recommendation_service = recommendation_service
         self.learner_state_service = learner_state_service
         self.analytics_service = analytics_service
-        self.practice_service = practice_service
         # 改版 M4：任务提交记录（task_attempts）是当前唯一的教学证据来源
         self.workspace_repo = workspace_repo
         self.interaction_repo = interaction_repo
@@ -196,7 +193,6 @@ class AgentService:
             visitor_id=visitor_id,
             learner_state_service=self.learner_state_service,
             recommendation_service=self.recommendation_service,
-            practice_service=self.practice_service,
             workspace_repo=self.workspace_repo,
             current_lesson=current_lesson,
         )
@@ -410,14 +406,14 @@ class AgentService:
         payload: AgentChatRequest,
         visitor_id: str | None,
     ) -> tuple[list[dict[str, str]], AgentLearningEvidence | None]:
-        """解析服务端练习证据并注入 system 证据块。
+        """解析服务端任务证据并注入 system 证据块。
 
-        返回 (注入后的 messages, 解析出的 evidence)。无 practice_service 或
+        返回 (注入后的 messages, 解析出的 evidence)。无 workspace_repo 或
         无 visitor_id 时跳过（单测直接构造 AgentService 场景，或降级路径未带
         身份），不阻断回答，evidence 为 None。证据块插入在 system prompt 之后、
-        history 之前，确保模型在生成回答前已看到权威练习状态。
+        history 之前，确保模型在生成回答前已看到权威任务状态。
         """
-        if self.workspace_repo is None and self.practice_service is None:
+        if self.workspace_repo is None:
             return messages, None
         if not visitor_id:
             return messages, None
@@ -429,13 +425,7 @@ class AgentService:
         )
         task_id = payload.context.current_task if payload.context else None
         editor_code = payload.context.current_code if payload.context else None
-        resolver = AgentEvidenceResolver(
-            practice_repo=(
-                self.practice_service.repo if self.practice_service is not None else None
-            ),
-            learner_state_service=self.learner_state_service,
-            workspace_repo=self.workspace_repo,
-        )
+        resolver = AgentEvidenceResolver(workspace_repo=self.workspace_repo)
         try:
             evidence = await resolver.resolve(
                 visitor_id=visitor_id,
@@ -637,9 +627,7 @@ class AgentService:
                 output_tokens=output_tokens,
                 fallback_reason=fallback_reason,
                 evidence_state=evidence.state if evidence else None,
-                verification_status=(
-                    evidence.verification_status if evidence else None
-                ),
+                verification_status=None,
                 hint_level=hint_level,
                 next_action=(
                     derive_next_action(evidence) if evidence else None
