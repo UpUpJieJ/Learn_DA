@@ -58,7 +58,7 @@
 |---|---|---|
 | Lesson | 一课：场景说明 + 任务序列 + 数据集引用 | 至少 3 个 task |
 | Scenario | 场景文本（真实业务口吻），是课程正文的主体 | 引用数据集里的真实字段 |
-| Dataset | 随课程入库的只读数据文件 | 每课 ≤ 5MB，路径固定为 `data/<name>` |
+| Dataset | 随课程入库的只读数据文件 | 每课 ≤ 2MB（≤ Runner 的请求上限），路径固定为 `data/<name>` |
 | Task | 一个递进目标：`goal` + `assertions` + `hints` | id 形如 `t1`、`t2`，顺序即依赖 |
 | Cell | 工作区一格代码，归属某 task 或 `scratch` | 有稳定 `cell_id`、`seq` |
 | RunEvent | 一次执行记录（代码哈希、状态、输出、耗时） | 幂等键 `request_id` |
@@ -290,7 +290,7 @@ tasks:
 | L3 | starter 在该 task 断言下**必须 fail**（防白给） |
 | L4 | 参考解在**完整序列**下全部 pass（重放语义下验证，防"单格通过、整链失败"） |
 | L5 | hints 层数 ≥ 2 且非空；层号严格递增 |
-| L6 | datasets 存在、总大小 ≤ 5MB、扩展名白名单（csv/parquet/json）、无 URL 引用 |
+| L6 | datasets 存在、总大小 ≤ 2MB（≤ Runner 的 `RUNNER_SESSION_MAX_DATASET_BYTES`）、扩展名白名单（csv/parquet/json）、无 URL 引用 |
 | L7 | `expected/*` 与断言 `ref` 一一对应；由数据集脚本可复现生成 |
 | L8 | 场景正文引用的列名在数据集 schema 中存在 |
 
@@ -406,7 +406,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 
 - **数据集**：`learn_da/scripts/build_datasets.py`（`SEED=20251021`）生成
   `learn_da/content/datasets/ecommerce/{orders,customers,products}.csv` + `README.md` + `manifest.json`
-  （orders 5000 行 / 365KB，合计约 409KB ≪ 5MB）。`--check` 校验仓库文件与生成器产物一致（sha256/字节/行数）。
+  （orders 5000 行 / 365KB，合计约 409KB ≪ 2MB 上限）。`--check` 校验仓库文件与生成器产物一致（sha256/字节/行数）。
   测试 `learn_da/tests/test_build_datasets.py`（9 项）。
 - **断言 DSL**：`learn_da/app/practice/assertion_runtime.py`（求值实现，纯标准库，polars/duckdb 惰性导入）
   + `learn_da/app/practice/assertions.py`（校验 / 生成尾巴 / 解析结果）。
@@ -447,7 +447,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
     `t1-sorted` 因列不存在记 `error`（断言自身异常不算学员失败）。
   - 改 c2 → `staleFrom=c2`，`cells={c1:ok, c2:stale, c3:stale}`。
 - **仍未做**：`frame_equal`/`sql_rows` 的真实 `refs` 来源（现为空字典，暂无课程使用）、
-  沙箱内预置数据集与运行时（当前 Docker 路径靠请求体 base64 传数据集，课程加载时 ≤8MB 合计）。
+  沙箱内预置数据集与运行时（当前 Docker 路径靠请求体 base64 传数据集，单次请求 ≤2MB，与后端 `MAX_TOTAL_DATASET_BYTES` 一致）。
 
 ### 11.3 M3 完成记录（2026-10-22，前端工作区 + 03 课样板接入）
 
@@ -491,7 +491,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
   `learn_da/scripts/workspace_solutions.py` 聚合，避免多人并行改同一个 `SOLUTIONS` 字典。
 - 自检 `learn_da/tests/test_workspace_content.py`（26 项 = 13 课 × 2）：进程内用
   `app/practice/assertion_runtime.py` 求值，逐课验证「起步代码在每个任务下必失败（L3）」+
-  「参考解跑到该任务与整链重放都必全过（L4）」，外加任务数 ≥ 2、数据集 ≤ 5MB。
+  「参考解跑到该任务与整链重放都必全过（L4）」，外加任务数 ≥ 2、数据集 ≤ 2MB。
 - **新增脏数据集** `content/datasets/ecommerce/orders_dirty.csv`（1230 行 = 1200 样本 + 30 整行重复）：
   `discount` 33 个空、`quantity` 23 个空、`amount` 混入 `N/A`（整列被读成 String）、`order_date` 42 行
   `2025/11/22` 斜杠格式、`region` 前后空格、`channel` 大写、重复 `order_id`。清洗课（05）用它，

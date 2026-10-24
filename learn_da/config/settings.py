@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     RUNNER_URL: str = "http://127.0.0.1:8080"
     RUNNER_TOKEN: str = ""
     RUNNER_TIMEOUT_SECONDS: float = 7.0
+    # 工作区整段重放（POST /v1/sessions）比单格执行慢得多，单独给一个更长的超时。
+    # 必须大于 Runner 侧同名配置（learn_da_runner/runner/settings.py 默认 20 秒），
+    # 否则 Backend 先超时，学习者只会看到「执行服务不可用」，看不到 Runner 的
+    # 真实超时结论（哪个单元格超时、跑了多久）。
+    RUNNER_SESSION_TIMEOUT_SECONDS: float = 30.0
     SESSION_SECRET: str = "development-only-change-me"
     SESSION_COOKIE_NAME: str = "learn_da_session"
     SNAPSHOT_MAX_PER_SESSION: int = 100

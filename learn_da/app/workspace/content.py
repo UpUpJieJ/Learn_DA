@@ -47,8 +47,11 @@ CONTENT_DIR = Path(__file__).resolve().parents[2] / "content"
 DATASET_DIR = CONTENT_DIR / "datasets"
 RUNTIME_PATH = Path(__file__).resolve().parent.parent / "practice" / "assertion_runtime.py"
 
-MAX_DATASET_BYTES = 5 * 1024 * 1024
-MAX_TOTAL_DATASET_BYTES = 8 * 1024 * 1024
+# 数据集预算必须 ≤ Runner 的 RUNNER_SESSION_MAX_DATASET_BYTES（默认 2_000_000），
+# 否则课程能过 content_lint，却在运行时报一个看不懂的 invalid_session_request。
+# tests/test_dependency_pins.py 会把这两个数字锁在一起，改一处必须改另一处。
+MAX_DATASET_BYTES = 2_000_000
+MAX_TOTAL_DATASET_BYTES = 2_000_000
 
 MAX_CELLS = 40
 
@@ -113,7 +116,7 @@ def _safe_dataset_path(name: str) -> Path:
     if not path.is_file():
         raise WorkspaceContentError(f"数据集不存在：{cleaned}")
     if path.stat().st_size > MAX_DATASET_BYTES:
-        raise WorkspaceContentError(f"数据集超过 5MB：{cleaned}")
+        raise WorkspaceContentError(f"数据集超过 {MAX_DATASET_BYTES // 1000}KB：{cleaned}")
     return path
 
 
@@ -196,7 +199,9 @@ def load_workspace(lesson: dict[str, Any]) -> WorkspaceSpec | None:
         path = _safe_dataset_path(str(name))
         total += path.stat().st_size
         if total > MAX_TOTAL_DATASET_BYTES:
-            raise WorkspaceContentError("数据集总量超过 8MB")
+            raise WorkspaceContentError(
+                f"数据集总量超过 {MAX_TOTAL_DATASET_BYTES // 1000}KB"
+            )
         datasets.append(str(name).replace("\\", "/"))
 
     return WorkspaceSpec(

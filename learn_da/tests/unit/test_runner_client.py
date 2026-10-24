@@ -18,6 +18,7 @@ FAKE_SETTINGS = SimpleNamespace(
     RUNNER_URL="http://runner:8080",
     RUNNER_TOKEN="t" * 32,
     RUNNER_TIMEOUT_SECONDS=7.0,
+    RUNNER_SESSION_TIMEOUT_SECONDS=30.0,
 )
 
 
@@ -125,6 +126,118 @@ async def test_exception_does_not_leak_code_or_response_body():
 
     assert "print('ok')" not in str(exc_info.value)
     assert "secret internal error" not in str(exc_info.value)
+
+    await http.aclose()
+
+
+# ---------------------------------------------------------------------------
+# Session replay (workspace M1/M2)
+# ---------------------------------------------------------------------------
+
+
+def _captured_timeout(request: httpx.Request) -> float:
+    timeout = request.extensions.get("timeout") or {}
+    return float(timeout.get("read") or timeout.get("connect") or 0.0)
+
+
+@pytest.mark.unit
+async def test_session_posts_to_sessions_endpoint_and_returns_payload():
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"verdict": "passed", "cells": []})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = RunnerClient(http, FAKE_SETTINGS)
+
+    result = await client.execute_session({"requestId": str(REQUEST_ID), "cells": []})
+
+    assert result == {"verdict": "passed", "cells": []}
+    assert str(seen[0].url) == "http://runner:8080/v1/sessions"
+    assert seen[0].headers["X-Runner-Token"] == "t" * 32
+
+    await http.aclose()
+
+
+@pytest.mark.unit
+async def test_session_uses_the_dedicated_session_timeout():
+    """整段重放必须用 RUNNER_SESSION_TIMEOUT_SECONDS，不能退回单格超时。"""
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"verdict": "passed"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = RunnerClient(http, FAKE_SETTINGS)
+
+    await client.execute_session({"cells": []})
+
+    assert _captured_timeout(seen[0]) == 30.0
+
+    await http.aclose()
+
+
+@pytest.mark.unit
+async def test_session_timeout_follows_injected_settings_not_global_settings():
+    """回归：旧实现用 getattr(settings, ...) 读全局 settings，注入的替身被静默忽略。"""
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"verdict": "passed"})
+
+    injected = SimpleNamespace(
+        RUNNER_URL="http://runner:8080",
+        RUNNER_TOKEN="t" * 32,
+        RUNNER_TIMEOUT_SECONDS=7.0,
+        RUNNER_SESSION_TIMEOUT_SECONDS=45.0,
+    )
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = RunnerClient(http, injected)
+
+    await client.execute_session({"cells": []})
+
+    assert _captured_timeout(seen[0]) == 45.0
+
+    await http.aclose()
+
+
+@pytest.mark.unit
+async def test_session_timeout_falls_back_to_single_cell_timeout():
+    """替身没有该字段时回落到单格超时，而不是硬编码常数。"""
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"verdict": "passed"})
+
+    injected = SimpleNamespace(
+        RUNNER_URL="http://runner:8080",
+        RUNNER_TOKEN="t" * 32,
+        RUNNER_TIMEOUT_SECONDS=7.0,
+    )
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = RunnerClient(http, injected)
+
+    await client.execute_session({"cells": []})
+
+    assert _captured_timeout(seen[0]) == 7.0
+
+    await http.aclose()
+
+
+@pytest.mark.unit
+async def test_session_503_is_unavailable():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"detail": "unhealthy"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = RunnerClient(http, FAKE_SETTINGS)
+
+    with pytest.raises(RunnerUnavailableError, match="runner unavailable"):
+        await client.execute_session({"cells": []})
 
     await http.aclose()
 

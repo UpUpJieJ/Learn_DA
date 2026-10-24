@@ -6,7 +6,8 @@
 1. 生成器是确定性的（同代码两次生成字节一致）；
 2. 仓库里提交的文件 == 生成器产物（改数据必须改生成器并重新生成）；
 3. ``manifest.json`` 的 sha256 / 行数 / 字节数与实际文件一致；
-4. 单课数据集总量 ≤ 5MB，且只用 UTF-8 + LF（沙箱是 Linux）。
+4. 单课数据集总量 ≤ 2MB（≤ Runner 的 RUNNER_SESSION_MAX_DATASET_BYTES），
+   且只用 UTF-8 + LF（沙箱是 Linux）。
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ import pytest
 LEARN_DA_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = LEARN_DA_ROOT / "scripts" / "build_datasets.py"
 DATASET_DIR = LEARN_DA_ROOT / "content" / "datasets" / "ecommerce"
-MAX_DATASET_BYTES = 5 * 1024 * 1024
+MAX_DATASET_BYTES = 2_000_000
 
 
 def _load_builder():

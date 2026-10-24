@@ -9,7 +9,8 @@
 * 只写 UTF-8 + LF，方便 docker（Linux）与本地（Windows）表现一致；
 * 每个文件在 ``manifest.json`` 里记 sha256 / 字节数 / 行数，
   ``--check`` 用来在 CI 与本地校验"数据没被悄悄改过"；
-* 单课数据集总量 ≤ 5MB（lint L6）。
+* 单课数据集总量 ≤ 2MB（lint L6）。这个数字必须 ≤ Runner 的
+  ``RUNNER_SESSION_MAX_DATASET_BYTES``，否则课程能过 lint 却在运行时被拒。
 
 用法::
 
@@ -35,7 +36,7 @@ CUSTOMER_COUNT = 800
 PRODUCT_COUNT = 120
 START_DATE = date(2025, 1, 1)
 END_DATE = date(2025, 12, 31)
-MAX_DATASET_BYTES = 5 * 1024 * 1024
+MAX_DATASET_BYTES = 2_000_000
 
 DATASET_DIR = Path(__file__).resolve().parent.parent / "content" / "datasets" / "ecommerce"
 

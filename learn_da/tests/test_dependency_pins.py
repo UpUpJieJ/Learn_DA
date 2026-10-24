@@ -103,3 +103,55 @@ def test_sandbox_and_backend_share_python_minor() -> None:
     assert sys.version_info[:2] == (3, 12), (
         f"本地解释器应与镜像一致（3.12），实际 {sys.version_info[:2]}"
     )
+
+
+def test_dataset_budget_does_not_exceed_runner_limit() -> None:
+    """后端的课程数据集预算不能大于 Runner 的请求上限。
+
+    两边各有一份数字：``learn_da/app/workspace/content.py`` 的
+    ``MAX_TOTAL_DATASET_BYTES`` 与 ``learn_da_runner/runner/settings.py`` 的
+    ``RUNNER_SESSION_MAX_DATASET_BYTES``。后端更大时，课程能通过 content_lint，
+    却在运行时被 Runner 以 ``invalid_session_request`` 拒绝——学习者只会看到
+    一句看不懂的报错。这里把两个数字锁在一起。
+    """
+    from app.workspace.content import MAX_DATASET_BYTES, MAX_TOTAL_DATASET_BYTES
+
+    runner_settings_path = REPO_ROOT / "learn_da_runner" / "runner" / "settings.py"
+    text = runner_settings_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^\s*RUNNER_SESSION_MAX_DATASET_BYTES:\s*int\s*=\s*([\d_]+)", text, re.MULTILINE
+    )
+    assert match is not None, "learn_da_runner/runner/settings.py 缺少该配置"
+    runner_limit = int(match.group(1).replace("_", ""))
+
+    assert MAX_DATASET_BYTES <= runner_limit, (
+        f"单文件预算 {MAX_DATASET_BYTES} 大于 Runner 上限 {runner_limit}"
+    )
+    assert MAX_TOTAL_DATASET_BYTES <= runner_limit, (
+        f"总量预算 {MAX_TOTAL_DATASET_BYTES} 大于 Runner 上限 {runner_limit}"
+    )
+
+
+def test_backend_session_timeout_exceeds_runner_session_timeout() -> None:
+    """后端整段重放超时必须比 Runner 的更长，否则先超时的是后端。
+
+    Runner 侧超时会返回结构化的 ``timeout`` 结论（哪个单元格超时、跑了多久）；
+    后端先超时只会抛 ``RunnerUnavailableError``，学习者看到的是「执行服务不可用」，
+    完全误导。``learn_da/config/settings.py`` 的默认值必须大于 Runner 的默认值。
+    """
+    from config.settings import Settings
+
+    backend_default = Settings.model_fields["RUNNER_SESSION_TIMEOUT_SECONDS"].default
+
+    runner_settings_path = REPO_ROOT / "learn_da_runner" / "runner" / "settings.py"
+    text = runner_settings_path.read_text(encoding="utf-8")
+    match = re.search(
+        r"^\s*RUNNER_SESSION_TIMEOUT_SECONDS:\s*int\s*=\s*(\d+)", text, re.MULTILINE
+    )
+    assert match is not None, "learn_da_runner/runner/settings.py 缺少该配置"
+    runner_default = int(match.group(1))
+
+    assert backend_default > runner_default, (
+        "后端 RUNNER_SESSION_TIMEOUT_SECONDS 默认值 "
+        f"({backend_default}) 必须大于 Runner 的 ({runner_default})"
+    )

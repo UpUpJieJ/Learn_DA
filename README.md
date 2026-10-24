@@ -238,6 +238,8 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 | `RECOMMENDATION_RESUME_ABSENCE_THRESHOLD_DAYS` | `3` | 触发回流建议的未学习天数阈值 |
 | `RUNNER_URL` | — | 专用 Runner 的私网 URL，生产环境必填 |
 | `RUNNER_TOKEN` | — | Backend 与 Runner 共用的内部认证密钥，至少 32 字符 |
+| `RUNNER_TIMEOUT_SECONDS` | `7` | 单格执行（`/v1/executions`）的请求超时 |
+| `RUNNER_SESSION_TIMEOUT_SECONDS` | `30` | 工作区整段重放（`/v1/sessions`）的请求超时，必须大于 Runner 侧同名配置（默认 `20`） |
 | `SESSION_SECRET` | — | Backend 匿名会话签名密钥，生产环境至少 32 字符 |
 | `ENABLED_APP_MODULES` | `learning,playground,agent,analytics,learner_state,workspace` | 启用的业务模块 |
 
@@ -341,7 +343,7 @@ cd learn_da
 .venv/Scripts/python.exe scripts/build_datasets.py --check    # 只校验仓库文件与生成器产物是否一致
 ```
 
-**不要手改数据集文件**——它们和 `manifest.json` 里的 sha256 由生成器决定，改动会在 `--check` 和测试里报 drift。
+**不要手改数据集文件**——它们和 `manifest.json` 里的 sha256 由生成器决定，改动会在 `--check` 和测试里报 drift。单课数据集总量上限是 **2MB**，与 Runner 的 `RUNNER_SESSION_MAX_DATASET_BYTES` 对齐（后端预算更大时会先通过 lint、再在运行时被 Runner 拒掉）。
 
 判定侧新增了 v2 断言 DSL（`learn_da/app/practice/assertion_runtime.py` + `learn_da/app/practice/assertions.py`），
 支持 `expr_true` / `frame_equal` / `schema` / `sql_rows` 四种断言，失败时回传被截断的 `actual` 供诊断。

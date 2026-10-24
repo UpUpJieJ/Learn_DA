@@ -51,6 +51,8 @@ services:
       RUNNER_URL: ${RUNNER_URL:?Set the private Runner URL in deploy/app.env}
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/app.env}
       RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-7}
+      # 工作区整段重放比单格慢，单独给超时；必须大于 Runner 侧同名配置（默认 20）。
+      RUNNER_SESSION_TIMEOUT_SECONDS: ${RUNNER_SESSION_TIMEOUT_SECONDS:-30}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}

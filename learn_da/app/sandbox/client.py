@@ -32,9 +32,15 @@ class RunnerClient:
         runner_settings=None,
     ) -> None:
         self._http = http_client
-        self._base_url = (runner_settings or settings).RUNNER_URL.rstrip("/")
-        self._token = (runner_settings or settings).RUNNER_TOKEN
-        self._timeout = (runner_settings or settings).RUNNER_TIMEOUT_SECONDS
+        resolved = runner_settings or settings
+        self._base_url = resolved.RUNNER_URL.rstrip("/")
+        self._token = resolved.RUNNER_TOKEN
+        self._timeout = resolved.RUNNER_TIMEOUT_SECONDS
+        # 工作区整段重放用单独的超时；缺字段时回落到单格超时而不是硬编码常数，
+        # 这样任何注入的 runner_settings 替身都不会被静默忽略。
+        self._session_timeout = float(
+            getattr(resolved, "RUNNER_SESSION_TIMEOUT_SECONDS", self._timeout)
+        )
 
     async def execute(
         self,
@@ -66,7 +72,7 @@ class RunnerClient:
         The payload is passed through as-is because the session contract lives in
         the workspace module; only the transport concerns are handled here.
         """
-        timeout = float(getattr(settings, "RUNNER_SESSION_TIMEOUT_SECONDS", 30))
+        timeout = self._session_timeout
         try:
             response = await self._http.post(
                 f"{self._base_url}/v1/sessions",

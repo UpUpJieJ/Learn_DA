@@ -8,7 +8,7 @@
 - L2 断言引用的变量在参考解执行后存在（参考解全通过即覆盖）
 - L3 starter 在该任务断言下必须 fail
 - L4 参考解在完整重放下全部 pass
-- L6 数据集存在且总量 ≤ 5MB
+- L6 数据集存在且总量 ≤ Runner 的请求上限（默认 2MB）
 """
 
 from __future__ import annotations
@@ -131,4 +131,6 @@ def test_workspace_datasets_are_small(slug: str, sandbox_root: Path) -> None:
         path = DATASET_DIR / name
         assert path.is_file(), f"{slug}: 数据集不存在 {name}"
         total += path.stat().st_size
-    assert total <= MAX_DATASET_BYTES, f"{slug}: 数据集总量 {total} 超过 5MB"
+    assert total <= MAX_DATASET_BYTES, (
+        f"{slug}: 数据集总量 {total} 超过 {MAX_DATASET_BYTES} 字节"
+    )
