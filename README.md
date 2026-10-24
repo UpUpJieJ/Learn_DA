@@ -14,7 +14,7 @@
 - **任务式工作区**：每门课是一个多单元格工作区（读数据 → 逐步加工 → 提交任务），提交时由服务端断言判定对错，失败会回传实际值帮你定位；结果依赖上游，改了上游会标「结果已过期」。
 - **实验室（`/lab`）**：自由沙盒，不挂课程数据、不判定，用来随手试代码；`Ctrl/⌘+Enter` 运行。
 - **学习报告（`/report`）**：只用真实提交记录计算——已通过任务、完成课程、连续学习、能力分布、常见卡点、最近提交。
-- **AI 教练（改版中）**：Agent 后端（证据驱动的五态反馈 + 只读工具链）仍在，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入（失败卡片 / 阶梯提示 / 对话）一起接回。
+- **AI 教练**：工作区右栏的教练会直接列出「这次没通过的断言 + 实际值」（不经过模型），也能带着当前任务上下文对话；分级提示（L1/L2/L3）由服务端按求助次数决定并写进 prompt。
 - **安全执行策略**：代码执行只走独立 Runner 服务，默认在无网络、只读文件系统、非 root、带内存/CPU/进程数与超时限制的一次性容器里运行；Runner 不可用时后端明确返回 503，不回退本地执行。
 - **无登录本地模式**：无需账号即可使用核心功能；学习进度以服务端匿名会话为准，界面偏好与工作区草稿另存当前浏览器本地。
 
@@ -86,8 +86,7 @@
         ├── components/       # 可复用组件
         │   ├── ui/           # 基础组件层（AppButton / AppCard / AppInput / StatusPill / CodeOutput / EmptyState / ConfirmDialog / ToastHost）
         │   ├── layout/       # 布局组件（Navbar 等）
-                │   ├── agent/        # AI Agent 面板（AgentPanel.vue，改版期间待接回）
-        │   └── recommendation/ # 统一推荐卡片（RecommendationPanel.vue，待接回）
+        │   └── workspace/    # 工作区右栏 AI 教练（WorkspaceCoach.vue）
         ├── composables/      # 组合式函数（useAsyncState / useToast / useAgentConversation）
         ├── types/            # TypeScript 类型定义
         └── assets/           # 样式与静态资源（assets/styles/main.css 定义语义 token）
@@ -265,7 +264,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 
 ### 3. AI Agent 助手
 
-> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，聊天面板在页面重构期间暂时下线，将随工作区内的分档介入一起接回（见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16）。
+> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**教练已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceCoach.vue`），非流式（「正在思考…」→ 整段落地）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）与 §17（E1）。
 
 - **学习证据驱动**（阶段 3 / 改版 E0）：Agent 的判断完全基于服务端数据库证据
   —— 有 `workspace:` 的课读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的
@@ -273,6 +272,13 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
   事实来源。证据里带任务进度（`0/3 已通过`）、当前未通过任务、失败断言的实际值，
   所以模型能说清「哪条断言、为什么」而不是泛泛而谈。每次回答附带结构化
   `teachingFeedback`（五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
+- **工作区内的两档介入**（改版 E1）：
+  - **环境提示（ambient）**：提交失败后右栏直接列出「这次没通过的断言 + 实际值」，
+    数据来自前端已有的执行结果，**不经过模型、不耗 token**，所以永远与判定一致。
+  - **对话**：带着当前课程/任务/单元格/最近三次执行提问；空态给具体建议而不是空白输入框。
+- **分级提示真的进 prompt**：服务端按「同课程求助次数」算出 L1/L2/L3 后，
+  以一条 system 指令插入（L1 只指方向 / L2 可说 API 名但不给完整语句 / L3 可给一行关键写法），
+  模型不再自己对所有人用同一套口吻。
 - **模型不可用就明说不可用**：LLM 调用失败时返回「AI 助手暂时不可用（模型调用失败），
   这次我不会编造回答」，并说明 `teachingFeedback` 仍是服务端权威结果——不再用预置
   话术伪装成回答。
@@ -413,7 +419,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ```bash
 cd learn_da_vue
-npm test -- --run      # vitest（18 文件 / 123 项）
+npm test -- --run      # vitest（17 文件 / 117 项）
 npm run type-check     # vue-tsc
 npm run lint:ui        # 视觉规范（新增违规即失败）
 npm run build          # 生产构建

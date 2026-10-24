@@ -1,17 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type {
-  LocalPreferences,
-  PlaygroundDraft,
-  PlaygroundDrafts,
-} from '@/types/api'
+import type { LocalPreferences } from '@/types/api'
 
 // =====================================================
 // 本地存储 Key 常量
 // =====================================================
 
 const STORAGE_KEY_PREFERENCES = 'learn_da:preferences'
-const STORAGE_KEY_PLAYGROUND_DRAFTS = 'learn_da:playground_drafts'
 
 // =====================================================
 // 本地存储工具函数
@@ -48,8 +43,10 @@ const DEFAULT_PREFERENCES: LocalPreferences = {
 
 // =====================================================
 // Local State Store
-// 阶段 1：学习进度（completedLessons / lastVisitedSlug）已迁移到
-// learnerState store，localStorage 仅保留偏好设置和 Playground 草稿。
+// 学习进度（completedLessons / lastVisitedSlug）在 learnerState store，
+// 这里只保留界面偏好与侧边栏状态。
+// 改版 E1 删除了 Playground 草稿与 Agent 面板开关：草稿随工作区落库，
+// 教练固定在工作区右栏，不再有"开合悬浮窗"这层状态。
 // =====================================================
 
 export const useLocalStateStore = defineStore('localState', () => {
@@ -57,14 +54,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   const preferences = ref<LocalPreferences>(
     loadFromStorage(STORAGE_KEY_PREFERENCES, DEFAULT_PREFERENCES),
   )
-
-  // ---- Playground 草稿（持久化） ----
-  const playgroundDrafts = ref<PlaygroundDrafts>(
-    loadFromStorage(STORAGE_KEY_PLAYGROUND_DRAFTS, {}),
-  )
-
-  // ---- Agent 面板展开状态（非持久化，页面级状态） ----
-  const isAgentOpen = ref(false)
 
   // ---- 侧边栏展开状态（非持久化） ----
   const isSidebarOpen = ref(true)
@@ -76,12 +65,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   watch(
     preferences,
     (val) => saveToStorage(STORAGE_KEY_PREFERENCES, val),
-    { deep: true },
-  )
-
-  watch(
-    playgroundDrafts,
-    (val) => saveToStorage(STORAGE_KEY_PLAYGROUND_DRAFTS, val),
     { deep: true },
   )
 
@@ -153,56 +136,8 @@ export const useLocalStateStore = defineStore('localState', () => {
   }
 
   // =====================================================
-  // Actions - Playground 草稿
-  // =====================================================
-
-  /**
-   * 读取指定上下文的 Playground 草稿
-   */
-  function getPlaygroundDraft(key: string): PlaygroundDraft | null {
-    return playgroundDrafts.value[key] ?? null
-  }
-
-  /**
-   * 保存指定上下文的 Playground 草稿
-   */
-  function savePlaygroundDraft(
-    key: string,
-    code: string,
-    language: PlaygroundDraft['language'] = 'python',
-  ) {
-    playgroundDrafts.value[key] = {
-      code,
-      language,
-      updatedAt: Date.now(),
-    }
-  }
-
-  /**
-   * 删除指定上下文的 Playground 草稿
-   */
-  function clearPlaygroundDraft(key: string) {
-    delete playgroundDrafts.value[key]
-  }
-
-  // =====================================================
   // Actions - UI 状态
   // =====================================================
-
-  /** 打开 Agent 面板 */
-  function openAgent() {
-    isAgentOpen.value = true
-  }
-
-  /** 关闭 Agent 面板 */
-  function closeAgent() {
-    isAgentOpen.value = false
-  }
-
-  /** 切换 Agent 面板开关 */
-  function toggleAgent() {
-    isAgentOpen.value = !isAgentOpen.value
-  }
 
   /** 切换侧边栏开关 */
   function toggleSidebar() {
@@ -221,8 +156,6 @@ export const useLocalStateStore = defineStore('localState', () => {
   return {
     // state
     preferences,
-    playgroundDrafts,
-    isAgentOpen,
     isSidebarOpen,
 
     // computed
@@ -239,15 +172,7 @@ export const useLocalStateStore = defineStore('localState', () => {
     setLanguage,
     resetPreferences,
 
-    // actions - playground drafts
-    getPlaygroundDraft,
-    savePlaygroundDraft,
-    clearPlaygroundDraft,
-
     // actions - ui
-    openAgent,
-    closeAgent,
-    toggleAgent,
     toggleSidebar,
     setSidebarOpen,
   }

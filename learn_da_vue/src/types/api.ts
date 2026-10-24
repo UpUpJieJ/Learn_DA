@@ -225,6 +225,25 @@ export interface AgentContext {
     attemptId?: number;
     /** 改版 M4：当前任务（工作区 taskId），证据按任务定位 */
     currentTask?: string;
+    /** 改版 E1：工作区会话与聚焦单元格，便于工具按会话定位 */
+    sessionId?: number;
+    cellId?: string;
+    /** 改版 E1：最近的单元格执行摘要（客户端自报，仅供排错参考） */
+    recentRuns?: AgentRecentRun[];
+}
+
+/**
+ * 最近一次单元格执行的摘要。
+ * 刻意不含完整代码与完整 stdout —— 判定权威在服务端证据，这里只帮模型定位。
+ */
+export interface AgentRecentRun {
+    cellId: string;
+    status: string;
+    errorType?: string | null;
+    /** stderr 首行（后端再截 400 字符） */
+    stderrFirstLine?: string | null;
+    /** 本次未通过的断言 id（后端限 8 条） */
+    assertionsFailed?: string[];
 }
 
 /** Agent 对话请求 */
@@ -291,14 +310,6 @@ export interface LocalPreferences {
     editorFontSize: number;
     language: "zh" | "en";
 }
-
-export interface PlaygroundDraft {
-    code: string;
-    language: "python" | "sql";
-    updatedAt: number;
-}
-
-export type PlaygroundDrafts = Record<string, PlaygroundDraft>;
 
 // =====================================================
 // 学习模块 - 示例代码相关

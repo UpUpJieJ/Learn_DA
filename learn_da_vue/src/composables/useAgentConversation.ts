@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { streamChatMessage, buildChatHistory, recordAgentFeedback } from "@/api/agent";
+import { sendChatMessage, buildChatHistory, recordAgentFeedback } from "@/api/agent";
 import type {
     AgentContext,
     AgentFeedbackValue,
@@ -7,19 +7,21 @@ import type {
 } from "@/types/api";
 
 // =====================================================
-// useAgentConversation：对话状态与请求生命周期（阶段 4 Task 2.4）
+// useAgentConversation：对话状态与请求生命周期
 //
 // 职责：
-// - 消息列表、输入、loading、流式占位与停止（AbortSignal）；
-// - 发送消息（payload = message + history + 上下文），带稳定 requestId
-//   幂等（同一消息重试不重复调用模型）；
+// - 消息列表、输入、loading 与停止（AbortSignal）；
+// - 发送消息（payload = message + history + 上下文），带稳定 requestId 幂等；
 // - 结构化教学反馈与 interactionId 关联；
-// - 用户反馈提交（upsert，不新增 ai_help）。
-// 布局（embedded/floating）、快捷动作与上下文组装留在 AgentPanel。
+// - 用户反馈提交（upsert）。
+//
+// 非流式：后端 /agent/chat 一次返回完整答案，这里如实反映——
+// 请求期间 assistant 消息为空且 isStreaming=true（界面显示"正在思考…"），
+// 拿到答案后整段落地。不做逐字吐字的假象（用户 E1 决定）。
 // =====================================================
 
 interface AgentConversationOptions {
-    /** 当前上下文（代码/课程/attempt 等），由页面组装 */
+    /** 当前上下文（代码/课程/任务等），由页面组装 */
     context: () => AgentContext;
     /** 消息更新后滚动到底部（页面 DOM 副作用，可省略） */
     scrollToBottom?: () => Promise<void> | void;
@@ -83,18 +85,11 @@ export function useAgentConversation(options: AgentConversationOptions) {
         abortController = new AbortController();
 
         try {
-            await streamChatMessage({
+            await sendChatMessage({
                 payload: {
                     message: content,
                     history,
                     context: options.context(),
-                },
-                onToken: (token) => {
-                    const msg = messages.value.find((m) => m.id === assistantId);
-                    if (msg) {
-                        msg.content += token;
-                        void options.scrollToBottom?.();
-                    }
                 },
                 onDone: (fullReply, feedback, interactionId) => {
                     const msg = messages.value.find((m) => m.id === assistantId);

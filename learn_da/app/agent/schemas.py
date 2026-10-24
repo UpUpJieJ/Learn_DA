@@ -48,6 +48,25 @@ class AgentChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class AgentRecentRun(BaseModel):
+    """工作区里最近一次单元格执行的自报摘要（仅供排错参考，不是教学证据）。
+
+    任务判定与断言结果一律以服务端 ``task_attempts`` 为准；这里只用于让模型
+    知道「用户刚才在哪个格子撞了什么错」，例如草稿格里的 NameError —— 这类
+    执行不会产生 TaskAttempt，服务端证据里看不到。
+    """
+
+    cell_id: str | None = Field(default=None, alias="cellId", max_length=64)
+    status: str | None = Field(default=None, max_length=32)
+    error_type: str | None = Field(default=None, alias="errorType", max_length=120)
+    stderr_first_line: str | None = Field(
+        default=None, alias="stderrFirstLine", max_length=400
+    )
+    assertions_failed: list[str] = Field(
+        default_factory=list, alias="assertionsFailed", max_length=8
+    )
+
+
 class AgentContext(BaseModel):
     current_code: str | None = Field(
         default=None,
@@ -76,6 +95,17 @@ class AgentContext(BaseModel):
         default=None,
         alias="currentTask",
         max_length=64,
+    )
+    # 改版 E1：工作区定位线索。sessionId 用于日志与后续 HintUsage 关联，
+    # cellId 指向当前聚焦的格子，recentRuns 是最近的执行摘要（见上）。
+    session_id: int | None = Field(
+        default=None, alias="sessionId", ge=1
+    )
+    cell_id: str | None = Field(
+        default=None, alias="cellId", max_length=64
+    )
+    recent_runs: list[AgentRecentRun] = Field(
+        default_factory=list, alias="recentRuns", max_length=3
     )
     lesson_title: str | None = Field(
         default=None,

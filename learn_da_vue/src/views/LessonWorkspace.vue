@@ -285,22 +285,29 @@
 
                     <AppCard>
                         <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
-                            教练
+                            当前任务
                         </h2>
-                        <p class="text-xs leading-5 text-ink-500">
-                            AI 教练入口会在后续接入：提交失败后可以针对具体断言提问，
-                            提示分级由服务端统计。
+                        <template v-if="activeTask">
+                            <p class="text-sm font-medium text-ink-900">
+                                {{ activeTask.title }}
+                            </p>
+                            <p class="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-500">
+                                {{ activeTask.objective }}
+                            </p>
+                            <div class="mt-3">
+                                <StatusPill :status="activeTask.status" size="sm" />
+                            </div>
+                        </template>
+                        <p v-else class="text-xs text-ink-300">
+                            点一下任务或单元格，这里会显示任务目标。
                         </p>
-                        <AppButton
-                            class="mt-3"
-                            variant="ghost"
-                            size="sm"
-                            disabled
-                            label="即将开放"
-                        >
-                            问教练
-                        </AppButton>
                     </AppCard>
+
+                    <WorkspaceCoach
+                        :context="coachContext"
+                        :assertions="coachAssertions"
+                        :has-submission="coachHasSubmission"
+                    />
 
                     <p class="px-1 text-[11px] leading-5 text-ink-300">
                         快捷键：Ctrl/⌘ + Enter 运行当前格；Shift + Enter 换行。
@@ -315,8 +322,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
-import type { LessonDetail } from "@/types/api";
+import type { AgentContext, AgentRecentRun, LessonDetail } from "@/types/api";
 import { AppButton, AppCard, CodeOutput, EmptyState, StatusPill, taskStatusMeta } from "@/components/ui";
+import { WorkspaceCoach } from "@/components/workspace";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { WorkspaceCell } from "@/api/workspace";
 
@@ -352,6 +360,59 @@ const submittingTaskId = computed(() => store.submittingTaskId);
 const activeTask = computed(
     () => tasks.value.find((task) => task.taskId === activeTaskId.value) ?? null,
 );
+
+/** 教练看哪一格：优先聚焦格，否则当前任务所在格。 */
+const coachCellId = computed(
+    () => activeCellId.value ?? activeTask.value?.cellId ?? null,
+);
+
+const coachCell = computed(
+    () => cells.value.find((cell) => cell.cellId === coachCellId.value) ?? null,
+);
+
+/** 最近执行的摘要（最多 3 条）——只给定位信息，判定仍由服务端证据负责。 */
+const coachRecentRuns = computed<AgentRecentRun[]>(() => {
+    return Object.values(runs.value)
+        .slice(-3)
+        .map((run) => {
+            const cell = run.cells.find((item) => item.cellId === run.cellId);
+            const stderrLine = (cell?.stderr ?? "").split("\n")[0]?.trim() ?? "";
+            return {
+                cellId: run.cellId,
+                status: cell?.status ?? run.verdict,
+                errorType: cell?.errorType ?? null,
+                stderrFirstLine: stderrLine.slice(0, 200) || null,
+                assertionsFailed: run.assertions
+                    .filter((item) => item.status !== "passed")
+                    .map((item) => item.id)
+                    .slice(0, 8),
+            };
+        });
+});
+
+const coachContext = computed<AgentContext>(() => ({
+    currentLesson: slug.value,
+    lessonTitle: lesson.value?.title ?? undefined,
+    lessonCategory: lesson.value?.category,
+    currentTask: activeTask.value?.taskId ?? undefined,
+    sessionId: snapshot.value?.sessionId ?? undefined,
+    cellId: coachCellId.value ?? undefined,
+    // 编辑器里的代码可能还没提交，服务端会据此判断"是否与最近一次提交一致"
+    currentCode: coachCell.value?.code ?? undefined,
+    recentRuns: coachRecentRuns.value,
+}));
+
+/** 当前格最近一次提交的断言结果，直接给教练做 ambient 证据卡。 */
+const coachAssertions = computed(() =>
+    coachCellId.value ? store.assertionsFor(coachCellId.value) : [],
+);
+
+/** 当前任务是否已经有提交记录（决定空态问法是否提到"上次没通过"）。 */
+const coachHasSubmission = computed(() => {
+    const task = activeTask.value;
+    if (!task) return false;
+    return runs.value[task.cellId] !== undefined || task.status !== "todo";
+});
 
 function load(lessonSlug: string) {
     activeCellId.value = null;

@@ -5,15 +5,15 @@ vi.mock("@/api/agent", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/api/agent")>();
     return {
         ...actual,
-        streamChatMessage: vi.fn(),
+        sendChatMessage: vi.fn(),
         recordAgentFeedback: vi.fn(),
     };
 });
 
-import { streamChatMessage, recordAgentFeedback } from "@/api/agent";
+import { sendChatMessage, recordAgentFeedback } from "@/api/agent";
 import { useAgentConversation } from "@/composables/useAgentConversation";
 
-const mockedStream = vi.mocked(streamChatMessage);
+const mockedStream = vi.mocked(sendChatMessage);
 const mockedFeedback = vi.mocked(recordAgentFeedback);
 
 const CONTEXT: AgentContext = {

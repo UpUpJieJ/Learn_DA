@@ -27,7 +27,12 @@ from .evidence import (
 from .knowledge import KnowledgeRetriever, build_knowledge_block
 from .fc_tools import FC_TOOLS, FCToolExecutor
 from .llm_client import LLMClient, LLMResult
-from .prompts import build_chat_messages, build_evidence_block, build_fc_chat_messages
+from .prompts import (
+    build_chat_messages,
+    build_evidence_block,
+    build_fc_chat_messages,
+    build_hint_directive,
+)
 from .routing import AgentRouter
 from .schemas import (
     AgentChatData,
@@ -111,6 +116,7 @@ class AgentService:
         hint_level = await self._resolve_hint_level(payload, visitor_id, evidence)
         if not created:
             return self._duplicate_response(evidence, interaction_id, hint_level)
+        messages = self._with_hint_directive(messages, hint_level)
         result = await self._complete(messages)
         # 单次请求的路由/检索/LLM 指标通过 request_id 与 [llm] 日志串联
         log.info(
@@ -210,6 +216,7 @@ class AgentService:
             return self._duplicate_response(evidence, interaction_id, hint_level)
 
         max_rounds = settings.AGENT_FC_MAX_TOOL_ROUNDS
+        messages = self._with_hint_directive(messages, hint_level)
         fallback_reason: str = "upstream_error"
         invalid_params_seen = False
         llm_calls = 0
@@ -455,6 +462,23 @@ class AgentService:
             {"role": "system", "content": block},
             *messages[1:],
         ]
+
+    @staticmethod
+    def _with_hint_directive(
+        messages: list[dict[str, str]],
+        hint_level: int | None,
+    ) -> list[dict[str, str]]:
+        """把服务端算出的提示层级作为一条 system 指令插到提问之前。
+
+        层级在 ``_resolve_hint_level`` 里依赖证据（课程 slug）才能算，晚于
+        证据块注入，所以单独补一条，而不是塞回证据块。没有层级时原样返回。
+        """
+        line = build_hint_directive(hint_level)
+        if not line:
+            return messages
+        if not messages:
+            return messages
+        return [*messages[:-1], {"role": "system", "content": line}, messages[-1]]
 
     @staticmethod
     def _estimate_hint_level(payload: AgentChatRequest) -> int:

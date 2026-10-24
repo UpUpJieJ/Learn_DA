@@ -1,5 +1,5 @@
 from .evidence import AgentLearningEvidence
-from .schemas import AgentChatMessage, AgentContext
+from .schemas import AgentChatMessage, AgentContext, AgentRecentRun
 
 
 SYSTEM_PROMPT = (
@@ -47,6 +47,25 @@ def compact_history(
     return [{"role": item.role, "content": item.content} for item in recent]
 
 
+def build_recent_runs_block(runs: list[AgentRecentRun]) -> str:
+    """最近几次单元格执行的摘要（客户端自报，只用于定位，不是教学证据）。
+
+    草稿格或未提交的执行不会进 ``task_attempts``，服务端证据里看不到；
+    但学习者问「刚才这个报错」时模型需要知道上下文，否则只能反问。
+    """
+    lines = ["最近的单元格执行（客户端自报，仅用于定位，判定以服务端证据为准）："]
+    for run in runs[:3]:
+        head = f"- {run.cell_id or '未知格'}：{run.status or '未知状态'}"
+        if run.error_type:
+            head += f"，{run.error_type}"
+        if run.stderr_first_line:
+            head += f" —— {run.stderr_first_line[:200]}"
+        if run.assertions_failed:
+            head += f"（未通过断言：{', '.join(run.assertions_failed[:5])}）"
+        lines.append(head)
+    return "\n".join(lines)
+
+
 def build_context_block(context: AgentContext | None) -> str:
     """构造课程/编辑器展示上下文。
 
@@ -68,6 +87,12 @@ def build_context_block(context: AgentContext | None) -> str:
         parts.append(f"课程内容摘要：\n{context.lesson_content[:3000]}")
     if context.current_task:
         parts.append(f"当前任务：{context.current_task}")
+    if context.session_id is not None:
+        parts.append(f"工作区会话：{context.session_id}")
+    if context.cell_id:
+        parts.append(f"当前聚焦的单元格：{context.cell_id}")
+    if context.recent_runs:
+        parts.append(build_recent_runs_block(context.recent_runs))
     if context.current_code:
         parts.append(
             "编辑器里的当前代码（可能已改动但尚未提交，不代表服务端记录的状态）："
@@ -76,13 +101,39 @@ def build_context_block(context: AgentContext | None) -> str:
     return "\n\n".join(parts)
 
 
-def build_evidence_block(evidence: AgentLearningEvidence | None) -> str:
+HINT_LEVEL_DIRECTIVES: dict[int, str] = {
+    1: "学习者刚开始求助。只指出方向与需要观察的现象，不要给具体改法。",
+    2: "学习者已求助数次。可以说出出错的环节和要用的 API 名称，但不要写出完整语句。",
+    3: "学习者多次卡在同一处。可以给出一行可复制的关键写法，但仍不要给出整格完整答案。",
+}
+
+
+def build_hint_directive(hint_level: int | None) -> str:
+    """把服务端算出的提示层级转成模型能执行的指令。
+
+    层级由 ``_resolve_hint_level`` 按真实求助次数决定；在改版 E1 之前它只
+    回给前端展示，模型并不知道自己该给第几层，导致分级形同虚设。
+    """
+    if not hint_level:
+        return ""
+    level = max(1, min(3, int(hint_level)))
+    directive = HINT_LEVEL_DIRECTIVES[level]
+    return f"本次提示层级：L{level}（{directive}）"
+
+
+def build_evidence_block(
+    evidence: AgentLearningEvidence | None,
+    hint_level: int | None = None,
+) -> str:
     """构造服务端任务证据块（权威来源）。
 
     始终注入到 prompt；无证据时显式说明，避免模型臆造任务状态。
+    ``hint_level`` 由服务端统计得出，写进块尾约束模型的提示深度。
     """
+    hint_line = build_hint_directive(hint_level)
     if evidence is None:
-        return "【服务端任务证据】\n状态：学习者暂无可用任务证据"
+        block = "【服务端任务证据】\n状态：学习者暂无可用任务证据"
+        return f"{block}\n{hint_line}" if hint_line else block
 
     lines = ["【服务端任务证据】"]
     state_label = {
@@ -157,6 +208,8 @@ def build_evidence_block(evidence: AgentLearningEvidence | None) -> str:
         "以上为服务端权威证据，客户端自报状态不可覆盖；回答时以此为准。"
         "给建议时只解释问题与方向，不要直接给出可提交的完整答案。"
     )
+    if hint_line:
+        lines.append(hint_line)
     return "\n".join(lines)
 
 

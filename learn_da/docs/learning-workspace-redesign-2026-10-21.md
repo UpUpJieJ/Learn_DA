@@ -758,3 +758,45 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 - 前端入口：`AgentPanel.vue` 仍是死代码，工作区里还没有入口（前端类型已同步 `nextTask` 与 `currentTask`）。
 
 测试：后端 490 → **510 passed**（新增 `tests/unit/test_agent_workspace_evidence.py` 20 项）。
+
+## 17. AI 教练 E1：工作区接上对话入口（2026-10-24）
+
+### 17.1 用户决定（2026-10-24）
+
+| 问题 | 决定 | 理由 |
+|---|---|---|
+| 后端能否流式 | **E1 先做诚实的非流式** | `/agent/chat` 是 FC 多轮 + 一次性返回，没有 SSE；前端原来「先拿到整段再当 token 吐出去」是打字机假象。E1 改成「正在思考…」→ 整段落地；真 SSE 要等 FC 增量 tool_calls，留 E2 |
+| 是否现在做 ladder 阶梯提示 | **不做，留 E2** | 需要新建 `hint_usages` 表、`POST /workspace/tasks/{id}/hint` 端点、越层校验，是独立一块 |
+| Agent 架构 | 沿用 **确定性策略层 + 单一 LLM 表达层** | 判定（五态、失败断言、提示层级、next action）全在 Python；模型只负责讲人话 + 答开放问题。不引入 planner/executor/critic，也不做 RAG-first |
+
+### 17.2 后端三处修补
+
+1. **`hint_level` 进 prompt（真实缺陷）**：原来服务端算出的层级只回前端展示，模型完全不知道当前该给第几层提示。新增 `prompts.build_hint_directive(hint_level)`（L1 只指方向 / L2 可说 API 名不给完整语句 / L3 可给一行关键写法），`service._with_hint_directive` 把它作为一条 system 消息**插在提问之前**（保持 system prompt 仍在首位）；`build_evidence_block` 也接受 `hint_level`。
+2. **`AgentContext` 扩展**：新增 `sessionId` / `cellId` / `recentRuns`（`AgentRecentRun`：`cellId` / `status` / `errorType` / `stderrFirstLine` / `assertionsFailed`，最多 3 条、stderr 截 400、失败断言截 8 条）。`build_context_block` 注入「工作区会话 / 当前聚焦的单元格 / 最近的单元格执行」，并明确标注**客户端自报、仅供定位、判定以服务端证据为准**。
+3. **FC 工具不新增**：`get_task_summary` / `get_learner_progress` / `search_knowledge` / `get_recommendation` 已覆盖；不引入任何写工具（用户已定「只解释不改代码」）。
+
+### 17.3 前端
+
+- 新建 `learn_da_vue/src/components/workspace/WorkspaceCoach.vue`（+ `index.ts` barrel），工作区右栏三段：
+  - **ambient 证据卡**：直接渲染 `store.runs[cell].assertions` 里未通过的那些（`actual || detail`），**0 请求 0 token**，因此永远与判定一致；底部一个「这条断言为什么不通过」按钮，把失败断言标题拼进提问。
+  - **chat**：`useAgentConversation` + 空态三条具体建议（不给空白输入框）、`正在思考…` 占位、消息尾部显示「提示层级 L{n} · 状态」、错误行内显示不弹 toast。
+  - **聚焦格变化时清空对话**（旧对话会误导模型）。
+- `LessonWorkspace.vue`：占位卡片换成 `<WorkspaceCoach :context="coachContext" :assertions="coachAssertions" :has-submission="coachHasSubmission">`；`coachContext` 组装 `currentLesson/lessonTitle/lessonCategory/currentTask/sessionId/cellId/currentCode/recentRuns`（`recentRuns` 取 `runs` 末 3 条，含 `stderrFirstLine` 与 `assertionsFailed`）。
+- **去掉伪流式**：`api/agent.ts` 的 `streamChatMessage` 改名 `sendChatMessage`（删除 `onToken`），`useAgentConversation` 同步；注释写明「后端一次性返回，E2 再引入 onToken」。
+
+### 17.4 死代码清理（本轮）
+
+删除 `src/components/agent/AgentPanel.vue`（870 行）、`src/components/recommendation/RecommendationPanel.vue`、`src/components/playground/TutorialSidebar.vue`、`src/lib/recommendation.ts`、`src/stores/playground.ts` + 两个重复的 `playground.spec.ts`、空目录 `components/common`、`components/editor`；`localState.ts` 删掉 `playgroundDrafts`/`isAgentOpen`/`openAgent`/`closeAgent`/`toggleAgent` 与对应类型 `PlaygroundDraft`/`PlaygroundDrafts`。`scripts/ui_lint.baseline.json` 从 **63 文件 / 167 处**收紧到 **59 文件 / 14 处**。
+
+### 17.5 测试与实测
+
+- 新增 `learn_da/tests/unit/test_agent_coach_context.py` **19 项**（层级措辞、钳制、插入位置、recentRuns 上限与 camelCase、stderr 截断、层级真的进到模型 prompt 的 6 组 helps→level 参数化）。
+- 新增 `learn_da_vue/src/components/workspace/__tests__/WorkspaceCoach.spec.ts` **11 项**（ambient 只显示未通过项、error/skipped 也算未通过、按失败断言提问、上下文随请求发送、空态建议、思考占位、层级展示、错误行内、Ctrl+Enter、换格清空）。
+- 后端 **510 passed**；前端 **117 passed（17 文件）**；`vue-tsc --build` 通过；`npm run lint:ui` 通过。
+- 本轮**未做真实浏览器验证**（用户 m02550 要求跳过浏览器验证，改为交付手动验证清单）。
+
+### 17.6 未做（留给 E2）
+
+- ladder 阶梯提示（`hint_usages` 表 + `POST /workspace/tasks/{id}/hint` + 越层校验）。
+- 真流式（SSE / FC 增量）。
+- 动作白名单（§8.3）—— 用户明确不做。
