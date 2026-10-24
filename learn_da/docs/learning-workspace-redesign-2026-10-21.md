@@ -1,4 +1,4 @@
-# 学习工作区重设计：Workspace + Task + Assertion + Coach
+# 学习工作区重设计：Workspace + Task + Assertion + Assistant
 
 > 状态：设计稿（未开工）。日期：2026-10-21。
 > 相关现状：`learn_da/app/practice/validator.py`、`learn_da/app/agent/evidence.py`、
@@ -297,7 +297,7 @@ tasks:
 数据集生成脚本 `scripts/build_datasets.py`：固定 `random.seed`，可重跑得到字节一致的产物，
 CI/本地都能校验 hash（与 L7 配合，避免"expected 与数据悄悄漂移"）。
 
-## 8. 教练（Coach）集成
+## 8. AI 助手（Assistant）集成
 
 ### 8.1 上下文
 
@@ -327,7 +327,7 @@ CI/本地都能校验 hash（与 L7 配合，避免"expected 与数据悄悄漂�
 
 | 档位 | 触发 | 表现 | 记录 |
 |---|---|---|---|
-| ambient（环境提示） | 执行失败或断言失败后 1 次 | 教练面板出现一条折叠卡片「我看到了什么」：错误类型 + 断言差异 + 一句引导 | 不写 HintUsage |
+| ambient（环境提示） | 执行失败或断言失败后 1 次 | 助手面板出现一条折叠卡片「我看到了什么」：错误类型 + 断言差异 + 一句引导 | 不写 HintUsage |
 | ladder（提示阶梯） | 用户点「给点提示」 | 服务端算层（失败次数 + 已用层）返回下一层，越层请求无效 | 写 HintUsage |
 | chat（自由问答） | 用户提问 | 带完整上下文回答 | 记 AgentInteraction |
 
@@ -358,7 +358,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 ┌──────────────────────────────────────────────────────────────┐
 │ 课程头：title / 进度（t1 ✓ t2 ● t3 ○）/ 退出                    │
 ├──────────────┬───────────────────────────────┬───────────────┤
-│ 任务列表      │ 工作区（cell 流）              │ 教练           │
+│ 任务列表      │ 工作区（cell 流）              │ AI 助手        │
 │ t1 ✓ 读入数据 │ [t1] cell 1 代码 … 输出        │ 折叠卡片       │
 │ t2 ● 区域聚合 │ [t2] cell 2 代码 … 断言结果    │ 提示阶梯       │
 │ t3 ○ 窗口函数 │      + 新增草稿格              │ 对话           │
@@ -394,7 +394,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 | M1 | 后端表 + workspace API（内部用现有 execute 实现重放，断言先只支持 `expr_true`/`schema`） | 新端点未接前端 |
 | M2 | Runner `execute_session` + 断言引擎 + 数据集挂载 + `frame_equal`/`sql_rows` | 旧 `/execute` 不动 |
 | M3 | 前端三栏 + **03-polars-groupby 单课样板**（feature flag `WORKSPACE_V2`） | 单课灰度，可关 |
-| M4 | 内容迁移到 13 课 + Coach 接入 + 旧页面下线 + 旧 validator 标 deprecated | 旧路由保留一个版本 |
+| M4 | 内容迁移到 13 课 + AI 助手接入 + 旧页面下线 + 旧 validator 标 deprecated | 旧路由保留一个版本 |
 | M5（可选） | 常驻 kernel 替换重放 | 接口不变 |
 
 `exercise_attempts` 与新表并存；`test_security_settings` 等既有 409 项测试在 M1-M2 期间不删，
@@ -475,7 +475,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 - **测试**：前端新增 `src/stores/__tests__/workspace.spec.ts`（9 项：加载/错误/编辑去抖/无变化不打网络/
   提交先落库/并发守卫/失败复位/skipped 不算通过/重置），后端新增 `hasWorkspace` 断言。
   基线：后端 **456** / Runner **39** / 前端 **112**。
-- **仍未做**：`/lab` 自由沙盒、`/report` 学习报告、其余 12 课迁移、教练侧栏接 `frame_equal` 建议动作
+- **仍未做**：`/lab` 自由沙盒、`/report` 学习报告、其余 12 课迁移、助手侧栏接 `frame_equal` 建议动作
   （`propose → 确认` 未接）、旧 `/learn/:slug` 与 `/playground` 下线（留到 P4）。
 
 ### 11.4 M4 + P1/P3/P4 完成记录（2026-10-22，13 课迁移与页面重构）
@@ -536,7 +536,7 @@ level = min(3, 1 + failures_since_last_hint + hints_used)
 
 **仍未做**
 
-- AI 教练面板（工作区内分档介入 + 动作白名单）未接回；课程断言实际只用 `schema` + `expr_true`
+- AI 助手面板（工作区内分档介入 + 动作白名单）未接回；课程断言实际只用 `schema` + `expr_true`
   （`frame_equal`/`sql_rows` 需要 `refs`，暂未接入内容管线）。
 - `/lab` 的 SQL 支持、移动端适配、灰度开关 `WORKSPACE_V2`（旧页已删，不再需要）。
 
@@ -685,7 +685,7 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 - **P4 `/lab` + 下线旧页**：`src/views/Lab.vue` 自由沙盒（行号列、`Ctrl/⌘+Enter`、`CodeOutput`、数据集参考侧栏，SQL 置灰）；删除 `Learning.vue`/`LessonDetail.vue`/`Playground.vue`/`Dashboard.vue` 与 `useLessonSession`/`usePlaygroundSession` + 2 个 spec；路由 9 → 6 条；`App.vue` 去掉深色全屏与 `KeepAlive`。
 - **导航**：Navbar 4 项（今日 / 课程 / 报告 / 实验室），raw palette 清零。
 - **基线**：后端 488 / Runner 39 / 前端 113；`ui_lint` 基线 63 文件 / 225 处（P0 时 61 / 558）。
-- **仍缺**：`ShortcutHelp`（`?` 说明面板）、AI 教练面板接回、`/lab` 的 SQL 支持。（`npm run build` 在本机被 esbuild 临时文件权限拦住，需在普通终端或服务器验证；2026-10-22 用户已在普通终端验证通过。）
+- **仍缺**：`ShortcutHelp`（`?` 说明面板）、AI 助手面板接回、`/lab` 的 SQL 支持。（`npm run build` 在本机被 esbuild 临时文件权限拦住，需在普通终端或服务器验证；2026-10-22 用户已在普通终端验证通过。）
 
 #### P5 首页重构为「今日」（2026-10-22，用户追加要求）
 
@@ -703,7 +703,7 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 删除项：深色 hero 与入场动画、`fetchHomeStats` / `fetchCategoryStats` 调用、`learningTracks` legacy 兜底文案、`learnerState` 依赖、`components/home/ContinueStrip.vue`（职责并入主卡）。文案里不再出现平台级「今日活跃」，`daysSinceActive ≥ 3` 只在概览行点一句「已经 N 天没练了」。
 
 测试：新增 `src/views/__tests__/Home.spec.ts`（10 项：主卡选择与深链、无记录降级、指标与一次通过率、卡点跳转、接下来最多两门、路径进度用后端 `ratio`、三天未练提示、全部完成后主卡退回复习、失败重试、空态 CTA）。前端 113 → **123 passed（18 文件）**；`vue-tsc --build` 通过；`ui_lint` 基线因 `Home.vue` 归零从 63 文件 / 225 处收紧到 **63 文件 / 167 处**。
-## 16. AI 教练 E0：证据链接改版（2026-10-23）
+## 16. AI 助手 E0：证据链接改版（2026-10-23）
 
 改造前的断点：`app/agent/evidence.py` 只读冻结的 `exercise_attempts`，全项目对 `workspace` / `TaskAttempt` 的引用为 0 —— 在工作区里问 AI，永远返回 `no_evidence`；FC 工具还停留在「练习 + stdout」语境；模型不可用时返回的是按意图预置的话术，像是真的回答过。
 
@@ -759,7 +759,7 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 
 测试：后端 490 → **510 passed**（新增 `tests/unit/test_agent_workspace_evidence.py` 20 项）。
 
-## 17. AI 教练 E1：工作区接上对话入口（2026-10-24）
+## 17. AI 助手 E1：工作区接上对话入口（2026-10-24）
 
 ### 17.1 用户决定（2026-10-24）
 
@@ -777,11 +777,11 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 
 ### 17.3 前端
 
-- 新建 `learn_da_vue/src/components/workspace/WorkspaceCoach.vue`（+ `index.ts` barrel），工作区右栏三段：
+- 新建 `learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`（+ `index.ts` barrel），工作区右栏三段：
   - **ambient 证据卡**：直接渲染 `store.runs[cell].assertions` 里未通过的那些（`actual || detail`），**0 请求 0 token**，因此永远与判定一致；底部一个「这条断言为什么不通过」按钮，把失败断言标题拼进提问。
   - **chat**：`useAgentConversation` + 空态三条具体建议（不给空白输入框）、`正在思考…` 占位、消息尾部显示「提示层级 L{n} · 状态」、错误行内显示不弹 toast。
   - **聚焦格变化时清空对话**（旧对话会误导模型）。
-- `LessonWorkspace.vue`：占位卡片换成 `<WorkspaceCoach :context="coachContext" :assertions="coachAssertions" :has-submission="coachHasSubmission">`；`coachContext` 组装 `currentLesson/lessonTitle/lessonCategory/currentTask/sessionId/cellId/currentCode/recentRuns`（`recentRuns` 取 `runs` 末 3 条，含 `stderrFirstLine` 与 `assertionsFailed`）。
+- `LessonWorkspace.vue`：占位卡片换成 `<WorkspaceAssistant :context="assistantContext" :assertions="assistantAssertions" :has-submission="assistantHasSubmission">`；`assistantContext` 组装 `currentLesson/lessonTitle/lessonCategory/currentTask/sessionId/cellId/currentCode/recentRuns`（`recentRuns` 取 `runs` 末 3 条，含 `stderrFirstLine` 与 `assertionsFailed`）。
 - **去掉伪流式**：`api/agent.ts` 的 `streamChatMessage` 改名 `sendChatMessage`（删除 `onToken`），`useAgentConversation` 同步；注释写明「后端一次性返回，E2 再引入 onToken」。
 
 ### 17.4 死代码清理（本轮）
@@ -790,8 +790,8 @@ P0 完全不依赖后端改造，可以先做且风险最低。
 
 ### 17.5 测试与实测
 
-- 新增 `learn_da/tests/unit/test_agent_coach_context.py` **19 项**（层级措辞、钳制、插入位置、recentRuns 上限与 camelCase、stderr 截断、层级真的进到模型 prompt 的 6 组 helps→level 参数化）。
-- 新增 `learn_da_vue/src/components/workspace/__tests__/WorkspaceCoach.spec.ts` **11 项**（ambient 只显示未通过项、error/skipped 也算未通过、按失败断言提问、上下文随请求发送、空态建议、思考占位、层级展示、错误行内、Ctrl+Enter、换格清空）。
+- 新增 `learn_da/tests/unit/test_agent_assistant_context.py` **19 项**（层级措辞、钳制、插入位置、recentRuns 上限与 camelCase、stderr 截断、层级真的进到模型 prompt 的 6 组 helps→level 参数化）。
+- 新增 `learn_da_vue/src/components/workspace/__tests__/WorkspaceAssistant.spec.ts` **11 项**（ambient 只显示未通过项、error/skipped 也算未通过、按失败断言提问、上下文随请求发送、空态建议、思考占位、层级展示、错误行内、Ctrl+Enter、换格清空）。
 - 后端 **510 passed**；前端 **117 passed（17 文件）**；`vue-tsc --build` 通过；`npm run lint:ui` 通过。
 - 本轮**未做真实浏览器验证**（用户 m02550 要求跳过浏览器验证，改为交付手动验证清单）。
 

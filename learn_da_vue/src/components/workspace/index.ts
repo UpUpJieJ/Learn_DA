@@ -1,1 +1,1 @@
-export { default as WorkspaceCoach } from "./WorkspaceCoach.vue";
+export { default as WorkspaceAssistant } from "./WorkspaceAssistant.vue";

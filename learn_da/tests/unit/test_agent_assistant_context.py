@@ -1,4 +1,4 @@
-"""AI 教练（改版 E1）：提示层级进 prompt、工作区定位字段进上下文。
+"""AI 助手（改版 E1）：提示层级进 prompt、工作区定位字段进上下文。
 
 E1 之前 ``_resolve_hint_level`` 算出的层级只回给前端展示，模型完全不知道
 自己该给第几层提示（``prompts.py`` 里没有任何 hint 字样），分级形同虚设。
@@ -70,7 +70,7 @@ def test_evidence_block_carries_hint_level():
 
 def test_hint_directive_is_inserted_before_the_question():
     messages = [
-        {"role": "system", "content": "你是教练"},
+        {"role": "system", "content": "你是助手"},
         {"role": "user", "content": "为什么这条断言不过"},
     ]
 
@@ -84,7 +84,7 @@ def test_hint_directive_is_inserted_before_the_question():
 
 def test_hint_directive_leaves_messages_untouched_without_level():
     messages = [
-        {"role": "system", "content": "你是教练"},
+        {"role": "system", "content": "你是助手"},
         {"role": "user", "content": "问题"},
     ]
 
@@ -201,7 +201,7 @@ def _service_with_evidence(completer: _Recorder, helps: int) -> AgentService:
     interaction = MagicMock()
     interaction.id = 1
     interaction.visitor_id = "v1"
-    interaction.request_id = "req-coach"
+    interaction.request_id = "req-assistant"
 
     repo = MagicMock()
     repo.get_or_create = AsyncMock(return_value=(interaction, True))
@@ -212,7 +212,7 @@ def _service_with_evidence(completer: _Recorder, helps: int) -> AgentService:
     service._inject_evidence = AsyncMock(  # type: ignore[method-assign]
         return_value=(
             [
-                {"role": "system", "content": "你是教练"},
+                {"role": "system", "content": "你是助手"},
                 {"role": "user", "content": "这条断言为什么不通过"},
             ],
             evidence,
@@ -243,7 +243,7 @@ async def test_hint_level_reaches_the_model_prompt(helps: int, level: int):
     assert directive, f"层级指令没有进入 messages：{[m['role'] for m in sent]}"
     assert f"L{level}" in directive[0]
     # system prompt 仍在首位，层级指令插在提问之前
-    assert sent[0]["content"] == "你是教练"
+    assert sent[0]["content"] == "你是助手"
     assert sent[-1]["role"] == "user"
     assert "本次提示层级" in sent[-2]["content"]
 

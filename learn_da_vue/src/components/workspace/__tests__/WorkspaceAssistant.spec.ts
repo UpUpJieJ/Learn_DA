@@ -13,7 +13,7 @@ vi.mock("@/api/agent", async (importOriginal) => {
 });
 
 import { sendChatMessage } from "@/api/agent";
-import WorkspaceCoach from "@/components/workspace/WorkspaceCoach.vue";
+import WorkspaceAssistant from "@/components/workspace/WorkspaceAssistant.vue";
 
 const mockedSend = vi.mocked(sendChatMessage);
 
@@ -37,13 +37,13 @@ const CONTEXT: AgentContext = {
     currentCode: "print(1)",
 };
 
-function mountCoach(props: Record<string, unknown> = {}) {
-    return mount(WorkspaceCoach, {
+function mountAssistant(props: Record<string, unknown> = {}) {
+    return mount(WorkspaceAssistant, {
         props: { context: CONTEXT, ...props },
     });
 }
 
-describe("WorkspaceCoach", () => {
+describe("WorkspaceAssistant", () => {
     beforeEach(() => {
         mockedSend.mockReset();
         mockedSend.mockImplementation(async ({ onDone }) => {
@@ -52,14 +52,14 @@ describe("WorkspaceCoach", () => {
     });
 
     it("hides the ambient card when every assertion passed", () => {
-        const wrapper = mountCoach({
+        const wrapper = mountAssistant({
             assertions: [assertion({ status: "passed", actual: null })],
         });
         expect(wrapper.text()).not.toContain("我看到了什么");
     });
 
     it("renders failed assertions with their server-reported actual value", () => {
-        const wrapper = mountCoach({
+        const wrapper = mountAssistant({
             assertions: [
                 assertion({ status: "passed", actual: null, id: "t1-rows" }),
                 assertion(),
@@ -74,7 +74,7 @@ describe("WorkspaceCoach", () => {
     });
 
     it("treats error/timeout/skipped as not-passed for the ambient card", () => {
-        const wrapper = mountCoach({
+        const wrapper = mountAssistant({
             assertions: [
                 assertion({ id: "a", status: "error", actual: "KeyError: 'x'" }),
                 assertion({ id: "b", status: "skipped", actual: null, detail: "未求值" }),
@@ -86,7 +86,7 @@ describe("WorkspaceCoach", () => {
     });
 
     it("asks about the failure by naming the failed assertions", async () => {
-        const wrapper = mountCoach({ assertions: [assertion()] });
+        const wrapper = mountAssistant({ assertions: [assertion()] });
         const button = wrapper
             .findAll("button")
             .find((item) => item.text().includes("这条断言为什么不通过"));
@@ -100,7 +100,7 @@ describe("WorkspaceCoach", () => {
     });
 
     it("sends the typed question with the workspace context", async () => {
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         const textarea = wrapper.find("textarea");
         await textarea.setValue("为什么我的分组结果是空的？");
         const send = wrapper
@@ -114,10 +114,10 @@ describe("WorkspaceCoach", () => {
     });
 
     it("offers concrete suggestions instead of an empty box", () => {
-        const wrapper = mountCoach({ assertions: [assertion()] });
+        const wrapper = mountAssistant({ assertions: [assertion()] });
         const text = wrapper.text();
         expect(text).toContain("这条断言为什么不通过？");
-        expect(text).toContain("下一步该练什么？");
+        expect(text).toContain("这一步要用到哪些 API？");
     });
 
     it("shows the thinking placeholder while waiting for the reply", async () => {
@@ -132,10 +132,10 @@ describe("WorkspaceCoach", () => {
                 }),
         );
 
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         const pending = wrapper
             .findAll("button")
-            .find((item) => item.text().includes("下一步该练什么？"))!
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
             .trigger("click");
         await vi.waitFor(() => expect(wrapper.text()).toContain("正在思考…"));
 
@@ -161,10 +161,10 @@ describe("WorkspaceCoach", () => {
             );
         });
 
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         await wrapper
             .findAll("button")
-            .find((item) => item.text().includes("下一步该练什么？"))!
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
             .trigger("click");
         await vi.waitFor(() => expect(wrapper.text()).toContain("先看 region 列"));
         expect(wrapper.text()).toContain("提示层级 L2");
@@ -175,16 +175,16 @@ describe("WorkspaceCoach", () => {
         mockedSend.mockImplementation(async ({ onError }) => {
             onError?.(new Error("网络断了"));
         });
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         await wrapper
             .findAll("button")
-            .find((item) => item.text().includes("下一步该练什么？"))!
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
             .trigger("click");
         await vi.waitFor(() => expect(wrapper.text()).toContain("网络断了"));
     });
 
     it("sends on Ctrl+Enter", async () => {
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         const textarea = wrapper.find("textarea");
         await textarea.setValue("你好");
         await textarea.trigger("keydown", { key: "Enter", ctrlKey: true });
@@ -192,10 +192,10 @@ describe("WorkspaceCoach", () => {
     });
 
     it("clears the conversation when the focused cell changes", async () => {
-        const wrapper = mountCoach();
+        const wrapper = mountAssistant();
         await wrapper
             .findAll("button")
-            .find((item) => item.text().includes("下一步该练什么？"))!
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
             .trigger("click");
         await vi.waitFor(() => expect(wrapper.text()).toContain("因为 orders 列没生成"));
 

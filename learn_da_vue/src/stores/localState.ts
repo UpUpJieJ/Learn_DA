@@ -46,7 +46,7 @@ const DEFAULT_PREFERENCES: LocalPreferences = {
 // 学习进度（completedLessons / lastVisitedSlug）在 learnerState store，
 // 这里只保留界面偏好与侧边栏状态。
 // 改版 E1 删除了 Playground 草稿与 Agent 面板开关：草稿随工作区落库，
-// 教练固定在工作区右栏，不再有"开合悬浮窗"这层状态。
+// AI 助手固定在工作区右栏，不再有"开合悬浮窗"这层状态。
 // =====================================================
 
 export const useLocalStateStore = defineStore('localState', () => {

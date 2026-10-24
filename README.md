@@ -14,7 +14,7 @@
 - **任务式工作区**：每门课是一个多单元格工作区（读数据 → 逐步加工 → 提交任务），提交时由服务端断言判定对错，失败会回传实际值帮你定位；结果依赖上游，改了上游会标「结果已过期」。
 - **实验室（`/lab`）**：自由沙盒，不挂课程数据、不判定，用来随手试代码；`Ctrl/⌘+Enter` 运行。
 - **学习报告（`/report`）**：只用真实提交记录计算——已通过任务、完成课程、连续学习、能力分布、常见卡点、最近提交。
-- **AI 教练**：工作区右栏的教练会直接列出「这次没通过的断言 + 实际值」（不经过模型），也能带着当前任务上下文对话；分级提示（L1/L2/L3）由服务端按求助次数决定并写进 prompt。
+- **AI 助手**：工作区右栏的助手会直接列出「这次没通过的断言 + 实际值」（不经过模型），也能带着当前任务上下文对话；分级提示（L1/L2/L3）由服务端按求助次数决定并写进 prompt。
 - **安全执行策略**：代码执行只走独立 Runner 服务，默认在无网络、只读文件系统、非 root、带内存/CPU/进程数与超时限制的一次性容器里运行；Runner 不可用时后端明确返回 503，不回退本地执行。
 - **无登录本地模式**：无需账号即可使用核心功能；学习进度以服务端匿名会话为准，界面偏好与工作区草稿另存当前浏览器本地。
 
@@ -86,7 +86,7 @@
         ├── components/       # 可复用组件
         │   ├── ui/           # 基础组件层（AppButton / AppCard / AppInput / StatusPill / CodeOutput / EmptyState / ConfirmDialog / ToastHost）
         │   ├── layout/       # 布局组件（Navbar 等）
-        │   └── workspace/    # 工作区右栏 AI 教练（WorkspaceCoach.vue）
+        │   └── workspace/    # 工作区右栏 AI 助手（WorkspaceAssistant.vue）
         ├── composables/      # 组合式函数（useAsyncState / useToast / useAgentConversation）
         ├── types/            # TypeScript 类型定义
         └── assets/           # 样式与静态资源（assets/styles/main.css 定义语义 token）
@@ -264,7 +264,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 
 ### 3. AI Agent 助手
 
-> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**教练已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceCoach.vue`），非流式（「正在思考…」→ 整段落地）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）与 §17（E1）。
+> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**助手已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`），非流式（「正在思考…」→ 整段落地）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）与 §17（E1）。
 
 - **学习证据驱动**（阶段 3 / 改版 E0）：Agent 的判断完全基于服务端数据库证据
   —— 有 `workspace:` 的课读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的

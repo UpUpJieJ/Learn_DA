@@ -4,7 +4,7 @@
 
 ## 项目是什么
 
-交互式数据分析学习平台（Polars / DuckDB / Python 编程基础）：教程 + 在线代码实操 + AI 学习教练。
+交互式数据分析学习平台（Polars / DuckDB / Python 编程基础）：教程 + 在线代码实操 + AI 学习助手。
 技术栈：Vue 3 + Vite + TS + Pinia（`learn_da_vue`）、FastAPI + Python 3.12（`learn_da`）、独立 Runner 沙箱服务（`learn_da_runner`）。
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
@@ -18,8 +18,8 @@
 - **学习工作区改版 M0–M4 + 页面重构 P0–P4 已完成**（2026-10-21/22）：确定性数据集 `learn_da/content/datasets/ecommerce/`（`scripts/build_datasets.py` 生成，`--check` 校验字节一致）+ 断言 DSL v2 骨架（`app/practice/assertion_runtime.py` 求值、`app/practice/assertions.py` 校验与生成尾巴，四型 `expr_true`/`frame_equal`/`schema`/`sql_rows`）+ 后端工作区表与 API（`app/workspace/`）+ Runner 会话执行（`POST /v1/sessions`）+ **前端三栏工作区**（`learn_da_vue/src/views/LessonWorkspace.vue`，路由 `/lesson/:slug`）。样板课最初是 `03-polars-groupby`；**M4 已把全部 13 门课迁到工作区格式**（每课 3 个任务、3–11 条断言，课程正文按数据课 260–330 行 / 纯 Python 课 180–240 行加厚），写作规范见 `learn_da/docs/workspace-content-spec.md`，参考解在 `learn_da/scripts/solutions/<slug>.py`（由 `learn_da/tests/test_workspace_content.py` 逐课校验「起步代码必失败 + 参考解必全过」）。
 - **前端页面重构 P0–P4 已完成**（2026-10-22）：语义 token + `src/components/ui/` 基础组件层 + `scripts/ui_lint.mjs` 基线检查（P0）；页面只剩 5 个路由——`/`(Home)、`/learn`(CourseMap 课程地图)、`/lesson/:slug`(LessonWorkspace)、`/report`(Report 学习报告)、`/lab`(Lab 自由实验室)；**旧的 `/learn/:slug`、`/playground`、`/dashboard` 已下线**，`Learning.vue`/`LessonDetail.vue`/`Playground.vue`/`Dashboard.vue` 与 `useLessonSession`/`usePlaygroundSession` 已删除。`/workspace/progress` 与 `/workspace/report` 提供进度与报告数据。
 - 设计稿见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md`（§11.2 M1+M2、§11.3 M3、§11.4 M4+P1/P3/P4、§15 页面重构）。
-- **AI 教练 E0/E1 已完成**（2026-10-23/24）：E0 把证据源从冻结的 `exercise_attempts` 改到 `task_attempts`（含断言 `actual`），E1 把教练接进工作区右栏（`learn_da_vue/src/components/workspace/WorkspaceCoach.vue`）：ambient 证据卡直接渲染 `store.runs[cell].assertions`（0 请求 0 token）、chat 走 `POST /api/v1/agent/chat`、**非流式**（「正在思考…」→ 整段落地，去掉原来的伪流式）。`hint_level` 现在真的进 prompt（`prompts.build_hint_directive`）。架构是「确定性策略层 + 单一 LLM 表达层」：判定全在 Python，模型只负责讲人话。
-- 测试基线：后端 **529 项** pytest、Runner **39 项**、前端 **117 项** vitest 全绿（2026-10-24 更新；M0 数据集 10 + 断言 DSL 27、M1 工作区 API 10 + 进度报告 5、M2 Runner 会话 10、M3 前端 store 9、M4 内容自检 26、P1/P3/P4 前端页面 19、P5 首页 10、AI E0 证据链 20、AI E1 教练上下文 19 + 教练面板 11）。`npm run build` 在本机因 esbuild 临时文件删除被环境拦截（见「已知问题与坑」）。
+- **AI 助手 E0/E1 已完成**（2026-10-23/24）：E0 把证据源从冻结的 `exercise_attempts` 改到 `task_attempts`（含断言 `actual`），E1 把助手接进工作区右栏（`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`）：ambient 证据卡直接渲染 `store.runs[cell].assertions`（0 请求 0 token）、chat 走 `POST /api/v1/agent/chat`、**非流式**（「正在思考…」→ 整段落地，去掉原来的伪流式）。`hint_level` 现在真的进 prompt（`prompts.build_hint_directive`）。架构是「确定性策略层 + 单一 LLM 表达层」：判定全在 Python，模型只负责讲人话。**命名统一为「AI 助手」**（2026-10-24 用户要求；组件 `WorkspaceAssistant.vue`、prompt 里自称「通用学习助手」），且**不提供「下一步该练什么」引导**——任务顺序由服务端任务列表权威给出，模型不自行规划学习路线（`SYSTEM_PROMPT` 已明写）。
+- 测试基线：后端 **529 项** pytest、Runner **39 项**、前端 **117 项** vitest 全绿（2026-10-24 更新；M0 数据集 10 + 断言 DSL 27、M1 工作区 API 10 + 进度报告 5、M2 Runner 会话 10、M3 前端 store 9、M4 内容自检 26、P1/P3/P4 前端页面 19、P5 首页 10、AI E0 证据链 20、AI E1 助手上下文 19 + 助手面板 11）。`npm run build` 在本机因 esbuild 临时文件删除被环境拦截（见「已知问题与坑」）。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
   - LLM 只有一套配置 `LLM_*`；**`FALLBACK_LLM_*` 已删除**（2026-10-21，历史遗留的假兜底：只在主配置为空时生效，主配置存在但调用失败时不会切换）。调用失败时走 `usedFallback` 确定性降级，不会换 key。

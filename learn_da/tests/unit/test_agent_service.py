@@ -116,15 +116,18 @@ def test_tool_registry_contains_fallback_for_each_tool():
         assert tool.fallback_content
 
 
-def test_system_prompt_emphasizes_coach_role_and_no_direct_answer_bias():
-    assert "通用学习教练" in SYSTEM_PROMPT
+def test_system_prompt_emphasizes_assistant_role_and_no_direct_answer_bias():
+    assert "通用学习助手" in SYSTEM_PROMPT
     assert "专门帮助有 Pandas 或 SQL 基础" not in SYSTEM_PROMPT
     assert "先解释思路" in SYSTEM_PROMPT
     assert "不要直接给最终答案" in SYSTEM_PROMPT
     assert "围绕当前课程与学习工作区上下文" in SYSTEM_PROMPT
     assert "不是代写工具" in SYSTEM_PROMPT
     assert "如果当前课程涉及 Polars、DuckDB、Pandas 或 SQL" in SYSTEM_PROMPT
-    assert "1 到 3 个" in SYSTEM_PROMPT
+    # 任务顺序由服务端任务列表权威给出，模型不自行规划学习路线
+    assert "任务顺序、完成状态与下一步该做哪个任务由服务端的任务列表权威给出" in SYSTEM_PROMPT
+    assert "不要自行规划学习路线" in SYSTEM_PROMPT
+    assert "1 到 3 个" not in SYSTEM_PROMPT
 
 
 def test_agent_fallbacks_are_general_learning_friendly():

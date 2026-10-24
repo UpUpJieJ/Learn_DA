@@ -261,7 +261,7 @@
                     </AppCard>
                 </main>
 
-                <!-- 右栏：任务目标 + 教练入口 -->
+                <!-- 右栏：任务目标 + AI 助手入口 -->
                 <aside class="space-y-4 lg:sticky lg:top-6">
                     <AppCard>
                         <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
@@ -303,10 +303,10 @@
                         </p>
                     </AppCard>
 
-                    <WorkspaceCoach
-                        :context="coachContext"
-                        :assertions="coachAssertions"
-                        :has-submission="coachHasSubmission"
+                    <WorkspaceAssistant
+                        :context="assistantContext"
+                        :assertions="assistantAssertions"
+                        :has-submission="assistantHasSubmission"
                     />
 
                     <p class="px-1 text-[11px] leading-5 text-ink-300">
@@ -324,7 +324,7 @@ import { useRoute, useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import type { AgentContext, AgentRecentRun, LessonDetail } from "@/types/api";
 import { AppButton, AppCard, CodeOutput, EmptyState, StatusPill, taskStatusMeta } from "@/components/ui";
-import { WorkspaceCoach } from "@/components/workspace";
+import { WorkspaceAssistant } from "@/components/workspace";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { WorkspaceCell } from "@/api/workspace";
 
@@ -361,17 +361,17 @@ const activeTask = computed(
     () => tasks.value.find((task) => task.taskId === activeTaskId.value) ?? null,
 );
 
-/** 教练看哪一格：优先聚焦格，否则当前任务所在格。 */
-const coachCellId = computed(
+/** 助手看哪一格：优先聚焦格，否则当前任务所在格。 */
+const assistantCellId = computed(
     () => activeCellId.value ?? activeTask.value?.cellId ?? null,
 );
 
-const coachCell = computed(
-    () => cells.value.find((cell) => cell.cellId === coachCellId.value) ?? null,
+const assistantCell = computed(
+    () => cells.value.find((cell) => cell.cellId === assistantCellId.value) ?? null,
 );
 
 /** 最近执行的摘要（最多 3 条）——只给定位信息，判定仍由服务端证据负责。 */
-const coachRecentRuns = computed<AgentRecentRun[]>(() => {
+const assistantRecentRuns = computed<AgentRecentRun[]>(() => {
     return Object.values(runs.value)
         .slice(-3)
         .map((run) => {
@@ -390,25 +390,25 @@ const coachRecentRuns = computed<AgentRecentRun[]>(() => {
         });
 });
 
-const coachContext = computed<AgentContext>(() => ({
+const assistantContext = computed<AgentContext>(() => ({
     currentLesson: slug.value,
     lessonTitle: lesson.value?.title ?? undefined,
     lessonCategory: lesson.value?.category,
     currentTask: activeTask.value?.taskId ?? undefined,
     sessionId: snapshot.value?.sessionId ?? undefined,
-    cellId: coachCellId.value ?? undefined,
+    cellId: assistantCellId.value ?? undefined,
     // 编辑器里的代码可能还没提交，服务端会据此判断"是否与最近一次提交一致"
-    currentCode: coachCell.value?.code ?? undefined,
-    recentRuns: coachRecentRuns.value,
+    currentCode: assistantCell.value?.code ?? undefined,
+    recentRuns: assistantRecentRuns.value,
 }));
 
-/** 当前格最近一次提交的断言结果，直接给教练做 ambient 证据卡。 */
-const coachAssertions = computed(() =>
-    coachCellId.value ? store.assertionsFor(coachCellId.value) : [],
+/** 当前格最近一次提交的断言结果，直接给助手做 ambient 证据卡。 */
+const assistantAssertions = computed(() =>
+    assistantCellId.value ? store.assertionsFor(assistantCellId.value) : [],
 );
 
 /** 当前任务是否已经有提交记录（决定空态问法是否提到"上次没通过"）。 */
-const coachHasSubmission = computed(() => {
+const assistantHasSubmission = computed(() => {
     const task = activeTask.value;
     if (!task) return false;
     return runs.value[task.cellId] !== undefined || task.status !== "todo";

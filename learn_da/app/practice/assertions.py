@@ -280,7 +280,7 @@ def parse_assertion_output(stdout: str) -> tuple[list[dict[str, Any]], str]:
 
 
 def summarize(results: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    """把断言结果压成一份给人看的摘要（喂 Coach / 前端失败卡片）。"""
+    """把断言结果压成一份给人看的摘要（喂 AI 助手 / 前端失败卡片）。"""
     items = list(results)
     failed = [item for item in items if item.get("status") != "passed"]
     return {

@@ -46,7 +46,7 @@
         <AppCard dense>
             <div class="flex items-center justify-between gap-2">
                 <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-300">
-                    AI 教练
+                    AI 助手
                 </h2>
                 <button
                     v-if="messages.length"
@@ -101,7 +101,7 @@
             <!-- 空态：给可点的具体问题，别让学习者自己想问什么 -->
             <div v-else class="mt-2 space-y-1.5">
                 <p class="text-xs leading-5 text-ink-500">
-                    我会看你最近一次提交的真实断言结果来回答，不会凭空猜你写了什么。
+                    {{ emptyHint }}
                 </p>
                 <button
                     v-for="suggestion in suggestions"
@@ -143,7 +143,7 @@
 
 <script setup lang="ts">
 // =====================================================
-// 工作区右栏教练（改版 E1）
+// 工作区右栏 AI 助手（改版 E1）
 //
 // 分档依据设计稿 §8.2，但 E1 只做两档：
 //   ambient  失败证据卡 —— 纯前端渲染 store 里的断言结果，0 请求 0 token；
@@ -151,7 +151,8 @@
 // ladder（按层给提示）需要 hint_usages 表与专用端点，留 E2。
 //
 // 刻意不做：让模型复述断言结果（ambient 已经直接显示，复述只会更慢更易错）、
-// 让模型改代码（用户已定「只解释不改代码」）。
+// 让模型改代码（用户已定「只解释不改代码」）、
+// 让模型规划"下一步练什么"（任务顺序由服务端任务列表权威给出，模型不该另出主意）。
 // =====================================================
 import { computed, nextTick, ref, watch } from "vue";
 import { AppButton, AppCard, StatusPill } from "@/components/ui";
@@ -190,9 +191,16 @@ const suggestions = computed(() => {
     if (failedAssertions.value.length) {
         list.push("这条断言为什么不通过？");
     }
-    list.push("下一步该练什么？");
+    list.push("这一步要用到哪些 API？");
     return list;
 });
+
+/** 空态引导语：没提交过就先说清"我为什么还看不到你的结果"。 */
+const emptyHint = computed(() =>
+    props.hasSubmission
+        ? "我会看你最近一次提交的真实断言结果来回答，不会凭空猜你写了什么。"
+        : "我还没有你的提交记录。先跑一遍当前格、提交任务，我就能对着真实断言结果回答。",
+);
 
 const listRef = ref<HTMLElement | null>(null);
 

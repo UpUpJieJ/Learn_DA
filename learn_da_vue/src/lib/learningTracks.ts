@@ -26,7 +26,7 @@ export const platformCopy = {
   heroTitle: "边学边练",
   heroTitleHighlight: "数据分析与编程实战",
   heroSubtitle:
-    "以数据分析为核心的学习平台，用课程、练习、Playground 和学习教练，把概念理解落到可运行的代码上。",
+    "以数据分析为核心的学习平台，用课程、练习、Playground 和 AI 助手，把概念理解落到可运行的代码上。",
   currentScope: "持续更新的数据分析课程与学习路径",
   expansionHint: "可按需扩展更多数据分析与编程主题。",
 };
