@@ -148,3 +148,24 @@ async def submit_task(
     except RunnerUnavailableError:
         return StdResp.error(msg="Execution service unavailable", code=503)
     return StdResp.success(data=result.model_dump(by_alias=True))
+
+
+@router.post("/sessions/{session_id}/tasks/{task_id}/hint")
+async def request_hint(
+    session_id: int,
+    task_id: str,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    service: WorkspaceService = Depends(get_service),
+):
+    """发放一层阶梯提示（ladder）。
+
+    请求体为空、也没有「要第几层」的参数：层级每次都由服务端按
+    「距上次提示的失败次数 + 已用层数」重算，所以客户端越层请求天然无效。
+    """
+    try:
+        payload = await service.request_hint(visitor_id, session_id, task_id)
+    except WorkspaceNotFound as exc:
+        return StdResp.not_found(msg=str(exc))
+    except WorkspaceContentError as exc:
+        return StdResp.error(msg=str(exc), code=400)
+    return StdResp.success(data=payload.model_dump(by_alias=True))

@@ -8,7 +8,8 @@
 # 覆盖内容（练习时代的三课 validator 冒烟已随旧链路下线，改为工作区端到端）：
 #   工作区建会话 -> 起步格真实执行 -> 起步代码提交判失败并回传实际断言值 ->
 #   参考解逐格执行 -> 两个任务提交通过 -> 提交幂等重放 -> 改上游格触发 stale ->
-#   进度/报告接口 -> 事件上报幂等 -> Agent 证据驱动教学反馈（含跨访客隔离）。
+#   进度/报告接口 -> 事件上报幂等 -> Agent 证据驱动教学反馈（含跨访客隔离）->
+#   分级提示（ladder）层级递增/封顶/越层无效。
 #
 # 注意：
 #   * 脚本会以全新匿名访客身份写入验收数据（会话、RunEvent、TaskAttempt、
@@ -366,6 +367,73 @@ if [ -n "$total1" ] && [ "$total1" = "$total2" ]; then
   ok "相同 eventId 重放不改变 totalCompleted（=$total2）"
 else
   bad "事件幂等" "重放前=$total1 重放后=$total2"
+fi
+
+# ---------- A12 分级提示（ladder）----------
+echo "[A12] 分级提示：层级由服务端按真实失败次数算，逐层加深并封顶"
+# 用一个全新访客 + 新会话，保证「零失败、零提示」的起点是确定的
+code=$(post_json /workspace/sessions "{\"lessonSlug\":\"$LESSON\"}" "$JAR_FRESH" "$WORK/session_hint.json")
+SID_H=$(json_path "$WORK/session_hint.json" data.sessionId)
+if [ "$code" = "200" ] && [ -n "$SID_H" ]; then
+  ok "为提示检查新建会话 sessionId=$SID_H"
+else
+  bad "提示用会话" "http=$code body=$(head -c 300 "$WORK/session_hint.json")"
+fi
+
+hint_levels=""
+hint_ok=1
+for round in 1 2 3 4; do
+  code=$(post_json "/workspace/sessions/$SID_H/tasks/t1/hint" '{}' "$JAR_FRESH" "$WORK/hint_$round.json")
+  level=$(json_path "$WORK/hint_$round.json" data.level)
+  used=$(json_path "$WORK/hint_$round.json" data.hintsUsed)
+  has_next=$(json_path "$WORK/hint_$round.json" data.hasNext)
+  content_len=$("$PY" -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1],encoding='utf-8')).get('data') or {}
+    print(len(d.get('content') or ''))
+except Exception:
+    print(0)" "$WORK/hint_$round.json")
+  hint_levels="$hint_levels$level "
+  if [ "$code" != "200" ] || [ "${content_len:-0}" -lt 20 ] 2>/dev/null; then
+    hint_ok=0
+    bad "第 $round 层提示" "http=$code level=$level content_len=$content_len body=$(head -c 300 "$WORK/hint_$round.json")"
+    break
+  fi
+  if [ "$round" = "4" ] && { [ "$level" != "3" ] || [ "$has_next" != "False" ]; }; then
+    hint_ok=0
+    bad "第 4 层提示应封顶" "level=$level hasNext=$has_next（期望 3/False）"
+  fi
+  if [ "$round" = "1" ] && { [ "$level" != "1" ] || [ "$used" != "1" ]; }; then
+    hint_ok=0
+    bad "零失败时的首层提示" "level=$level hintsUsed=$used（期望 1/1）"
+  fi
+done
+if [ "$hint_ok" = "1" ]; then
+  ok "层级随已用层数递增并封顶 3 层（实测序列：$hint_levels）"
+fi
+
+code=$(post_json "/workspace/sessions/$SID_H/tasks/t9/hint" '{}' "$JAR_FRESH" "$WORK/hint_unknown.json")
+# 项目约定：业务错误一律 HTTP 200 + body.code（StdResp.not_found），所以判 body 而不是 HTTP 状态
+unknown_code=$(json_path "$WORK/hint_unknown.json" code)
+if [ "$code" = "200" ] && [ "$unknown_code" = "404" ]; then
+  ok "不存在的任务要提示 -> body.code=404（StdResp 约定，HTTP 仍为 200）"
+else
+  bad "未知任务提示" "http=$code body.code=$unknown_code（期望 200/404）body=$(head -c 200 "$WORK/hint_unknown.json")"
+fi
+
+# 客户端不能自己指定层级：必须用**全新访客**，否则 get_or_create 会复用同一会话，
+# 之前要过的提示层数会被正确延续（那不是越层成功，是按访客累计）。
+JAR_FORGE="$WORK/cookies_forge.txt"
+: > "$JAR_FORGE"
+code=$(post_json /workspace/sessions "{\"lessonSlug\":\"$LESSON\"}" "$JAR_FORGE" "$WORK/session_forge.json")
+SID_F=$(json_path "$WORK/session_forge.json" data.sessionId)
+code=$(post_json "/workspace/sessions/$SID_F/tasks/t1/hint" '{"level":3}' "$JAR_FORGE" "$WORK/hint_forge.json")
+forged=$(json_path "$WORK/hint_forge.json" data.level)
+if [ "$code" = "200" ] && [ "$forged" = "1" ]; then
+  ok "客户端指定 level 被忽略（全新访客首层仍是 level=$forged，越层请求无效）"
+else
+  bad "越层请求" "http=$code level=$forged（期望服务端算出 1，客户端不能指定层级）"
 fi
 
 # ---------- 汇总 ----------

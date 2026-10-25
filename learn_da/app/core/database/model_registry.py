@@ -18,6 +18,7 @@ from app.learner_state.models import (  # noqa: F401
 )
 from app.practice.models import ExerciseAttempt  # noqa: F401
 from app.workspace.models import (  # noqa: F401
+    HintUsage,
     LessonSession,
     RunEvent,
     SessionCell,
@@ -37,4 +38,5 @@ __all__ = [
     "SessionCell",
     "RunEvent",
     "TaskAttempt",
+    "HintUsage",
 ]

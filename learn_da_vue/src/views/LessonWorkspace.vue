@@ -49,8 +49,8 @@
             <EmptyState
                 v-else-if="!snapshot"
                 title="这门课还没有可交互的工作区"
-                hint="当前只有样板课（Polars 分组聚合）支持多格任务式练习。"
-                cta="去课程列表"
+                hint="课程内容里没有 workspace 声明，暂时只能阅读正文。"
+                cta="去课程地图"
                 @action="router.push('/learn')"
             />
 
@@ -261,7 +261,7 @@
                     </AppCard>
                 </main>
 
-                <!-- 右栏：任务目标 + AI 助手入口 -->
+                <!-- 右栏：任务目标 + 分级提示 + AI 助手入口 -->
                 <aside class="space-y-4 lg:sticky lg:top-6">
                     <AppCard>
                         <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
@@ -281,26 +281,16 @@
                         <p v-else class="text-xs text-ink-300">
                             点一下任务或单元格，这里会显示任务目标。
                         </p>
-                    </AppCard>
 
-                    <AppCard>
-                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
-                            当前任务
-                        </h2>
-                        <template v-if="activeTask">
-                            <p class="text-sm font-medium text-ink-900">
-                                {{ activeTask.title }}
-                            </p>
-                            <p class="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-500">
-                                {{ activeTask.objective }}
-                            </p>
-                            <div class="mt-3">
-                                <StatusPill :status="activeTask.status" size="sm" />
-                            </div>
-                        </template>
-                        <p v-else class="text-xs text-ink-300">
-                            点一下任务或单元格，这里会显示任务目标。
-                        </p>
+                        <!-- 分级提示（ladder）：层级由服务端按真实失败次数算 -->
+                        <TaskHintPanel
+                            v-if="activeTask"
+                            class="mt-4"
+                            :task="activeTask"
+                            :hints="activeHints"
+                            :loading="hintingTaskId === activeTask.taskId"
+                            @request="askHint"
+                        />
                     </AppCard>
 
                     <WorkspaceAssistant
@@ -324,7 +314,7 @@ import { useRoute, useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import type { AgentContext, AgentRecentRun, LessonDetail } from "@/types/api";
 import { AppButton, AppCard, CodeOutput, EmptyState, StatusPill, taskStatusMeta } from "@/components/ui";
-import { WorkspaceAssistant } from "@/components/workspace";
+import { WorkspaceAssistant, TaskHintPanel } from "@/components/workspace";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { WorkspaceCell } from "@/api/workspace";
 
@@ -413,6 +403,17 @@ const assistantHasSubmission = computed(() => {
     if (!task) return false;
     return runs.value[task.cellId] !== undefined || task.status !== "todo";
 });
+
+/** 当前任务已经拿到的提示（本页内累积；刷新后只保留「已用几层」的计数）。 */
+const activeHints = computed(() =>
+    activeTask.value ? store.hintsFor(activeTask.value.taskId) : [],
+);
+
+const hintingTaskId = computed(() => store.hintingTaskId);
+
+async function askHint(taskId: string) {
+    await store.requestHint(taskId);
+}
 
 function load(lessonSlug: string) {
     activeCellId.value = null;

@@ -11,15 +11,17 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content_catalog import get_content_index
 
 from .content import WorkspaceSpec, load_workspace
-from .models import TaskAttempt
+from .hints import HintState, compute_level
+from .models import HintUsage, RunEvent, TaskAttempt
 
 
 def spec_for(lesson_slug: str) -> WorkspaceSpec | None:
@@ -129,8 +131,175 @@ class WorkspaceReadRepository:
             .limit(1)
         )
 
+    async def latest_run_payload(
+        self, visitor_id: str, session_id: int, cell_id: str
+    ) -> dict[str, Any] | None:
+        """该格最近一次执行的完整响应体（``RunEvent.payload``）。
+
+        提示文案需要「代码没跑通」时的真实报错——断言结果是 ``skipped``，
+        只有单元格的 ``stderr`` 里才有可读的原因（如 ``ColumnNotFoundError``）。
+        """
+        payload = (
+            await self.db.execute(
+                select(RunEvent.payload)
+                .where(
+                    RunEvent.visitor_id == visitor_id,
+                    RunEvent.session_id == session_id,
+                    RunEvent.cell_id == cell_id,
+                )
+                .order_by(RunEvent.created_time.desc(), RunEvent.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not payload:
+            return None
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
     async def progress(self, visitor_id: str) -> dict[str, Any]:
         """全量课程进度（复用 progress 模块的聚合口径）。"""
         from .progress import lesson_progress
 
         return await lesson_progress(self.db, visitor_id)
+
+    # ------------------------------------------------------------------
+    # 分级提示（ladder，改版 E2）
+    # ------------------------------------------------------------------
+
+    async def hint_usage_count(
+        self, visitor_id: str, lesson_slug: str, task_id: str
+    ) -> int:
+        """该任务已经发放过几层提示（服务端权威）。"""
+        total = (
+            await self.db.execute(
+                select(func.count())
+                .select_from(HintUsage)
+                .where(
+                    HintUsage.visitor_id == visitor_id,
+                    HintUsage.lesson_slug == lesson_slug,
+                    HintUsage.task_id == task_id,
+                )
+            )
+        ).scalar()
+        return int(total or 0)
+
+    async def last_hint_at(self, visitor_id: str, lesson_slug: str, task_id: str):
+        """该任务最后一次提示的时间（没有则 None）。"""
+        return (
+            await self.db.execute(
+                select(HintUsage.created_time)
+                .where(
+                    HintUsage.visitor_id == visitor_id,
+                    HintUsage.lesson_slug == lesson_slug,
+                    HintUsage.task_id == task_id,
+                )
+                .order_by(HintUsage.created_time.desc(), HintUsage.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+    async def failures_since(
+        self,
+        visitor_id: str,
+        lesson_slug: str,
+        task_id: str,
+        after,
+    ) -> int:
+        """该任务在给定时间点之后失败了几次（``after`` 为 None 时算全部）。"""
+        stmt = select(func.count()).select_from(TaskAttempt).where(
+            TaskAttempt.visitor_id == visitor_id,
+            TaskAttempt.lesson_slug == lesson_slug,
+            TaskAttempt.task_id == task_id,
+            TaskAttempt.status != "passed",
+        )
+        if after is not None:
+            stmt = stmt.where(TaskAttempt.created_time >= after)
+        total = (await self.db.execute(stmt)).scalar()
+        return int(total or 0)
+
+    async def hint_state(
+        self, visitor_id: str, lesson_slug: str, task_id: str
+    ) -> HintState:
+        """按设计稿公式算「这一次点提示能拿到第几层」。
+
+        ``level = min(3, 1 + failures_since_last_hint + hints_used)``
+        —— 失败次数来自 ``task_attempts``，已用层数来自 ``hint_usages``。
+        """
+        hints_used = await self.hint_usage_count(visitor_id, lesson_slug, task_id)
+        last_hint_at = await self.last_hint_at(visitor_id, lesson_slug, task_id)
+        failures = await self.failures_since(
+            visitor_id, lesson_slug, task_id, last_hint_at
+        )
+        return HintState(
+            task_id=task_id,
+            failures_since_last_hint=failures,
+            hints_used=hints_used,
+            level=compute_level(failures, hints_used),
+            last_hint_at=last_hint_at,
+        )
+
+    async def hint_states(
+        self, visitor_id: str, lesson_slug: str, task_ids: list[str]
+    ) -> dict[str, HintState]:
+        """一次算完一课所有任务的层级（快照用，避免逐任务查三次）。"""
+        if not task_ids:
+            return {}
+        wanted = set(task_ids)
+
+        used_rows = await self.db.execute(
+            select(HintUsage.task_id, func.count())
+            .where(
+                HintUsage.visitor_id == visitor_id,
+                HintUsage.lesson_slug == lesson_slug,
+                HintUsage.task_id.in_(wanted),
+            )
+            .group_by(HintUsage.task_id)
+        )
+        hints_used = {str(task): int(count) for task, count in used_rows.all()}
+
+        last_rows = await self.db.execute(
+            select(HintUsage.task_id, func.max(HintUsage.created_time))
+            .where(
+                HintUsage.visitor_id == visitor_id,
+                HintUsage.lesson_slug == lesson_slug,
+                HintUsage.task_id.in_(wanted),
+            )
+            .group_by(HintUsage.task_id)
+        )
+        last_hint = {str(task): stamp for task, stamp in last_rows.all()}
+
+        fail_rows = await self.db.execute(
+            select(TaskAttempt.task_id, func.count())
+            .where(
+                TaskAttempt.visitor_id == visitor_id,
+                TaskAttempt.lesson_slug == lesson_slug,
+                TaskAttempt.task_id.in_(wanted),
+                TaskAttempt.status != "passed",
+            )
+            .group_by(TaskAttempt.task_id)
+        )
+        all_failures = {str(task): int(count) for task, count in fail_rows.all()}
+
+        # 「上一次提示之后的失败次数」需要按时间切分，逐任务再查一次
+        # （任务数 ≤ 40，且只在带 hint 的课上发生，代价可接受）。
+        states: dict[str, HintState] = {}
+        for task_id in task_ids:
+            used = hints_used.get(task_id, 0)
+            after = last_hint.get(task_id)
+            if after is None:
+                failures = all_failures.get(task_id, 0)
+            else:
+                failures = await self.failures_since(
+                    visitor_id, lesson_slug, task_id, after
+                )
+            states[task_id] = HintState(
+                task_id=task_id,
+                failures_since_last_hint=failures,
+                hints_used=used,
+                level=compute_level(failures, used),
+                last_hint_at=after,
+            )
+        return states

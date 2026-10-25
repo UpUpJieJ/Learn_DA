@@ -26,6 +26,7 @@ from app.agent.prompts import (
 )
 from app.agent.schemas import AgentChatRequest, AgentContext, AgentRecentRun
 from app.agent.service import AgentService
+from app.workspace.hints import HintState, compute_level
 
 pytestmark = pytest.mark.anyio
 
@@ -192,11 +193,20 @@ class _Recorder:
         return LLMResult(content="回答", error_reason=None, latency_ms=1)
 
 
-def _service_with_evidence(completer: _Recorder, helps: int) -> AgentService:
-    """构造一个能算出 hint_level 的服务：证据带课程 slug，求助计数由 repo 给。"""
+def _service_with_evidence(
+    completer: _Recorder, failures: int, hints_used: int = 0
+) -> AgentService:
+    """构造一个能算出 hint_level 的服务。
+
+    改版 E2 起层级按任务失败次数算：证据带课程与任务，``workspace_repo``
+    给回对应的 ``HintState``（等价于数据库里「该任务失败了几次、已用几层」）。
+    """
 
     evidence = AgentLearningEvidence(
-        state="verification_failed", lesson_slug="polars-groupby", attempt_id=9
+        state="verification_failed",
+        lesson_slug="polars-groupby",
+        attempt_id=9,
+        task_id="t1",
     )
     interaction = MagicMock()
     interaction.id = 1
@@ -206,9 +216,18 @@ def _service_with_evidence(completer: _Recorder, helps: int) -> AgentService:
     repo = MagicMock()
     repo.get_or_create = AsyncMock(return_value=(interaction, True))
     repo.fill_metrics = AsyncMock()
-    repo.count_by_visitor_and_lesson = AsyncMock(return_value=helps)
 
-    service = AgentService(interaction_repo=repo)
+    workspace_repo = MagicMock()
+    workspace_repo.hint_state = AsyncMock(
+        return_value=HintState(
+            task_id="t1",
+            failures_since_last_hint=failures,
+            hints_used=hints_used,
+            level=compute_level(failures, hints_used),
+        )
+    )
+
+    service = AgentService(interaction_repo=repo, workspace_repo=workspace_repo)
     service._inject_evidence = AsyncMock(  # type: ignore[method-assign]
         return_value=(
             [
@@ -223,12 +242,13 @@ def _service_with_evidence(completer: _Recorder, helps: int) -> AgentService:
 
 
 @pytest.mark.parametrize(
-    ("helps", "level"),
-    [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (9, 3)],
+    ("failures", "level"),
+    [(0, 1), (1, 1), (2, 2), (3, 2), (4, 3), (9, 3)],
 )
-async def test_hint_level_reaches_the_model_prompt(helps: int, level: int):
+async def test_hint_level_reaches_the_model_prompt(failures: int, level: int):
+    """失败每两次升一级；连问概念问题（无失败）停在 L1。"""
     completer = _Recorder()
-    service = _service_with_evidence(completer, helps)
+    service = _service_with_evidence(completer, failures)
 
     await service.chat_with_tools(
         AgentChatRequest(message="这条断言为什么不通过"), visitor_id="v1"

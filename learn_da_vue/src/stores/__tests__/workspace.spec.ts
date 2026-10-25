@@ -6,6 +6,7 @@ const fetchSession = vi.fn();
 const updateCell = vi.fn();
 const runCellApi = vi.fn();
 const submitTaskApi = vi.fn();
+const requestHintApi = vi.fn();
 
 vi.mock("@/api/workspace", () => ({
     createSession: (...args: unknown[]) => createSession(...args),
@@ -13,6 +14,7 @@ vi.mock("@/api/workspace", () => ({
     updateCell: (...args: unknown[]) => updateCell(...args),
     runCell: (...args: unknown[]) => runCellApi(...args),
     submitTask: (...args: unknown[]) => submitTaskApi(...args),
+    requestHint: (...args: unknown[]) => requestHintApi(...args),
 }));
 
 import { useWorkspaceStore } from "@/stores/workspace";
@@ -51,6 +53,9 @@ function snapshot(overrides: Record<string, unknown> = {}) {
                 cellId: "c2",
                 objective: "聚合",
                 status: "todo",
+                hintLevel: 1,
+                hintsUsed: 0,
+                hintMaxLevel: 3,
             },
         ],
         datasets: ["ecommerce/orders.csv"],
@@ -113,6 +118,7 @@ describe("workspace store", () => {
         updateCell.mockReset();
         runCellApi.mockReset();
         submitTaskApi.mockReset();
+        requestHintApi.mockReset();
     });
 
     it("load 会创建会话并铺好格子与任务", async () => {
@@ -244,5 +250,124 @@ describe("workspace store", () => {
         expect(store.snapshot).toBeNull();
         expect(store.cells).toEqual([]);
         expect(store.saveState).toBe("idle");
+    });
+
+    it("requestHint 把服务端算出的层级追加到该任务并刷新任务进度", async () => {
+        createSession.mockResolvedValue(snapshot());
+        requestHintApi.mockResolvedValue({
+            taskId: "t1",
+            level: 1,
+            maxLevel: 3,
+            hintsUsed: 1,
+            content: "先对照 columns",
+            hasNext: true,
+        });
+        fetchSession.mockResolvedValue(
+            snapshot({ tasks: [{ ...snapshot().tasks[0], hintsUsed: 1, hintLevel: 1 }] }),
+        );
+        const store = useWorkspaceStore();
+        await store.load("polars-groupby");
+
+        const hint = await store.requestHint("t1");
+
+        expect(requestHintApi).toHaveBeenCalledWith(7, "t1");
+        expect(hint?.level).toBe(1);
+        expect(store.hintsFor("t1")).toHaveLength(1);
+        expect(store.tasks[0].hintsUsed).toBe(1);
+        expect(store.hintingTaskId).toBeNull();
+    });
+
+    it("连续要提示时层级由服务端递增，前端只照单全收", async () => {
+        createSession.mockResolvedValue(snapshot());
+        requestHintApi
+            .mockResolvedValueOnce({
+                taskId: "t1",
+                level: 1,
+                maxLevel: 3,
+                hintsUsed: 1,
+                content: "L1",
+                hasNext: true,
+            })
+            .mockResolvedValueOnce({
+                taskId: "t1",
+                level: 2,
+                maxLevel: 3,
+                hintsUsed: 2,
+                content: "L2",
+                hasNext: true,
+            });
+        fetchSession.mockResolvedValue(snapshot());
+        const store = useWorkspaceStore();
+        await store.load("polars-groupby");
+
+        await store.requestHint("t1");
+        await store.requestHint("t1");
+
+        expect(store.hintsFor("t1").map((item) => item.level)).toEqual([1, 2]);
+    });
+
+    it("requestHint 在已有请求在跑时直接返回 null", async () => {
+        createSession.mockResolvedValue(snapshot());
+        requestHintApi.mockImplementation(
+            () =>
+                new Promise((resolve) =>
+                    setTimeout(
+                        () =>
+                            resolve({
+                                taskId: "t1",
+                                level: 1,
+                                maxLevel: 3,
+                                hintsUsed: 1,
+                                content: "L1",
+                                hasNext: true,
+                            }),
+                        5,
+                    ),
+                ),
+        );
+        fetchSession.mockResolvedValue(snapshot());
+        const store = useWorkspaceStore();
+        await store.load("polars-groupby");
+
+        const first = store.requestHint("t1");
+        expect(store.hintingTaskId).toBe("t1");
+        expect(await store.requestHint("t1")).toBeNull();
+        await first;
+        expect(requestHintApi).toHaveBeenCalledTimes(1);
+        expect(store.hintingTaskId).toBeNull();
+    });
+
+    it("requestHint 失败时记录错误并复位 hinting 状态", async () => {
+        createSession.mockResolvedValue(snapshot());
+        requestHintApi.mockRejectedValue(new Error("提示服务不可用"));
+        const store = useWorkspaceStore();
+        await store.load("polars-groupby");
+
+        const hint = await store.requestHint("t1");
+
+        expect(hint).toBeNull();
+        expect(store.error).toBe("提示服务不可用");
+        expect(store.hintingTaskId).toBeNull();
+        expect(store.hintsFor("t1")).toEqual([]);
+    });
+
+    it("reset 清空提示记录", async () => {
+        createSession.mockResolvedValue(snapshot());
+        requestHintApi.mockResolvedValue({
+            taskId: "t1",
+            level: 1,
+            maxLevel: 3,
+            hintsUsed: 1,
+            content: "L1",
+            hasNext: true,
+        });
+        fetchSession.mockResolvedValue(snapshot());
+        const store = useWorkspaceStore();
+        await store.load("polars-groupby");
+        await store.requestHint("t1");
+
+        store.reset();
+        expect(store.hintsFor("t1")).toEqual([]);
+        expect(store.hintingTaskId).toBeNull();
     });
 });

@@ -870,3 +870,72 @@ A1 `/lessons` 13 门课 → A2 会话 cookie（`/workspace/progress` 触发签�
 
 - 7 个旧运行时依赖仍留在 `learn_da/pyproject.toml`（`aiomysql`、`databases`、`docker`、`python-magic`、`aiofiles`、`fastapi-utils`、`typing-inspect`），实测全项目零 import，属历史债。
 - `exercise_attempts` 表与 `CodeSnapshot` 表仍保留（数据留存），未做删除迁移。
+
+## 19. 分级提示（ladder，E2，2026-10-25）
+
+### 19.1 为什么先做这一块
+
+§8.2 原本写的是 `level = min(3, 1 + failures_since_last_hint + hints_used)`，但**实现里从来没有这张表，也没有按失败次数算**：`app/agent/service.py:_resolve_hint_level` 用的是 `interaction_repo.count_by_visitor_and_lesson` —— 即「在这个课程里问了几次」。两个方向都错：
+
+- 连问 5 个概念问题（根本没卡住）→ 直接 L3，拿到接近答案的提示；
+- 连续失败 5 次但一句话不问 → 永远 L1，真正卡住的人得不到帮助。
+
+`hint_usages` 表与 `POST /workspace/tasks/{id}/hint` 都不存在（`grep -rn "hint_usage\|HintUsage" --include=*.py` 只命中一条注释）。所以这一块既是补功能，也是**纠正一个错误的教学口径**。
+
+### 19.2 层级公式（两次实跑后修正）
+
+```
+level = min(3, 1 + hints_used + failures_since_last_hint // 2)
+```
+
+初版按 §8.2 直译成 `1 + failures + hints_used`，实跑发现**只有两级可用**：第一次失败点提示就是 L2（把学习者刚看到的实际值又说一遍），L1 形同虚设。改成「失败每两次折一级」后：失败 1 次先给 L1、连续失败 4 次到 L3；同时「连续失败 9 次不提问」仍能拿 L3，旧实现「真卡住的人拿不到帮助」的问题没有回来。封顶后再请求会显式承认「这已经是最后一层提示，再点也不会更深」，并建议把报错连同代码贴到右栏 AI 助手。
+
+### 19.3 文案：确定性生成，三层逐级加深
+
+`app/workspace/hints.py:build_hint_content(level, task_title, task_objective, assertions, execution_failure, hints_used)`：
+
+| 层 | 披露什么 | 不披露什么 |
+|---|---|---|
+| L1 | 现象 + 服务端判定的失败断言标题；代码报错时点名「取不到的那个列」 | 常见原因、API 名称、改法 |
+| L2 | L1 + 常见原因 + 可以查的 API 名称（`.alias(...)`、`pl.col("列名")` 等） | 具体改法、完整语句 |
+| L3 | L2 + 「要改的地方」一句话（如「把 `revenue` 换成上一步真实存在的列名」） | 整格可提交代码（测试逐行断言非列表行不含 `=`） |
+
+**始终不调模型**：三层披露边界固定，不会因为模型发挥而泄题。这与 §8.3 动作白名单（用户 2026-10-23 已否掉「AI 改代码」）一致。
+
+### 19.4 代码没跑通时必须读真实 stderr
+
+首轮实跑发现提示完全无用：单元格抛 `ColumnNotFoundError: "revenue" not found`，但断言全是 `skipped`、`detail` 只有「前面的单元格未全部执行成功，断言未求值」，提示照抄了这句话。修复：
+
+- `WorkspaceReadRepository.latest_run_payload(visitor_id, session_id, cell_id)` 从 `RunEvent.payload` 取该格最近一次执行的完整响应体；
+- `WorkspaceService._latest_run_failure()` 取第一个非 success 单元格的 `stderr.splitlines()[-1]`（traceback 末行 = 异常摘要，信息量最大）；
+- `hints.normalize_error()` 折叠重复异常前缀（真实末行是 `ColumnNotFoundError: polars.exceptions.ColumnNotFoundError: unable to find column ...`），并解析 `valid columns: [...]` 告诉学习者此刻真正能用的列；
+- 断言全 `skipped` 时**不再输出「还没通过的断言」**这类噪音。
+
+### 19.5 API 与表
+
+- `POST /api/v1/workspace/sessions/{sessionId}/tasks/{taskId}/hint`（无请求体）→ `{taskId, level, maxLevel, hintsUsed, content, hasNext}`。
+- **客户端没有「要第几层」的参数**：每次请求重算 level，越层请求天然无效（验收 A12 用全新访客塞 `level: 3` 验证首层仍是 L1）。
+- `hint_usages`（迁移 `b9c2e5a17f03`）：`session_id` / `visitor_id` / `lesson_slug` / `task_id` / `level` / `failures_at_hint` / `content`；`failures_at_hint` 仅供事后核对，不参与计算。
+- `SessionSnapshot.tasks[*]` 新增 `hintLevel` / `hintsUsed` / `hintMaxLevel`，刷新后仍能显示「已用 x/3 层」。
+- Agent 侧 `service._resolve_hint_level` 改读 `WorkspaceReadRepository.hint_state`，与阶梯提示同口径；无任务级证据（无 lesson/task）时降级用 history 估算。
+
+### 19.6 前端
+
+`learn_da_vue/src/components/workspace/TaskHintPanel.vue`（右栏「当前任务」卡内）：显示「已用 x/3 层」、按钮随进度变「给点提示 / 再要一层提示」、按层渲染（`L1/L2/L3` 药丸 + Markdown 正文 + 「最后一层」标记）。刷新后历史提示不重复显示，但会说明原因并引导再要一层。同时**删掉右栏重复的第二张「当前任务」卡**（原 266–284 与 286–304 行内容完全相同）。
+
+### 19.7 实测
+
+| 项目 | 结果 |
+|---|---|
+| 后端 pytest | **471 passed**（442 + 提示 28 等净值） |
+| 前端 vitest | **127 passed（17 文件）** |
+| Runner pytest | 39 passed |
+| `vue-tsc --build` / `npm run lint:ui` | 通过（59 文件 / 基线 14 处） |
+| `deploy/acceptance.sh` | **23 PASS / 0 FAIL**（新增 A12：序列「1 2 3 3」、未知任务 `body.code=404`、越层请求被忽略） |
+| 真实链路 | 故意写错 c2 → L1 只点名缺列、L2 加原因与 API、L3 给「要改的地方」、第 4 次承认已封顶 |
+
+### 19.8 未做
+
+- 真 SSE（§8 的流式；实测一次提问 12.6 秒，只影响「看得见进展」，不影响正确性）。
+- `frame_equal` / `sql_rows` 的 refs 管线（`app/workspace/service.py` 仍是 `"refs": {}` 硬编码；13 课 139 条断言里有 20 条靠手写魔数）。
+- 动作白名单（用户已否）。

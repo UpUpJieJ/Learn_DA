@@ -28,11 +28,14 @@ from .content import (
     load_workspace,
     runtime_source,
 )
-from .models import LessonSession, RunEvent, SessionCell, TaskAttempt
+from .hints import HINT_MAX_LEVEL, HintState, build_hint_content
+from .models import HintUsage, LessonSession, RunEvent, SessionCell, TaskAttempt
+from .repository import WorkspaceReadRepository
 from .schemas import (
     AssertionResult,
     CellPayload,
     CellRunResult,
+    HintPayload,
     RunResponse,
     SessionSnapshot,
     TaskPayload,
@@ -185,6 +188,7 @@ class WorkspaceService:
             latest[attempt.task_id] = attempt
 
         by_id = {cell.cell_id: cell for cell in cells}
+        hint_states = await self._hint_states(session, spec)
         task_payloads: list[TaskPayload] = []
         for task in spec.tasks:
             cell = by_id.get(task.cell_id)
@@ -200,6 +204,7 @@ class WorkspaceService:
                     status = "failed"
                 elif attempt.status == "skipped":
                     status = "skipped"
+            hint = hint_states.get(task.task_id)
             task_payloads.append(
                 TaskPayload(
                     task_id=task.task_id,
@@ -207,6 +212,9 @@ class WorkspaceService:
                     cell_id=task.cell_id,
                     objective=task.objective,
                     status=status,
+                    hint_level=hint.level if hint else 1,
+                    hints_used=hint.hints_used if hint else 0,
+                    hint_max_level=HINT_MAX_LEVEL,
                 )
             )
 
@@ -249,6 +257,127 @@ class WorkspaceService:
                     cell.status = "stale"
         await self._commit()
         return await self.snapshot(visitor_id, session_id)
+
+    # ------------------------------------------------------------------
+    # 分级提示（ladder，改版 E2）
+    # ------------------------------------------------------------------
+
+    async def _hint_states(
+        self, session: LessonSession, spec: WorkspaceSpec
+    ) -> dict[str, HintState]:
+        repo = WorkspaceReadRepository(self.db)
+        return await repo.hint_states(
+            session.visitor_id,
+            session.lesson_slug,
+            [task.task_id for task in spec.tasks],
+        )
+
+    async def _task_hint_state(
+        self, session: LessonSession, task_id: str
+    ) -> HintState:
+        repo = WorkspaceReadRepository(self.db)
+        return await repo.hint_state(session.visitor_id, session.lesson_slug, task_id)
+
+    async def _latest_assertions(
+        self, session: LessonSession, task_id: str
+    ) -> list[dict[str, Any]]:
+        """最近一次提交的断言结果（给提示文案用；没有记录时为空）。"""
+        repo = WorkspaceReadRepository(self.db)
+        attempt = await repo.latest_attempt(
+            session.visitor_id, session.lesson_slug, task_id
+        )
+        if attempt is None:
+            return []
+        try:
+            parsed = json.loads(attempt.assertions or "[]")
+        except json.JSONDecodeError:
+            return []
+        return [item for item in parsed if isinstance(item, dict)]
+
+    async def _latest_run_failure(
+        self, session: LessonSession, spec: WorkspaceSpec, task: WorkspaceTask
+    ) -> str:
+        """该任务最后一次执行失败时的真实报错（没有则空串）。
+
+        断言结果在「代码没跑通」时全是 ``skipped``，detail 只有「断言未求值」，
+        对学习者毫无信息量。真正的可读原因在单元格的 ``stderr`` 里
+        （``ColumnNotFoundError: "revenue" not found`` 之类），所以这里把最近
+        一次执行里第一个非 success 单元格的 ``errorType`` + ``stderr`` 首行取回来。
+        """
+        repo = WorkspaceReadRepository(self.db)
+        cell_id = task.cell_id
+        payload = await repo.latest_run_payload(session.visitor_id, session.id, cell_id)
+        if payload is None:
+            return ""
+        for item in payload.get("cells") or []:
+            if str(item.get("cellId") or "") != cell_id:
+                continue
+            if str(item.get("status") or "") == "success":
+                return ""
+            error_type = str(item.get("errorType") or "").strip()
+            stderr = str(item.get("stderr") or "").strip()
+            # traceback 的末行是异常摘要（`ColumnNotFoundError: unable to find
+            # column "revenue"; valid columns: [...]`），比首行信息量大得多；
+            # 单独取末行交给 hints.normalize_error 去重，不要在这里拼类名，
+            # 否则会得到「X：X: ...」这种重复。
+            summary = stderr.splitlines()[-1].strip() if stderr else ""
+            if not summary:
+                return error_type[:300]
+            if error_type and not summary.lower().startswith(error_type.lower()):
+                summary = f"{error_type}: {summary}"
+            return summary[:300]
+        return ""
+
+    async def request_hint(
+        self, visitor_id: str, session_id: int, task_id: str
+    ) -> HintPayload:
+        """发放一层提示。
+
+        层级由服务端按「距上次提示的失败次数 + 已用层数」算出（见 hints.py），
+        每次都重新算而不是让调用方指定层级——越层请求因此天然无效：
+        客户端拿不到「给到第几层」的参数，只能一遍遍要下一层。
+        """
+        session = await self._session(visitor_id, session_id)
+        spec = self.spec(session.lesson_slug)
+        try:
+            task = spec.task(task_id)
+        except WorkspaceContentError as exc:
+            raise WorkspaceNotFound(str(exc)) from exc
+
+        state = await self._task_hint_state(session, task.task_id)
+        assertions = await self._latest_assertions(session, task.task_id)
+        failure = await self._latest_run_failure(session, spec, task)
+        content = build_hint_content(
+            state.level,
+            task_title=task.title,
+            task_objective=task.objective,
+            assertions=assertions,
+            execution_failure=failure,
+            hints_used=state.hints_used,
+        )
+
+        self.db.add(
+            HintUsage(
+                visitor_id=session.visitor_id,
+                session_id=session.id,
+                lesson_slug=session.lesson_slug,
+                task_id=task.task_id,
+                level=state.level,
+                failures_at_hint=state.failures_since_last_hint,
+                content=content,
+            )
+        )
+        await self._commit()
+
+        hints_used = state.hints_used + 1
+        return HintPayload(
+            task_id=task.task_id,
+            level=state.level,
+            max_level=HINT_MAX_LEVEL,
+            hints_used=hints_used,
+            content=content,
+            has_next=state.level < HINT_MAX_LEVEL,
+        )
 
     # ------------------------------------------------------------------
     # 执行

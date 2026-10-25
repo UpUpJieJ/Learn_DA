@@ -23,6 +23,12 @@ export interface WorkspaceTask {
     cellId: string;
     objective: string;
     status: TaskStatus;
+    /** 下一次点「给点提示」能拿到的层级（服务端按真实失败次数算） */
+    hintLevel: number;
+    /** 该任务已经用过几层提示 */
+    hintsUsed: number;
+    /** 层级上限（当前固定 3） */
+    hintMaxLevel: number;
 }
 
 export interface SessionSnapshot {
@@ -95,6 +101,24 @@ export function submitTask(sessionId: number, taskId: string, requestId: string)
         `${BASE}/${sessionId}/tasks/${taskId}/submit`,
         { requestId },
         { timeout: 60000 },
+    );
+}
+
+/** 分层提示（ladder）：请求体为空，层级由服务端每次重算，客户端无法指定。 */
+export interface HintResponse {
+    taskId: string;
+    level: number;
+    maxLevel: number;
+    hintsUsed: number;
+    content: string;
+    hasNext: boolean;
+}
+
+export function requestHint(sessionId: number, taskId: string) {
+    return post<HintResponse>(
+        `${BASE}/${sessionId}/tasks/${taskId}/hint`,
+        {},
+        { timeout: 30000 },
     );
 }
 

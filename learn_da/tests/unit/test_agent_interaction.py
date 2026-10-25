@@ -426,31 +426,69 @@ class TestServiceFeedbackAndAiHelp:
 
 
 # =====================================================
-# hint level：服务端真实连续求助计数
+# hint level：服务端真实任务失败计数（改版 E2 起与阶梯提示同口径）
 # =====================================================
 
 
 class TestResolveHintLevel:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("helps,expected", [(1, 1), (2, 1), (3, 2), (4, 2), (5, 3), (9, 3)])
-    async def test_level_from_server_help_count(
-        self, interaction_setup, helps, expected
-    ):
-        """1-2 次求助 -> L1，3-4 次 -> L2，5+ -> L3（以服务端计数为准）。"""
+    @pytest.mark.parametrize(
+        "failures,expected", [(0, 1), (1, 1), (2, 2), (3, 2), (4, 3), (7, 3)]
+    )
+    async def test_level_from_task_failures(self, failures, expected):
+        """level = min(3, 1 + hints_used + failures // 2)，失败每两次升一级。"""
         from app.agent.evidence import AgentLearningEvidence
         from app.agent.schemas import AgentChatRequest
         from app.agent.service import AgentService
+        from app.workspace.hints import HintState, compute_level
 
-        repo, db = interaction_setup
-        for i in range(helps):
+        workspace_repo = MagicMock()
+        workspace_repo.hint_state = AsyncMock(
+            return_value=HintState(
+                task_id="t1",
+                failures_since_last_hint=failures,
+                hints_used=0,
+                level=compute_level(failures, 0),
+            )
+        )
+        service = AgentService(workspace_repo=workspace_repo)
+        evidence = AgentLearningEvidence(
+            state="verification_failed", lesson_slug="l1", task_id="t1"
+        )
+        payload = AgentChatRequest(message="帮我")
+        assert await service._resolve_hint_level(payload, "v1", evidence) == expected
+        workspace_repo.hint_state.assert_awaited_once_with("v1", "l1", "t1")
+
+    @pytest.mark.asyncio
+    async def test_asking_more_questions_does_not_raise_the_level(
+        self, interaction_setup
+    ):
+        """反例回归：旧口径按「问了几次」算，连问 5 次就给到 L3。
+
+        改版 E2 起层级只看任务失败次数与已用层数——问 5 个概念问题但一次
+        都没失败，仍然停在 L1。
+        """
+        from app.agent.evidence import AgentLearningEvidence
+        from app.agent.schemas import AgentChatRequest
+        from app.agent.service import AgentService
+        from app.workspace.hints import HintState
+
+        repo, _ = interaction_setup
+        for i in range(5):
             await repo.get_or_create(
                 visitor_id="v1", request_id=f"req-{i}", lesson_slug="l1"
             )
 
-        service = AgentService(interaction_repo=repo)
-        evidence = AgentLearningEvidence(state="execution_failed", lesson_slug="l1")
+        workspace_repo = MagicMock()
+        workspace_repo.hint_state = AsyncMock(
+            return_value=HintState(task_id="t1", level=1)
+        )
+        service = AgentService(interaction_repo=repo, workspace_repo=workspace_repo)
+        evidence = AgentLearningEvidence(
+            state="verification_failed", lesson_slug="l1", task_id="t1"
+        )
         payload = AgentChatRequest(message="帮我")
-        assert await service._resolve_hint_level(payload, "v1", evidence) == expected
+        assert await service._resolve_hint_level(payload, "v1", evidence) == 1
 
     @pytest.mark.asyncio
     async def test_fallback_to_history_without_lesson(self, interaction_setup):
@@ -475,20 +513,23 @@ class TestResolveHintLevel:
         from app.agent.schemas import AgentChatRequest
         from app.agent.service import AgentService
 
-        repo = MagicMock()
-        repo.count_by_visitor_and_lesson = AsyncMock(side_effect=RuntimeError("db"))
-        service = AgentService(interaction_repo=repo)
-        evidence = AgentLearningEvidence(state="execution_failed", lesson_slug="l1")
+        workspace_repo = MagicMock()
+        workspace_repo.hint_state = AsyncMock(side_effect=RuntimeError("db"))
+        service = AgentService(workspace_repo=workspace_repo)
+        evidence = AgentLearningEvidence(
+            state="verification_failed", lesson_slug="l1", task_id="t1"
+        )
         payload = AgentChatRequest(message="帮我")
         assert await service._resolve_hint_level(payload, "v1", evidence) == 1
 
     @pytest.mark.asyncio
     async def test_chat_persists_server_side_hint_level(self):
-        """chat() 写入的 hint_level 来自服务端计数，而非客户端 history。"""
+        """chat() 写入的 hint_level 来自服务端任务失败计数，而非客户端 history。"""
         from app.agent.llm_client import LLMResult
         from app.agent.schemas import AgentChatRequest
         from app.agent.service import AgentService
         from app.utils.logger import request_id_var
+        from app.workspace.hints import HintState
 
         interaction = AgentInteraction()
         interaction.id = 1
@@ -498,10 +539,13 @@ class TestResolveHintLevel:
         repo = MagicMock()
         repo.get_or_create = AsyncMock(return_value=(interaction, True))
         repo.fill_metrics = AsyncMock()
-        # 服务端已有 3 次求助 -> L2；客户端 history 为空（若信 history 会得 L1）
-        repo.count_by_visitor_and_lesson = AsyncMock(return_value=3)
 
-        service = AgentService(interaction_repo=repo)
+        # 服务端记录该任务失败 1 次 -> L2；客户端 history 为空（若信 history 会得 L1）
+        workspace_repo = MagicMock()
+        workspace_repo.hint_state = AsyncMock(
+            return_value=HintState(task_id="t1", failures_since_last_hint=1, level=2)
+        )
+        service = AgentService(interaction_repo=repo, workspace_repo=workspace_repo)
         service._retrieve_knowledge = AsyncMock(return_value=("", 0))  # type: ignore[method-assign]
         service._inject_evidence = AsyncMock(  # type: ignore[method-assign]
             side_effect=lambda messages, payload, visitor_id: _with_evidence(messages)
@@ -527,6 +571,6 @@ def _with_evidence(messages):
     from app.agent.evidence import AgentLearningEvidence
 
     evidence = AgentLearningEvidence(
-        state="execution_failed", lesson_slug="l1", attempt_id=1
+        state="execution_failed", lesson_slug="l1", attempt_id=1, task_id="t1"
     )
     return messages, evidence

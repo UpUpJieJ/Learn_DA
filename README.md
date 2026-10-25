@@ -14,7 +14,7 @@
 - **任务式工作区**：每门课是一个多单元格工作区（读数据 → 逐步加工 → 提交任务），提交时由服务端断言判定对错，失败会回传实际值帮你定位；结果依赖上游，改了上游会标「结果已过期」。
 - **实验室（`/lab`）**：自由沙盒，不挂课程数据、不判定，用来随手试代码；`Ctrl/⌘+Enter` 运行。
 - **学习报告（`/report`）**：只用真实提交记录计算——已通过任务、完成课程、连续学习、能力分布、常见卡点、最近提交。
-- **AI 助手**：工作区右栏的助手会直接列出「这次没通过的断言 + 实际值」（不经过模型），也能带着当前任务上下文对话；分级提示（L1/L2/L3）由服务端按求助次数决定并写进 prompt。
+- **AI 助手**：工作区右栏的助手会直接列出「这次没通过的断言 + 实际值」（不经过模型），也能带着当前任务上下文对话；分级提示（L1/L2/L3）由服务端按真实失败次数算，可直接在右栏领取，逐层加深但不给整格答案。
 - **安全执行策略**：代码执行只走独立 Runner 服务，默认在无网络、只读文件系统、非 root、带内存/CPU/进程数与超时限制的一次性容器里运行；Runner 不可用时后端明确返回 503，不回退本地执行。
 - **无登录本地模式**：无需账号即可使用核心功能；学习进度以服务端匿名会话为准，界面偏好与工作区草稿另存当前浏览器本地。
 
@@ -271,18 +271,21 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 > 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**助手已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`），非流式（「正在思考…」→ 整段落地）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）与 §17（E1）。
 
 - **学习证据驱动**（阶段 3 / 改版 E0）：Agent 的判断完全基于服务端数据库证据
-  —— 有 `workspace:` 的课读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的
-  `actual`），历史课回落到 ExerciseAttempt，客户端自报的 stdout/stderr 不作为
-  事实来源。证据里带任务进度（`0/3 已通过`）、当前未通过任务、失败断言的实际值，
-  所以模型能说清「哪条断言、为什么」而不是泛泛而谈。每次回答附带结构化
-  `teachingFeedback`（五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
+  —— 读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的 `actual`），
+  客户端自报的 stdout/stderr 不作为事实来源；没有工作区记录的课直接返回「暂无证据」，
+  不再回落到已下线的练习表。证据里带任务进度（`0/3 已通过`）、当前未通过任务、
+  失败断言的实际值，所以模型能说清「哪条断言、为什么」而不是泛泛而谈。每次回答
+  附带结构化 `teachingFeedback`（五态 + 下一步动作 + 分级提示），LLM 不得覆盖服务端权威字段。
 - **工作区内的两档介入**（改版 E1）：
   - **环境提示（ambient）**：提交失败后右栏直接列出「这次没通过的断言 + 实际值」，
     数据来自前端已有的执行结果，**不经过模型、不耗 token**，所以永远与判定一致。
   - **对话**：带着当前课程/任务/单元格/最近三次执行提问；空态给具体建议而不是空白输入框。
-- **分级提示真的进 prompt**：服务端按「同课程求助次数」算出 L1/L2/L3 后，
-  以一条 system 指令插入（L1 只指方向 / L2 可说 API 名但不给完整语句 / L3 可给一行关键写法），
-  模型不再自己对所有人用同一套口吻。
+- **分级提示（ladder，改版 E2）**：右栏「当前任务」卡里可以直接要提示，层级由服务端按
+  **真实失败次数**算（`level = min(3, 1 + 已用层数 + 失败次数 // 2)`），落 `hint_usages` 表。
+  L1 只指方向、L2 加常见原因与可查 API、L3 指出「要改的地方」，**三层都不给整格可提交代码**；
+  代码没跑通时提示读的是单元格真实 stderr（含报错里的 `valid columns`），不会拿
+  「断言未求值」当结论。客户端没有「要第几层」的参数，越层请求天然无效。
+  同一层级也会以 system 指令进对话 prompt，模型不再对所有人用同一套口吻。
 - **模型不可用就明说不可用**：LLM 调用失败时返回「AI 助手暂时不可用（模型调用失败），
   这次我不会编造回答」，并说明 `teachingFeedback` 仍是服务端权威结果——不再用预置
   话术伪装成回答。
@@ -368,6 +371,7 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 | `PUT` | `/api/v1/workspace/sessions/{id}/cells/{cellId}` | 改代码（后续格子级联失效） |
 | `POST` | `/api/v1/workspace/sessions/{id}/cells/{cellId}/run` | 重放式执行到该格（`requestId` 幂等） |
 | `POST` | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/submit` | 提交任务（落 `task_attempts`，返回断言明细） |
+| `POST` | `/api/v1/workspace/sessions/{id}/tasks/{taskId}/hint` | 领取一层分级提示（层级由服务端按失败次数算，落 `hint_usages`） |
 | `GET` | `/api/v1/workspace/progress` | 课程级进度（课程地图用） |
 | `GET` | `/api/v1/workspace/report` | 学习报告（指标 / 能力分布 / 常见卡点 / 最近提交） |
 

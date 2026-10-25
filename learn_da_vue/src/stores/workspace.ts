@@ -3,10 +3,12 @@ import { defineStore } from "pinia";
 import {
     createSession,
     fetchSession,
+    requestHint as requestHintApi,
     runCell as runCellApi,
     submitTask as submitTaskApi,
     updateCell as updateCellApi,
     type AssertionResult,
+    type HintResponse,
     type RunResponse,
     type SessionSnapshot,
 } from "@/api/workspace";
@@ -27,6 +29,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const runs = ref<Record<string, CellRunView>>({});
     const runningCellId = ref<string | null>(null);
     const submittingTaskId = ref<string | null>(null);
+    /** 正在要提示的任务（避免连点同时发两次） */
+    const hintingTaskId = ref<string | null>(null);
+    /** 每个任务已经拿到的提示（按层累积，新到旧） */
+    const hints = ref<Record<string, HintResponse[]>>({});
     const saveState = ref<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
 
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -154,16 +160,49 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         return runs.value[cellId]?.assertions ?? [];
     }
 
+    function hintsFor(taskId: string): HintResponse[] {
+        return hints.value[taskId] ?? [];
+    }
+
+    /**
+     * 要一层提示。
+     *
+     * 层级完全由服务端按「距上次提示的失败次数 + 已用层数」算，前端不传层级，
+     * 所以越层请求天然无效；拿到后把该任务的任务状态刷新（hintsUsed 会变）。
+     */
+    async function requestHint(taskId: string) {
+        const sessionId = snapshot.value?.sessionId;
+        if (!sessionId || hintingTaskId.value) return null;
+        hintingTaskId.value = taskId;
+        error.value = null;
+        try {
+            const hint = await requestHintApi(sessionId, taskId);
+            hints.value = {
+                ...hints.value,
+                [taskId]: [...(hints.value[taskId] ?? []), hint],
+            };
+            if (snapshot.value) await refresh(sessionId);
+            return hint;
+        } catch (err) {
+            error.value = err instanceof Error ? err.message : "获取提示失败";
+            return null;
+        } finally {
+            hintingTaskId.value = null;
+        }
+    }
+
     function reset() {
         for (const timer of timers.values()) clearTimeout(timer);
         timers.clear();
         pendingCode = new Map();
         snapshot.value = null;
         runs.value = {};
+        hints.value = {};
         error.value = null;
         saveState.value = "idle";
         runningCellId.value = null;
         submittingTaskId.value = null;
+        hintingTaskId.value = null;
     }
 
     return {
@@ -171,8 +210,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         loading,
         error,
         runs,
+        hints,
         runningCellId,
         submittingTaskId,
+        hintingTaskId,
         saveState,
         tasks,
         cells,
@@ -181,6 +222,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         allPassed,
         taskForCell,
         assertionsFor,
+        hintsFor,
         load,
         refresh,
         editCell,
@@ -188,6 +230,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         flushAll,
         runCell,
         submitTask,
+        requestHint,
         reset,
     };
 });

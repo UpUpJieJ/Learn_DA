@@ -474,7 +474,7 @@ class AgentService:
     def _estimate_hint_level(payload: AgentChatRequest) -> int:
         """降级路径：用客户端 history 的 user 消息数估算分级提示层级。
 
-        仅在服务端连续求助计数不可用（无 repo/身份/课程，或查询失败）
+        仅在服务端任务失败计数不可用（无 repo/身份/课程/任务，或查询失败）
         时作为近似；权威来源见 _resolve_hint_level。
         0-1 条 -> Level 1，2-3 条 -> Level 2，4+ 条 -> Level 3。
         """
@@ -487,22 +487,30 @@ class AgentService:
         visitor_id: str | None,
         evidence: AgentLearningEvidence | None,
     ) -> int:
-        """分级提示层级：优先服务端真实连续求助计数。
+        """分级提示层级：按服务端真实失败次数算，不再数「问了几次」。
 
-        AgentInteraction 已持久化，按当前课程统计服务端求助次数（含本次
-        已预留的交互）：1-2 次 -> Level 1，3-4 次 -> Level 2，5+ -> Level 3。
-        不再信任客户端 history（可被伪造/清空）。
+        改版 E2 起与阶梯提示同一口径：
+        ``level = min(3, 1 + failures_since_last_hint + hints_used)``
+        —— 失败次数来自 ``task_attempts``（任务级），已用层数来自
+        ``hint_usages``。旧口径（按该课提问次数 1-2/3-4/5+）有双向错误：
+        连问几个概念问题就升到 L3（没卡住的人拿到近答案），而连续失败却
+        从不提问的人永远停在 L1（真卡住的人拿不到有效帮助）。
+
+        无任务级证据（无 repo/身份/课程/任务，或查询失败）时降级为
+        history 估算。
         """
         lesson_slug = evidence.lesson_slug if evidence else None
-        if self.interaction_repo is not None and visitor_id and lesson_slug:
+        task_id = (evidence.task_id if evidence else None) or (
+            payload.context.current_task if payload.context else None
+        )
+        if self.workspace_repo is not None and visitor_id and lesson_slug and task_id:
             try:
-                helps = await self.interaction_repo.count_by_visitor_and_lesson(
-                    visitor_id, lesson_slug
+                state = await self.workspace_repo.hint_state(
+                    visitor_id, lesson_slug, task_id
                 )
-                if helps > 0:
-                    return max(1, min(3, 1 + (helps - 1) // 2))
+                return state.level
             except Exception:
-                log.exception("[agent] 求助计数查询失败，降级为 history 估算")
+                log.exception("[agent] 任务失败计数查询失败，降级为 history 估算")
         return self._estimate_hint_level(payload)
 
     def _maybe_feedback(

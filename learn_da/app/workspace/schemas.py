@@ -48,6 +48,11 @@ class TaskPayload(_CamelModel):
     cell_id: str
     objective: str = ""
     status: Literal["todo", "passed", "failed", "skipped"] = "todo"
+    # 分级提示进度（改版 E2）：下一次点「给点提示」能拿到的层级，
+    # 与已用层数。全部由服务端按真实失败次数算出，前端只展示。
+    hint_level: int = 1
+    hints_used: int = 0
+    hint_max_level: int = 3
 
 
 class AssertionResult(_CamelModel):
@@ -81,6 +86,19 @@ class RunResponse(_CamelModel):
     task_status: Literal["passed", "failed", "skipped"] | None = None
     duration_ms: int = 0
     error: str = ""
+
+
+class HintPayload(_CamelModel):
+    """一次分级提示（ladder）的发放结果。"""
+
+    task_id: str
+    level: int = 1
+    max_level: int = 3
+    hints_used: int = 0
+    # 这一层给出去的确定性提示正文（不含模型输出）
+    content: str = ""
+    # 还能不能继续要下一层（到顶后为 False）
+    has_next: bool = True
 
 
 class SessionSnapshot(_CamelModel):

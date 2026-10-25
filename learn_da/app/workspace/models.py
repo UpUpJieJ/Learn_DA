@@ -120,3 +120,37 @@ class TaskAttempt(BaseModel):
     __table_args__ = (
         Index("ix_attempt_session_task", "session_id", "task_id"),
     )
+
+
+class HintUsage(BaseModel):
+    """一次分级提示的发放记录（改版 E2 的 ladder 档）。
+
+    层级由服务端按**真实失败次数**算出来（见 ``app/workspace/hints.py``），
+    这张表是「已经给到第几层」的唯一凭据：没有它就退回到按提问次数估算，
+    会出现「连问 5 个概念问题直接拿到 L3」这种没卡住却拿到近答案的情况。
+
+    记 ``failures_at_hint`` 是为了事后核对层级是否算对（诊断用），
+    不参与计算——计算只依赖「上一次提示之后失败了几次」。
+    """
+
+    __tablename__ = "hint_usages"
+
+    visitor_id = Column(String(64), index=True, nullable=False)
+    session_id = Column(
+        Integer,
+        ForeignKey("lesson_sessions.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    lesson_slug = Column(String(64), index=True, nullable=False)
+    task_id = Column(String(64), index=True, nullable=False)
+    # 1..3，发放时的层级
+    level = Column(Integer, default=1, nullable=False)
+    # 发放时的「距上次提示的失败次数」，仅供事后核对
+    failures_at_hint = Column(Integer, default=0, nullable=False)
+    # 发出去的提示正文（确定性生成，不含模型输出）
+    content = Column(Text, default="", nullable=False)
+
+    __table_args__ = (
+        Index("ix_hint_session_task", "session_id", "task_id"),
+    )
