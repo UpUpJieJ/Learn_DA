@@ -74,17 +74,19 @@ workspace:
 |---|---|---|
 | `schema` | `var`、`columns` | `var` 的列**包含** `columns`；`exact: true` 时才要求完全一致（含顺序） |
 | `expr_true` | `expr` | Python 表达式为真；可用命名空间里的变量 + `abs`/`round`/`sorted`/`len`/`sum` 等安全内建 |
-| `frame_equal` | `var`、`ref` | 与 `expected/*.parquet` 比对；**M4 不生成 expected 文件，本阶段不要用** |
-| `sql_rows` | `query` | 在 `connection`（默认 `con`）上执行 SQL，比较结果行；配合 `order_matters` |
+| `frame_equal` | `var`、`ref` | 与 `content/expected/<ref>` 逐行逐列比对（parquet）；`rtol`/`atol` 控容差、`order_matters` 控顺序 |
+| `sql_rows` | `query`、`ref` | 在 `connection`（默认 `con`）上执行 SQL，结果与 `content/expected/<ref>`（json，含 `columns`/`rows`）比对 |
 
 规则：
 
 - `id` 全局唯一，建议 `<taskId>-<语义>`，如 `t1-schema`、`t1-sorted`。
 - `title` 写给学员看，会显示在断言列表里。
-- 浮点不要精确相等：用 `abs(x - y) < 1e-6`，或先 `round`。
+- 浮点不要精确相等：`frame_equal` 用 `rtol: 1e-6`，`expr_true` 用 `abs(x - y) < 1e-6`，或先 `round`。
 - `expr` 里出现 `__`（双下划线）会被直接拒绝。
-- 典型组合：`schema`（列名/列存在）+ `expr_true`（行数、排序、数值和、占比）。
-- 断言要**能区分对错**：只查 `height == 4` 而不查数值，等于放过算错的答案（M0 指出过这个漏洞）。
+- 典型组合：`schema`（列名/列存在）+ `frame_equal`（整表数值）。
+- 断言要**能区分对错**：只查 `height == 4` 而不查数值，等于放过算错的答案。
+  聚合结果优先用 `frame_equal` 与参考结果比对，而不是把汇总数字手抄进 `expr`——
+  手抄的数字换数据集就得重抄，而且「整列错值但 sum 恰好对得上」时抓不出来。
 
 断言写法参考（都在 03 课里验证过）：
 
@@ -150,7 +152,11 @@ cd learn_da
 - YAML 标量里出现「冒号 + 空格」必须整体加双引号（如 `title: "字段：值"`），否则会被解析成映射并触发 fail-closed。
 - frontmatter 用 `---` 闭合；正文里不要出现顶格 `---`（会被误认）。
 - 文件按 UTF-8 保存，LF 行尾，不要在末尾留多余空行。
-- 不要在 `workspace:` 里写 `expected` / `refs`（本阶段没有 expected 文件）。
+- `ref` 的路径**相对于 `content/expected/`**：写 `ref: 07-t2-channels.parquet`，
+  不要写 `ref: expected/07-t2-channels.parquet`（会解析成 `expected/expected/...`）。
+- 加了 `frame_equal` / `sql_rows` 之后必须跑 `python scripts/build_expected.py` 生成参考结果，
+  并跑 `python scripts/build_expected.py --check` 确认与参考解一致；
+  预期结果缺失时 `scripts/content_lint.py` 会直接报错（fail-closed）。
 
 ## 9. ecommerce 数据集字段字典
 

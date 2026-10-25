@@ -75,25 +75,21 @@ workspace:
       cell: c2
       objective: |
         用 WHERE 同时筛两个条件：refunded = FALSE 且 amount >= 100，
-        结果用 .pl() 存进 filtered_orders；只保留明细行，不要做聚合。
+        结果用 .pl() 存进 filtered_orders；只保留 order_id / amount / refunded
+        三列（多留列会与参考结果的列数不一致），不要做聚合。
       assertions:
         - id: t1-schema
           type: schema
           title: filtered_orders 含 order_id / amount / refunded
           var: filtered_orders
           columns: [order_id, amount, refunded]
-        - id: t1-rows
-          type: expr_true
-          title: 恰好 3722 行
-          expr: "filtered_orders.height == 3722"
-        - id: t1-refund
-          type: expr_true
-          title: 没有任何已退款订单
-          expr: "filtered_orders['refunded'].sum() == 0"
-        - id: t1-total
-          type: expr_true
-          title: 筛选后金额合计 4968434.34
-          expr: "abs(filtered_orders['amount'].sum() - 4968434.34) < 0.05"
+        - id: t1-exact
+          type: frame_equal
+          title: 筛选结果的每一行都与参考结果一致（3722 行）
+          var: filtered_orders
+          ref: 07-t1-filtered-orders.parquet
+          order_matters: false
+          rtol: 1e-6
     - id: t2
       title: 按渠道汇总订单数与金额
       cell: c3
@@ -106,18 +102,13 @@ workspace:
           title: channel_stats 含 channel / orders / revenue
           var: channel_stats
           columns: [channel, orders, revenue]
-        - id: t2-rows
-          type: expr_true
-          title: 四个渠道各一行
-          expr: "channel_stats.height == 4"
-        - id: t2-total
-          type: expr_true
-          title: 四个渠道 revenue 合计 5287843.86
-          expr: "abs(channel_stats['revenue'].sum() - 5287843.86) < 0.05"
-        - id: t2-sorted
-          type: expr_true
-          title: 按 revenue 降序
-          expr: "channel_stats['revenue'].to_list() == sorted(channel_stats['revenue'].to_list(), reverse=True)"
+        - id: t2-exact
+          type: frame_equal
+          title: 四个渠道的订单数与金额与参考结果逐行一致
+          var: channel_stats
+          ref: 07-t2-channels.parquet
+          order_matters: true
+          rtol: 1e-6
     - id: t3
       title: 用 HAVING 过滤订单量过千的渠道
       cell: c4
@@ -259,8 +250,8 @@ print(result)
 
 | 任务 | 格子 | 交付物 | 验收标准 |
 |------|------|--------|----------|
-| `t1` 用 WHERE 筛未退款的高客单价订单 | `c2` | `filtered_orders` | 含 `order_id` / `amount` / `refunded`；恰好 3722 行；无已退款订单；金额合计 4968434.34 |
-| `t2` 按渠道汇总 | `c3` | `channel_stats` | 含 `channel` / `orders` / `revenue`；四个渠道各一行；合计 5287843.86；按 revenue 降序 |
+| `t1` 用 WHERE 筛未退款的高客单价订单 | `c2` | `filtered_orders` | 只含 `order_id` / `amount` / `refunded` 三列；**3722 行每一行都与参考结果一致**（多留列会判失败） |
+| `t2` 按渠道汇总 | `c3` | `channel_stats` | 含 `channel` / `orders` / `revenue`；四个渠道各一行；按 revenue 降序；**每行与服务端参考结果逐行一致** |
 | `t3` 用 HAVING 过滤订单量过千的渠道 | `c4` | `big_channels` | 列同 `channel_stats`；只剩 2 个渠道；是 app 与 web；每行订单数都 >= 1260 |
 
 三点提醒：

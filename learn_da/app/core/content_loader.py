@@ -219,6 +219,35 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
 
     # 引用图校验：引用必须存在，prerequisites 图必须无环
     errors.extend(_lint_reference_graph(lessons))
+
+    # 工作区校验（L7）：断言 DSL、数据集与预期结果文件必须真实可用。
+    # 只在默认 content 目录上做——工作区加载器把数据集/预期结果目录固定在包内，
+    # 传自定义目录时会拿到不一致的相对路径，反而误报。
+    if content_dir == Path(__file__).parent.parent.parent / "content":
+        errors.extend(_lint_workspaces(content_dir))
+    return errors
+
+
+def _lint_workspaces(content_dir: Path) -> list[str]:
+    """校验每门课 ``workspace:`` 块的结构、数据集与预期结果引用。
+
+    预期结果（``ref``）缺失属于发布阻断问题：课程能通过字段校验，但学员提交时
+    断言会以 ``error`` 结束，看起来像"代码写错了"，实际是内容没生成。
+    """
+    from app.workspace.content import WorkspaceContentError, load_workspace
+
+    errors: list[str] = []
+    for md_file in sorted((content_dir / "lessons").glob("*.md")):
+        try:
+            lesson = load_lesson_from_file(md_file)
+        except Exception:
+            continue  # 单文件加载失败已在上面报过，不重复
+        if not lesson.get("workspace"):
+            continue
+        try:
+            load_workspace(lesson)
+        except WorkspaceContentError as e:
+            errors.append(f"[{md_file.name}:workspace] {e}")
     return errors
 
 

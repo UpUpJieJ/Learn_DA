@@ -104,18 +104,13 @@ workspace:
           title: 结果包含 segment / revenue / orders 三列
           var: segment_stats
           columns: [segment, revenue, orders]
-        - id: t2-rows
-          type: expr_true
-          title: 四个客户分层各一行
-          expr: "segment_stats.height == 4"
-        - id: t2-sorted
-          type: expr_true
-          title: 结果按 revenue 降序
-          expr: "segment_stats['revenue'].to_list() == sorted(segment_stats['revenue'].to_list(), reverse=True)"
-        - id: t2-total
-          type: expr_true
-          title: 净额合计 5,034,517.88 元且订单数合计 5000
-          expr: "abs(segment_stats['revenue'].sum() - 5034517.88) < 0.05 and segment_stats['orders'].sum() == 5000"
+        - id: t2-exact
+          type: frame_equal
+          title: 四个分层的净额与订单数与参考结果逐行一致
+          var: segment_stats
+          ref: 06-t2-segment-stats.parquet
+          order_matters: true
+          rtol: 1e-6
     - id: t3
       title: 反连接做数据质量检查
       cell: c4
@@ -243,7 +238,7 @@ print(orders.join(users, on="user_id", how="anti"))
 | 任务 | 单元格 | 要交付的变量 | 验收标准 |
 |---|---|---|---|
 | `t1` 用 left join 补出客户分层 | `c2` | `orders_customers` | 保留 5000 行、新增 `segment` 且无空值、订单 `O000001` 的分层为「高价值」 |
-| `t2` 派生净额并按分层聚合 | `c3` | `segment_stats` | 派生 `net_amount`（退款记 0）、四个分层各一行、按 `revenue` 降序、净额合计 5,034,517.88 元、订单数合计 5000 |
+| `t2` 派生净额并按分层聚合 | `c3` | `segment_stats` | 派生 `net_amount`（退款记 0）、四个分层各一行、按 `revenue` 降序；**每行净额与订单数都与参考结果逐行一致** |
 | `t3` 反连接做数据质量检查 | `c4` | `orphan_orders` | 结果为 0 行，且列结构与 `orders` 完全一致（说明用的是 `anti`，而不是「左连接后过滤空值」） |
 
 `c1` 已经读好两张表并打印 shape 与 head；从 `c2` 开始每格只留了 `# TODO` 和占位赋值，先跑出「未完成」的样子，再逐步补全。

@@ -116,18 +116,17 @@ workspace:
           var: top_orders
           columns: [order_id, region, channel, amount]
           exact: true
-        - id: t3-rows
-          type: expr_true
-          title: 恰好 10 行
-          expr: "top_orders.height == 10"
         - id: t3-sorted
           type: expr_true
           title: amount 从大到小排列
           expr: "top_orders['amount'].to_list() == sorted(top_orders['amount'].to_list(), reverse=True)"
-        - id: t3-min
-          type: expr_true
-          title: 第 10 名的金额是 16009.61
-          expr: "abs(top_orders['amount'].min() - 16009.61) < 0.05"
+        - id: t3-exact
+          type: frame_equal
+          title: 十行订单的行与列与参考结果一致（金额并列时顺序不限）
+          var: top_orders
+          ref: 01-t3-top-orders.parquet
+          order_matters: false
+          rtol: 1e-6
 ---
 
 # Polars 基础入门
@@ -287,9 +286,9 @@ orders.filter(pl.col('channel') == 'app').select(['order_id', 'amount'])   # 正
 ## 自检清单
 
 - [ ] 我能说清 `filter` / `select` / `with_columns` 各自改变 DataFrame 的哪个维度（行 / 列）
-- [ ] `app_orders` 只有三列，且行数与 app 渠道订单数一致
+- [ ] `app_orders` 只有三列，且每一行的金额都与参考结果一致
 - [ ] `with_gross` 保留原始 11 列，`gross` 用 `unit_price * quantity` 而不是 `amount`
-- [ ] `top_orders` 先排序再取前 10 行，金额降序
+- [ ] `top_orders` 先排序再取前 10 行，金额降序，且十行与参考结果一致
 
 ## 下一步建议
 

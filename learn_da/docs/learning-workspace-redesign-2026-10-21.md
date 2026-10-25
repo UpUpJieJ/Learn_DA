@@ -937,5 +937,88 @@ level = min(3, 1 + hints_used + failures_since_last_hint // 2)
 ### 19.8 未做
 
 - 真 SSE（§8 的流式；实测一次提问 12.6 秒，只影响「看得见进展」，不影响正确性）。
-- `frame_equal` / `sql_rows` 的 refs 管线（`app/workspace/service.py` 仍是 `"refs": {}` 硬编码；13 课 139 条断言里有 20 条靠手写魔数）。
+- ~~`frame_equal` / `sql_rows` 的 refs 管线~~ —— 已于 §20 完成。
 - 动作白名单（用户已否）。
+
+## 20. 预期结果（refs）管线（2026-10-25）
+
+### 20.1 为什么做
+
+§19 之前 13 课共 139 条断言，只有 `expr_true`（114）与 `schema`（25）在用，其中 **20 条靠手抄魔数**：
+
+```yaml
+- id: t1-total
+  expr: "abs(app_orders['amount'].sum() - 1362720.69) < 0.5"
+```
+
+三个后果：① 只能验聚合值，整列错但 sum 恰好对得上就漏判；② 换 seed 就要手工重抄 20 个数字，`build_datasets.py` 一改就全体失效；③ 写不出「逐行一致」型任务。`app/practice/assertion_runtime.py` 的四型 checker 早就齐全，`_load_ref` 也实现了 base64 解码（`PAR1` → parquet，否则 JSON），Runner 侧 `refs` 字段一路透传到 `session_driver.py` —— **唯一的断点是 `app/workspace/service.py` 里 `"refs": {}` 硬编码**，后端从来没往里装东西。
+
+### 20.2 链路
+
+```
+content/expected/<ref>.parquet|.json          ← scripts/build_expected.py 从参考解生成
+        │  refs_payload(spec.ref_names())     ← 读文件 + base64（带 mtime 缓存）
+        ▼
+POST /v1/sessions { refs: {name: base64} }    ← Runner 透传
+        ▼
+session_driver.run_plan → runtime.run(namespace, spec, refs)
+        ▼
+_load_ref(name) → polars DataFrame / _RefTable / 行列表 → frame_equal / sql_rows 比对
+```
+
+- `ref` 路径**相对 `content/expected/`**：课程里写 `ref: 07-t2-channels.parquet`，不要写 `ref: expected/...`（会解析成 `content/expected/expected/...`）。
+- 后端上限：单文件 200KB、单课合计 2MB、后缀只允许 `.parquet` / `.json`（`app/workspace/content.py`）。
+- 学员看不到 `content/expected/`：参考结果只在请求的 `refs` 字段里下发，`content_lint` 的 L7 只校验存在性与路径安全。
+
+### 20.3 生成脚本必须单线程
+
+`scripts/build_expected.py` 顶部在 import polars **之前** `os.environ.setdefault("POLARS_MAX_THREADS", "1")`。
+
+原因（实跑发现，不是猜的）：**polars 多线程下分组聚合的浮点求和顺序不固定**，同一份数据两次跑出 `1395335.5499999998` 与 `1395335.55`、`1303267.2999999998` 与 `1303267.3`（末位差 1 ULP），`pl.DataFrame.equals()` 为 False，parquet 字节也不同 —— 于是 `--check` 会对 `polars-groupby` / `polars-joins` / `polars-lazy-pipeline` 三门课报「预期结果与参考解不一致」。DuckDB 算的那几门稳定，掩盖了这个问题。
+
+固定单线程后 `--check` 连跑三次全通过。学员侧仍是多线程，所以断言必须靠 `rtol` 容差比对（统一 `1e-6`），而不是要求逐位相等。
+
+### 20.4 缓存必须随文件失效
+
+`refs_payload` / `dataset_payload` 原来只按名字缓存，`build_expected.py` 重新生成后，**运行中的后端进程仍在用旧字节** —— 实测表现为课程参考解已改、后端仍按旧参考结果判，`verdict=assertion_failed` 且 `actual=None`（看不出所以然）。现在缓存键是 `(st_mtime_ns, st_size)`，文件一动就重读（`_cached_payload`）。
+
+### 20.5 内容改动（8 门课 / 10 个参考结果）
+
+| 课程 | 任务 | ref | order_matters |
+|---|---|---|---|
+| 01-polars-basics | t3 金额最高 10 单 | `01-t3-top-orders.parquet` | **false** |
+| 02-duckdb-analytics | t2 区域统计 | `02-t2-region-stats.parquet` | true |
+| 02-duckdb-analytics | t3 客单价最高 10 单 | `02-t3-top-orders.parquet` | false |
+| 03-polars-groupby | t2 区域占比 | `03-t2-region-share.parquet` | true |
+| 06-polars-joins | t2 品类统计 | `06-t2-segment-stats.parquet` | true |
+| 07-duckdb-sql-foundations | t1 筛选订单 | `07-t1-filtered-orders.parquet` | false |
+| 07-duckdb-sql-foundations | t2 渠道汇总 | `07-t2-channels.parquet` | true |
+| 08-duckdb-joins-cte | t2 品类汇总 | `08-t2-category-stats.parquet` | true |
+| 10-polars-lazy-pipeline | t2 区域统计 | `10-t2-region-stats.parquet` | true |
+| 11-polars-duckdb-workflow | t3 品类汇总 | `11-t3-category-stats.parquet` | true |
+
+`order_matters: false` 的两处是**实测有并列值**：01 课第 10 名与第 11 名金额并列（16009.61 / 15982.74 各两份），02 课客单价最高 10 单同样不唯一 —— 要求排序反而会误判正确解。
+
+课程正文同步把「合计 5287843.86」「恰好 3722 行」这类手抄数字改成「与服务端参考结果逐行一致」。
+
+同时修掉一处列数不一致：`07-duckdb-sql-foundations` 的参考解 `c2` 原来 `SELECT *`（11 列），而 ref 只有三列，真实链路判「列数不一致」；改成显式选 `order_id, amount, refunded`，课程 objective 也补上「只保留这三列」。
+
+### 20.6 lint L7
+
+`app/core/content_loader.py:lint_content` 末尾新增 L7：仅当 `content_dir` 等于默认 `content/` 时逐课 `load_workspace`（自定义目录会拿到不一致的相对路径、反而误报），失败记 `[<file>:workspace] <msg>`。负向验证：临时移走 `03-t2-region-share.parquet` → 输出 `[03-polars-groupby.md:workspace] 参考结果不存在：03-t2-region-share.parquet` + `内容校验失败：1 个问题`；移回后通过。
+
+### 20.7 实测
+
+| 项目 | 结果 |
+|---|---|
+| 后端 pytest | **493 passed**（471 + `test_workspace_refs.py` 22） |
+| `pytest tests/test_workspace_content.py tests/unit/test_workspace_refs.py` | 48 passed |
+| `scripts/build_expected.py --check` | 「预期结果校验通过：8 门课。」（连跑 3 次一致） |
+| `scripts/content_lint.py` | 「内容校验通过：课程与 catalog 一致。」 |
+| `deploy/acceptance.sh` | **23 PASS / 0 FAIL** |
+| 真实链路 | 错代码 `t1-exact: failed \| 行数不一致：5 vs 3722`；参考解 t1/t2 全 passed（890ms） |
+
+### 20.8 未做
+
+- 真 SSE（最后一块）。
+- 剩余 20 条魔数断言里只换了 10 组；`05-polars-cleaning` 的缺失值统计、`09-duckdb-window-functions` 的窗口累计仍用 `expr_true`（它们的「正确答案」是统计量而非表，用 `frame_equal` 反而更绕）。

@@ -6,3 +6,8 @@
 # （仓库开了 core.autocrlf=true，Windows 检出默认会转成 CRLF）。
 # 注意：.gitattributes 是"最后匹配的规则生效"，所以这条必须写在 * 之后。
 learn_da/content/datasets/** -text
+
+# 断言预期结果同样是字节可复现的二进制（parquet）或结构化 json，由
+# scripts/build_expected.py --check 逐字节比对。绝不能做行尾转换：
+# parquet 里任何 0x0D 字节都会让参考结果损坏、判定全错。
+learn_da/content/expected/** -text

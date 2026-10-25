@@ -154,7 +154,23 @@ def _table(obj: Any) -> tuple[list[Any] | None, list[list[Any]], dict[str, str] 
     raise TypeError("不支持的数据类型：" + type(obj).__name__)
 
 
+class _RefTable:
+    """参考结果的表形态（够 ``_table`` 认作「有列名的表」即可）。"""
+
+    __slots__ = ("columns", "_rows", "schema")
+
+    def __init__(self, columns: list[str], rows: list[list[Any]]) -> None:
+        self.columns = columns
+        self._rows = rows
+        self.schema = {name: "" for name in columns}
+
+    def rows(self) -> list[list[Any]]:
+        return self._rows
+
+
 def _load_ref(name: str, refs: Mapping[str, str]) -> Any:
+    if name not in refs:
+        raise KeyError(name)
     payload = base64.b64decode(refs[name])
     if payload[:4] == b"PAR1":
         import polars as pl
@@ -162,7 +178,12 @@ def _load_ref(name: str, refs: Mapping[str, str]) -> Any:
         return pl.read_parquet(io.BytesIO(payload))
     data = json.loads(payload.decode("utf-8"))
     if isinstance(data, dict) and "rows" in data:
-        return [list(row) for row in data["rows"]]
+        rows = [list(row) for row in data["rows"]]
+        columns = data.get("columns")
+        if isinstance(columns, list) and columns:
+            # 带列名的参考结果：frame_equal 会按列名对齐，而不是按下标猜
+            return _RefTable([str(name) for name in columns], rows)
+        return rows
     if isinstance(data, list):
         return [list(row) if isinstance(row, (list, tuple)) else [row] for row in data]
     raise TypeError("无法识别的参考结果：" + name)
@@ -266,7 +287,13 @@ def _check_sql_rows(
 
         con = duckdb
     got_rows = [list(row) for row in con.execute(spec["query"]).fetchall()]
-    ref_rows = [list(row) for row in _load_ref(spec["ref"], refs)]
+    loaded = _load_ref(spec["ref"], refs)
+    if isinstance(loaded, _RefTable):
+        ref_rows = loaded.rows()
+    elif isinstance(loaded, (list, tuple)):
+        ref_rows = [list(row) if isinstance(row, (list, tuple)) else [row] for row in loaded]
+    else:  # polars / pandas
+        _columns, ref_rows, _dtypes = _table(loaded)
     rtol, atol = float(spec["rtol"]), float(spec["atol"])
     if not spec.get("order_matters", False):
         got_rows = sorted(got_rows, key=repr)

@@ -103,18 +103,13 @@ workspace:
           title: region_stats 含 region / revenue / orders
           var: region_stats
           columns: [region, revenue, orders]
-        - id: t2-rows
-          type: expr_true
-          title: 四个区域各一行
-          expr: "region_stats.height == 4"
-        - id: t2-total
-          type: expr_true
-          title: 四个区域 revenue 合计 5287843.86
-          expr: "abs(region_stats['revenue'].sum() - 5287843.86) < 0.05"
-        - id: t2-sorted
-          type: expr_true
-          title: 按 revenue 降序
-          expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
+        - id: t2-exact
+          type: frame_equal
+          title: 四个区域的订单数与金额与参考结果逐行一致
+          var: region_stats
+          ref: 02-t2-region-stats.parquet
+          order_matters: true
+          rtol: 1e-6
     - id: t3
       title: 按金额取 Top 5 订单
       cell: c4
@@ -128,18 +123,13 @@ workspace:
           var: top_orders
           columns: [order_id, amount]
           exact: true
-        - id: t3-rows
-          type: expr_true
-          title: 恰好 5 行
-          expr: "top_orders.height == 5"
-        - id: t3-max
-          type: expr_true
-          title: 第一行是最大金额 19236.8
-          expr: "abs(top_orders['amount'][0] - 19236.8) < 1e-6"
-        - id: t3-sorted
-          type: expr_true
-          title: 按 amount 降序
-          expr: "top_orders['amount'].to_list() == sorted(top_orders['amount'].to_list(), reverse=True)"
+        - id: t3-exact
+          type: frame_equal
+          title: 五行订单与参考结果一致（金额并列时顺序不限）
+          var: top_orders
+          ref: 02-t3-top-orders.parquet
+          order_matters: false
+          rtol: 1e-6
 ---
 
 # DuckDB 查询分析
@@ -259,8 +249,8 @@ print(result)
 | 任务 | 格子 | 交付物 | 验收标准 |
 |------|------|--------|----------|
 | `t1` 把订单 CSV 读成可复用的表 | `c2` | `orders_df`、`order_count` | 含 `order_id` / `customer_id` / `product_id` / `region` / `channel` / `amount` / `refunded`；`order_count == 5000`；`order_id` 不重复 |
-| `t2` 按区域汇总 revenue 与订单数 | `c3` | `region_stats` | 含 `region` / `revenue` / `orders`；四个区域各一行；revenue 合计 5287843.86；按 revenue 降序 |
-| `t3` 按金额取 Top 5 订单 | `c4` | `top_orders` | 只有 `order_id` / `amount` 两列；恰好 5 行；最大 19236.8；按 amount 降序 |
+| `t2` 按区域汇总 revenue 与订单数 | `c3` | `region_stats` | 含 `region` / `revenue` / `orders`；四个区域各一行；按 revenue 降序；**每行数值与服务端参考结果逐行一致**（不再只看行数与合计） |
+| `t3` 按金额取 Top 5 订单 | `c4` | `top_orders` | 只有 `order_id` / `amount` 两列；恰好 5 行；**五行与参考结果一致**（金额并列时顺序不限） |
 
 三点提醒：
 

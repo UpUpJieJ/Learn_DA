@@ -22,6 +22,7 @@ import pytest
 from app.practice.assertions import evaluate_assertions
 from app.workspace.content import (
     DATASET_DIR,
+    EXPECTED_DIR,
     MAX_DATASET_BYTES,
     WorkspaceSpec,
     load_workspace,
@@ -81,6 +82,15 @@ def _statuses(results: list[dict[str, Any]]) -> dict[str, str]:
     return {str(item["id"]): str(item["status"]) for item in results}
 
 
+def _refs(spec: WorkspaceSpec) -> dict[str, bytes]:
+    """参考结果的原始字节（frame_equal / sql_rows 需要）。
+
+    ``evaluate_assertions`` 自己负责 base64，所以这里给未编码的 bytes；
+    线上走 ``refs_payload`` 得到已编码的 str 发给 Runner。
+    """
+    return {name: (EXPECTED_DIR / name).read_bytes() for name in spec.ref_names()}
+
+
 @pytest.mark.parametrize("slug", sorted(SPECS) or ["_none_"])
 def test_workspace_lesson_contract(slug: str, sandbox_root: Path) -> None:
     if slug == "_none_":  # 还没有任何工作区课程时不让用例失败
@@ -98,10 +108,12 @@ def test_workspace_lesson_contract(slug: str, sandbox_root: Path) -> None:
     # L3：起步代码在该任务断言下必须判失败
     for task in spec.tasks:
         namespace = _replay(spec, solutions, stop_at=task.cell_id)
-        results = evaluate_assertions(spec.assertions_for_cell(task.cell_id), namespace, {})
+        results = evaluate_assertions(
+            spec.assertions_for_cell(task.cell_id), namespace, _refs(spec)
+        )
         starter_namespace = _replay(spec, {}, stop_at=task.cell_id)
         starter_results = evaluate_assertions(
-            spec.assertions_for_cell(task.cell_id), starter_namespace, {}
+            spec.assertions_for_cell(task.cell_id), starter_namespace, _refs(spec)
         )
         assert any(item["status"] != "passed" for item in starter_results), (
             f"{slug}/{task.id}: 起步代码直接通过，等于白给。"
@@ -115,7 +127,9 @@ def test_workspace_lesson_contract(slug: str, sandbox_root: Path) -> None:
     # L4：参考解在完整序列下全部 pass
     namespace = _replay(spec, solutions)
     for task in spec.tasks:
-        results = evaluate_assertions(spec.assertions_for_cell(task.cell_id), namespace, {})
+        results = evaluate_assertions(
+            spec.assertions_for_cell(task.cell_id), namespace, _refs(spec)
+        )
         assert all(item["status"] == "passed" for item in results), (
             f"{slug}/{task.id}: 整链重放后未全通过 {_statuses(results)}"
         )

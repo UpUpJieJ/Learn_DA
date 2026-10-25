@@ -84,10 +84,13 @@ workspace:
           title: 结果保留原三列并新增 share
           var: region_share
           columns: [region, revenue, orders, share]
-        - id: t2-sum
-          type: expr_true
-          title: share 之和为 1
-          expr: "abs(region_share['share'].sum() - 1.0) < 1e-2"
+        - id: t2-exact
+          type: frame_equal
+          title: 四行的金额与占比与参考结果一致
+          var: region_share
+          ref: 03-t2-region-share.parquet
+          order_matters: true
+          rtol: 1e-6
 ---
 
 # Polars 分组聚合

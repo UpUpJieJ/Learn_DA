@@ -63,7 +63,7 @@
 │   ├── migrations/           # Alembic 数据库迁移
 │   ├── scripts/              # 内容校验、数据集生成、端到端自检
 │   ├── tests/                # 测试用例（pytest）
-│   └── content/              # 教程静态内容（含 datasets/ 课程数据集）
+│   └── content/              # 教程静态内容（datasets/ 课程数据集、expected/ 断言预期结果）
 │
 └── learn_da_runner/          # 代码执行服务（Docker / local 两种后端）
 └── learn_da_vue/             # 前端（Frontend）
@@ -350,6 +350,20 @@ cd learn_da
 
 判定侧新增了 v2 断言 DSL（`learn_da/app/practice/assertion_runtime.py` + `learn_da/app/practice/assertions.py`），
 支持 `expr_true` / `frame_equal` / `schema` / `sql_rows` 四种断言，失败时回传被截断的 `actual` 供诊断。
+
+`frame_equal` / `sql_rows` 需要一份「预期结果」，放在 [`learn_da/content/expected`](learn_da/content/expected)，
+由参考解自动生成（不要手写、也不要手改）：
+
+```bash
+cd learn_da
+.venv/Scripts/python.exe scripts/build_expected.py           # 从参考解生成 content/expected/
+.venv/Scripts/python.exe scripts/build_expected.py --check    # 只校验仓库里的预期结果与参考解是否一致
+```
+
+课程里写 `ref: 07-t2-channels.parquet`（**相对 `content/expected/`**，不要写 `expected/` 前缀）；
+预期结果缺失或路径越界会被 `scripts/content_lint.py` 直接阻断（lint L7）。
+生成器强制单线程 polars（`POLARS_MAX_THREADS=1`）——多线程下分组聚合的浮点末位不稳定，字节不可复现；
+学员侧仍多线程，所以断言统一用 `rtol: 1e-6` 容差比对。单文件上限 200KB、单课合计 2MB。
 注意执行接口的 `code` 上限是 5000 字符，追加断言时要用按路径加载的紧凑尾巴：
 
 ```python

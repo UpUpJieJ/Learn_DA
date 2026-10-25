@@ -104,18 +104,13 @@ workspace:
           title: 结果包含 region / revenue / orders 三列
           var: region_stats
           columns: [region, revenue, orders]
-        - id: t2-rows
-          type: expr_true
-          title: 四个区域各一行
-          expr: "region_stats.height == 4"
-        - id: t2-sorted
-          type: expr_true
-          title: 结果按 revenue 降序
-          expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
-        - id: t2-total
-          type: expr_true
-          title: 营收合计 4,968,434.34 元、订单数合计 3722
-          expr: "abs(region_stats['revenue'].sum() - 4968434.34) < 0.05 and region_stats['orders'].sum() == 3722"
+        - id: t2-exact
+          type: frame_equal
+          title: 四个区域的金额与订单数与参考结果逐行一致
+          var: region_stats
+          ref: 10-t2-region-stats.parquet
+          order_matters: true
+          rtol: 1e-6
     - id: t3
       title: 用 explain() 观察执行计划
       cell: c4
@@ -252,7 +247,7 @@ SORT BY [descending: [true]] [col("revenue")]
 | 任务 | 单元格 | 要交付的变量 | 验收标准 |
 |---|---|---|---|
 | `t1` 惰性过滤 + 派生列 | `c2` | `filtered` | 3722 行、最小金额 ≥ 100、`list_amount` 合计 5,373,637.19 元 |
-| `t2` 惰性分组聚合 | `c3` | `region_stats` | 四行、按 `revenue` 降序、营收合计 4,968,434.34 元、订单数合计 3722 |
+| `t2` 惰性分组聚合 | `c3` | `region_stats` | 四行、按 `revenue` 降序；**每行营收与订单数都与参考结果逐行一致** |
 | `t3` 观察执行计划 | `c4` | `plan_text` / `lazy_result` | 计划里出现 FILTER / AGGREGATE / SORT，`collect()` 后是 4 行 2 列 |
 
 `t3` 的 `plan_text` 要保存 `explain()` 返回的**整段字符串**，不要自己截断或改写——断言会先 `.upper()` 再找关键字，所以大小写不用管。

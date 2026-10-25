@@ -26,6 +26,7 @@ from .content import (
     WorkspaceTask,
     dataset_payload,
     load_workspace,
+    refs_payload,
     runtime_source,
 )
 from .hints import HINT_MAX_LEVEL, HintState, build_hint_content
@@ -431,7 +432,8 @@ class WorkspaceService:
             "datasets": dataset_payload(spec.datasets),
             "runtime": runtime_source(),
             "assertions": list(task.assertions) if task is not None else [],
-            "refs": {},
+            # 参考结果按课程下发（frame_equal / sql_rows 用），学员看不到 expected/
+            "refs": refs_payload(spec.ref_names()),
         }
         raw = await self.runner.execute_session(payload)
 

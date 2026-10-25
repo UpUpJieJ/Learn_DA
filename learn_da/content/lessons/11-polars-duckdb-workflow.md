@@ -128,18 +128,13 @@ workspace:
           title: 结果包含 category / revenue / orders
           var: category_stats
           columns: [category, revenue, orders]
-        - id: t3-rows
-          type: expr_true
-          title: 5 个品类各一行
-          expr: "category_stats.height == 5"
-        - id: t3-sorted
-          type: expr_true
-          title: 结果按 revenue 降序
-          expr: "category_stats['revenue'].to_list() == sorted(category_stats['revenue'].to_list(), reverse=True)"
-        - id: t3-total
-          type: expr_true
-          title: revenue 总和等于全部订单净额之和
-          expr: "abs(category_stats['revenue'].sum() - orders_clean['net_amount'].sum()) < 1e-3"
+        - id: t3-exact
+          type: frame_equal
+          title: 五个品类的净额与订单数与参考结果逐行一致
+          var: category_stats
+          ref: 11-t3-category-stats.parquet
+          order_matters: true
+          rtol: 1e-6
 ---
 
 # Polars 与 DuckDB 组合工作流
@@ -285,7 +280,7 @@ orders_clean = orders_clean.filter(pl.col("region") == "华东")   # SQL 里看�
 
 - [ ] `orders_clean` 是 5000 行，且同时有 `category` 与 `net_amount` 两列
 - [ ] 退款订单的 `net_amount` 合计为 0（不是「约等于」）
-- [ ] `category_stats` 是 5 行、按 `revenue` 降序，且 `revenue` 总和等于全部净额之和
+- [ ] `category_stats` 是 5 行、按 `revenue` 降序，且每一行的净额与订单数都与参考结果一致（`revenue` 总和自然等于全部净额之和）
 - [ ] 能用自己的话说清：哪些活留给 Polars，哪些活交给 SQL
 
 ## 下一步建议

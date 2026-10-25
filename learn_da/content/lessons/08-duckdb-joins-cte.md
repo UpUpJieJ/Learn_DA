@@ -114,18 +114,13 @@ workspace:
           title: category_stats 含 category / revenue / profit
           var: category_stats
           columns: [category, revenue, profit]
-        - id: t2-rows
-          type: expr_true
-          title: 五个品类各一行
-          expr: "category_stats.height == 5"
-        - id: t2-total
-          type: expr_true
-          title: 五个品类 revenue 合计 5287843.86
-          expr: "abs(category_stats['revenue'].sum() - 5287843.86) < 0.05"
-        - id: t2-profit
-          type: expr_true
-          title: 数码品类 profit 为 979431.41
-          expr: "abs(category_stats['profit'][category_stats['category'].to_list().index('数码')] - 979431.41) < 0.5"
+        - id: t2-exact
+          type: frame_equal
+          title: 五个品类的 revenue 与 profit 与参考结果逐行一致
+          var: category_stats
+          ref: 08-t2-category-stats.parquet
+          order_matters: true
+          rtol: 1e-6
     - id: t3
       title: 对比 LEFT JOIN 与 INNER JOIN 的行数差
       cell: c4
@@ -249,7 +244,7 @@ print(result)
 | 任务 | 格子 | 交付物 | 验收标准 |
 |------|------|--------|----------|
 | `t1` 用 LEFT JOIN 补出商品品类 | `c2` | `order_detail` | 含 `order_id` / `product_id` / `category` / `amount`；5000 行；金额合计 5287843.86；`category` 无空值 |
-| `t2` 用 CTE 先算派生指标再分组 | `c3` | `category_stats` | 含 `category` / `revenue` / `profit`；5 行；revenue 合计 5287843.86；数码 profit 为 979431.41 |
+| `t2` 用 CTE 先算派生指标再分组 | `c3` | `category_stats` | 含 `category` / `revenue` / `profit`；5 行；**五个品类的两列数值都与参考结果逐行一致** |
 | `t3` 对比 LEFT JOIN 与 INNER JOIN | `c4` | `join_compare`、`unmatched_orders` | `join_compare` 含 `join_type` / `row_count`，left=5001、inner=5000；`unmatched_orders` 恰好 1 行且 `product_id` 是 `P9999` |
 
 几点提醒：

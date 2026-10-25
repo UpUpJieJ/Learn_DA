@@ -4,7 +4,7 @@ SOLUTIONS = {
     "c2": """\
 filtered_orders = con.sql(
     \"\"\"
-    SELECT *
+    SELECT order_id, amount, refunded
     FROM orders
     WHERE refunded = FALSE AND amount >= 100
     \"\"\"

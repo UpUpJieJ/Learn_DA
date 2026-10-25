@@ -20,7 +20,8 @@
 - 设计稿见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md`（§11.2 M1+M2、§11.3 M3、§11.4 M4+P1/P3/P4、§15 页面重构）。
 - **AI 助手 E0/E1 已完成**（2026-10-23/24）：E0 把证据源从冻结的 `exercise_attempts` 改到 `task_attempts`（含断言 `actual`），E1 把助手接进工作区右栏（`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`）：ambient 证据卡直接渲染 `store.runs[cell].assertions`（0 请求 0 token）、chat 走 `POST /api/v1/agent/chat`、**非流式**（「正在思考…」→ 整段落地，去掉原来的伪流式）。`hint_level` 现在真的进 prompt（`prompts.build_hint_directive`）。架构是「确定性策略层 + 单一 LLM 表达层」：判定全在 Python，模型只负责讲人话。**命名统一为「AI 助手」**（2026-10-24 用户要求；组件 `WorkspaceAssistant.vue`、prompt 里自称「通用学习助手」），且**不提供「下一步该练什么」引导**——任务顺序由服务端任务列表权威给出，模型不自行规划学习路线（`SYSTEM_PROMPT` 已明写）。
 - **分级提示（ladder，E2）已完成**（2026-10-25）：`POST /api/v1/workspace/sessions/{id}/tasks/{taskId}/hint` 发放一层提示，落 `hint_usages` 表（`app/workspace/models.py:HintUsage` + 迁移 `b9c2e5a17f03`）。**层级公式 `level = min(3, 1 + hints_used + failures_since_last_hint // 2)`**（`app/workspace/hints.py:compute_level`）——替代旧的「按该课提问次数估层」错误口径（旧式 `1 + failures + hints_used` 实测只有两级可用，L1 形同虚设）。文案确定性生成、不调模型，三层逐级加深且**始终不给整格可提交代码**；代码没跑通时读 `RunEvent.payload` 里单元格的真实 stderr（`latest_run_failure` → `hints.normalize_error` 折叠重复异常前缀 → 把 `valid columns` 列给学习者）。**客户端没有「要第几层」的参数**，越层请求天然无效。Agent 侧 `service._resolve_hint_level` 改读 `WorkspaceReadRepository.hint_state`，与阶梯提示同口径；无任务级证据时降级 history 估算。
-- 测试基线：后端 **471 项** pytest、Runner **39 项**、前端 **127 项** vitest 全绿（2026-10-25 更新：旧练习体系下线后的净变化 + ladder 新增；`deploy/acceptance.sh` **23/23** 通过，含 A12 分级提示）。`npm run build` 在本机因 esbuild 临时文件删除被环境拦截（见「已知问题与坑」）。
+- **预期结果（refs）管线已完成**（2026-10-25）：`frame_equal` / `sql_rows` 现在真的能用了——`content/expected/` 下 10 个参考结果由 `scripts/build_expected.py` 从参考解生成（固定 `POLARS_MAX_THREADS=1`，否则分组聚合的浮点末位不稳、字节不可复现），后端把 ref 编码进请求的 `refs` 字段、断言在沙箱内与它逐行比对。8 门课里 20 条手抄数字的 `expr_true` 已换成 `frame_equal`（如「四个区域的 revenue 与参考结果逐行一致」），`scripts/content_lint.py` 新增 L7：预期结果缺失或 ref 越界直接阻断。
+- 测试基线：后端 **493 项** pytest、Runner **39 项**、前端 **127 项** vitest 全绿（2026-10-25 更新：旧练习体系下线后的净变化 + ladder + refs；`deploy/acceptance.sh` **23/23** 通过，含 A12 分级提示）。`npm run build` 在本机因 esbuild 临时文件删除被环境拦截（见「已知问题与坑」）。
 - 2026-08-17 修复：**明文 HTTP 下会话 cookie 带 Secure 导致访客身份丢失**（生产验收发现）——新增 `PUBLIC_SCHEME` 配置（默认 http，compose 注入；启用 HTTPS 时在 `deploy/app.env` 改 https），cookie Secure 属性跟随对外协议。
 - 最近一批重构（2026-08-16）：
   - LLM 只有一套配置 `LLM_*`；**`FALLBACK_LLM_*` 已删除**（2026-10-21，历史遗留的假兜底：只在主配置为空时生效，主配置存在但调用失败时不会切换）。调用失败时走 `usedFallback` 确定性降级，不会换 key。
@@ -37,6 +38,7 @@
 cd learn_da && .venv/Scripts/python.exe -m pytest -q          # 全部测试
 .venv/Scripts/python.exe scripts/content_lint.py               # 内容校验（课程/catalog）
 .venv/Scripts/python.exe scripts/build_datasets.py --check     # 数据集字节一致性校验（不带 --check 则重新生成）
+.venv/Scripts/python.exe scripts/build_expected.py --check      # 预期结果与参考解一致性校验（不带 --check 则重新生成 content/expected/）
 
 # 前端（learn_da_vue/）
 cd learn_da_vue && npm test -- --run      # vitest
