@@ -80,13 +80,19 @@
                             v-if="msg.role === 'assistant' && msg.isStreaming && !msg.content"
                             class="text-ink-300"
                         >
-                            正在思考…
+                            {{ activeTools.length ? toolLine : "正在思考…" }}
                         </p>
                         <div
                             v-else
                             class="whitespace-pre-wrap break-words"
                             v-html="renderMessage(msg.content)"
                         ></div>
+                        <p
+                            v-if="msg.role === 'assistant' && msg.isStreaming && msg.content"
+                            class="mt-1 text-[11px] text-ink-300"
+                        >
+                            正在生成…（可点「停止」）
+                        </p>
                     </div>
                     <p
                         v-if="msg.role === 'assistant' && msg.teachingFeedback"
@@ -125,9 +131,18 @@
                     @keydown="onKeydown"
                 ></textarea>
                 <AppButton
+                    v-if="isLoading"
+                    variant="secondary"
+                    size="sm"
+                    label="停止"
+                    @click="stopStreaming"
+                >
+                    停止
+                </AppButton>
+                <AppButton
+                    v-else
                     size="sm"
                     label="发送"
-                    :loading="isLoading"
                     :disabled="!inputText.trim()"
                     @click="submit()"
                 >
@@ -145,10 +160,12 @@
 // =====================================================
 // 工作区右栏 AI 助手（改版 E1）
 //
-// 分档依据设计稿 §8.2，但 E1 只做两档：
+// 分档依据设计稿 §8.2：
 //   ambient  失败证据卡 —— 纯前端渲染 store 里的断言结果，0 请求 0 token；
-//   chat     自由问答   —— 走 /agent/chat，服务端证据 + 提示层级由后端决定。
-// ladder（按层给提示）需要 hint_usages 表与专用端点，留 E2。
+//   ladder   按层给提示 —— 右栏「当前任务」卡里的 TaskHintPanel（E2）；
+//   chat     自由问答   —— 走 /agent/chat/stream，服务端证据 + 提示层级由后端决定。
+//
+// E3 起是真 SSE：文本增量边生成边下发，工具轮先显示「正在查…」。
 //
 // 刻意不做：让模型复述断言结果（ambient 已经直接显示，复述只会更慢更易错）、
 // 让模型改代码（用户已定「只解释不改代码」）、
@@ -208,7 +225,9 @@ const {
     messages,
     inputText,
     isLoading,
+    activeTools,
     sendMessage,
+    stopStreaming,
     clearMessages,
     formatAgentErrorMessage,
 } = useAgentConversation({
@@ -218,6 +237,17 @@ const {
         const element = listRef.value;
         if (element) element.scrollTop = element.scrollHeight;
     },
+});
+
+/** 工具执行中的提示语：让「慢」有解释，而不是只显示省略号。 */
+const toolLine = computed(() => {
+    const names = activeTools.value;
+    if (!names.length) return "正在思考…";
+    if (names.includes("search_knowledge")) return "正在查课程资料…";
+    if (names.includes("get_task_summary")) return "正在读你的任务记录…";
+    if (names.includes("get_learner_progress")) return "正在读你的学习进度…";
+    if (names.includes("get_recommendation")) return "正在算推荐…";
+    return "正在调用工具…";
 });
 
 const error = ref<string | null>(null);

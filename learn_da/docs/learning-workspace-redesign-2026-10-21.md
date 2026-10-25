@@ -1020,5 +1020,59 @@ _load_ref(name) → polars DataFrame / _RefTable / 行列表 → frame_equal / s
 
 ### 20.8 未做
 
-- 真 SSE（最后一块）。
 - 剩余 20 条魔数断言里只换了 10 组；`05-polars-cleaning` 的缺失值统计、`09-duckdb-window-functions` 的窗口累计仍用 `expr_true`（它们的「正确答案」是统计量而非表，用 `frame_equal` 反而更绕）。
+
+## 21. 流式对话（真 SSE，E3，2026-10-25）
+
+### 21.1 为什么做
+
+E1 上线时是「诚实的非流式」：一次提问实测 **12646ms** 才整段落地，界面只有一句「正在思考…」。`src/api/agent.ts` 早先那版 `streamChatMessage` 是**伪流式**（后端整段返回后才一次性 `onToken`），留着比没有更误导，所以 E1 直接删了它。E3 补上真增量。
+
+### 21.2 探测结论（都是实测，不是推测）
+
+| 探测 | 结论 |
+|---|---|
+| dashscope `qwen3.8-27b` + `stream=True` + `stream_options={"include_usage": True}` | 61 chunks、**首个文本 delta 4391ms**、总 5360ms、`reasoning_tokens=104` |
+| 流式 tool_calls | `delta.tool_calls[]` **按 `index` 分片下发**，name/arguments 都是碎片，必须累加 |
+| `Depends` 的生命周期 | `StreamingResponse` 生成器运行期间，依赖的 `finally` **尚未**执行（3 个 chunk 内 `closed=False`）→ 流里可安全用注入的 `AsyncSession` |
+| `contextvar` | `BaseHTTPMiddleware` 里 `request_id_var.set(...)` 在流式生成器内仍能 `get()` 到 → `_persist_interaction` 的审计字段可用 |
+| 前端传输 | axios 的 XHR 适配器拿不到增量；`EventSource` 只支持 GET、塞不进对话上下文 → 只能 `fetch` + `getReader()` |
+
+### 21.3 后端
+
+- `app/agent/llm_client.py`：新增 `LLMStreamEvent` 与 `async stream()`，与 `complete()` 共用重试与错误分类，但**引入 `emitted` 标志 —— 已吐字之后任何异常一律收尾为 `interrupted=True`，不再重试**。理由：重试会让学习者看到重复开头，比中断更糟。
+- `app/agent/service.py`：`chat_stream()` 与 `chat_with_tools()` 同套约束（证据注入 → 幂等 → 分级指令），但**每一轮都用流式**。理由：模型在**同一轮输出**里决定「直接回答还是调工具」，非流式会让工具轮多等一次完整往返（探测实测 1.7–3.9s）。
+- **已吐字后中断必须保留内容**：第一版把 `text` 拼好落在 `if error_reason: break` 之后，降级文案把用户已经看到的字整个盖掉（测试报 `'AI 助手暂时不可用（模...' == '我先看一下你的代码'`）。现在独立分支处理：持久化 `fallback_reason="stream_interrupted"`、发 `error(partial=True)`、`done` 里 `content=text` + `used_fallback=True`。
+- `app/agent/router.py`：`POST /agent/chat/stream`，`text/event-stream` + `Cache-Control: no-cache` + `X-Accel-Buffering: no`（否则 nginx 会整段缓冲，SSE 就白做了）。事件 `{"type":"delta"|"tool"|"error"|"done"}`；`asyncio.CancelledError` 直接 raise（前端点停止）；其他异常在已发响应头后转成 `error` 事件而非 500。
+- **空消息在建立流之前就 422**（`StdResp.error(msg="message is required", code=422).to_response()`），否则前端拿到一个空流，以为模型没说话。`extract_user_message` 也改成纯空白视为没问，避免白调一次模型。
+
+### 21.4 前端
+
+- `src/api/agent.ts` 重写：`fetch` + `response.body.getReader()`，按 `\n\n` 切 SSE 块（最后一块可能是半个事件，留在 buffer 等下一块）；坏 JSON 行忽略而不打断整段；`!response.ok` 读业务信封的 `msg` 抛 `ApiError`。`credentials: 'include'` 保证匿名会话 cookie 随请求走。
+- `useAgentConversation`：新增 `activeTools`（工具执行期间界面显示「正在查课程资料…」/「正在读你的任务记录…」等），`onDone` 仍以服务端最终 `content` 为准覆盖（增量拼接可能丢尾字），`stopStreaming` **保留已吐文本**并追加「（已停止生成）」。
+- `WorkspaceAssistant.vue`：等待占位由固定「正在思考…」改为随 `activeTools` 变化的文案；流式期间显示「正在生成…（可点「停止」）」；发送按钮在 `isLoading` 时变成「停止」。
+
+### 21.5 测试
+
+- `tests/unit/test_agent_stream.py`（10 项）：增量顺序与 `done` 完整数据、工具轮先发 `tool` 事件再续流、强制轮 `tool_choice="none"`、未吐字失败走降级文案、吐字后中断标 partial 且**保留内容**、中断不重试（`len(llm.calls) == 1`）、同 requestId 不重复调模型。
+- `tests/unit/test_agent_stream_endpoint.py`（4 项）：`content-type` / `x-accel-buffering`、事件顺序、中文不转义、空消息 422、服务内部崩溃在已发响应头后变成 `error` 事件而非 500。
+- `src/api/agent-stream.spec.ts`（7 项）：跨块边界重组事件（把一条事件切三段）、delta 顺序、tool 事件、中断保留已吐文本、业务信封错误、`X-Request-ID` 与 `credentials`、坏 JSON 行被忽略。
+- `useAgentConversation.spec.ts` +6 项、`WorkspaceAssistant.spec.ts` +3 项。
+
+### 21.6 实测
+
+| 项目 | 结果 |
+|---|---|
+| 后端 pytest | **507 passed**（493 + 流式 14） |
+| 前端 vitest | **143 passed（18 文件）** |
+| 真实链路（`httpx client.stream`） | `first_delta_ms=5838`、`total_ms=7418`、26 个增量、`done_content_matches_stream=True`、`interactionId=57` 落库 |
+| `deploy/acceptance.sh` | **29 PASS / 0 FAIL**（新增 A13：响应头、事件解析、`done` 在最后、增量与 content 一致、审计落库、空消息 422） |
+
+结论：**首字延迟没有变短**（思考模式下 `reasoning_tokens` 占大头），SSE 改善的是「首字之后 1.6 秒内 26 段陆续可见」以及工具执行期间有反馈。
+
+### 21.7 未做
+
+- 首字延迟本身（要关 `LLM_ENABLE_THINKING` 或换非思考模型，属模型选型问题，不是前端能解决的）。
+- 断线重连 / 断点续传（当前中断即结束，保留已生成内容）。
+- 多标签页并发同一会话的流（同一 `requestId` 幂等，但两个不同请求仍会并行生成）。
+

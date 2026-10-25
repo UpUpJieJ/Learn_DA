@@ -202,4 +202,87 @@ describe("WorkspaceAssistant", () => {
         await wrapper.setProps({ context: { ...CONTEXT, cellId: "c3" } });
         await vi.waitFor(() => expect(wrapper.text()).not.toContain("因为 orders 列没生成"));
     });
+
+    // ---- E3 流式 ----
+
+    it("explains the wait with the running tool instead of a bare spinner", async () => {
+        let release: (() => void) | null = null;
+        mockedSend.mockImplementation(
+            ({ onTool }) =>
+                new Promise<void>((resolve) => {
+                    onTool?.(["search_knowledge"]);
+                    release = () => resolve();
+                }),
+        );
+
+        const wrapper = mountAssistant();
+        void wrapper
+            .findAll("button")
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
+            .trigger("click");
+
+        await vi.waitFor(() => expect(wrapper.text()).toContain("正在查课程资料…"));
+        expect(wrapper.text()).not.toContain("正在思考…");
+
+        release!();
+    });
+
+    it("renders streamed text before the stream finishes", async () => {
+        let release: (() => void) | null = null;
+        mockedSend.mockImplementation(
+            ({ onDelta, onDone }) =>
+                new Promise<void>((resolve) => {
+                    onDelta?.("先看 region");
+                    release = () => {
+                        onDone?.("先看 region 列", null, null);
+                        resolve();
+                    };
+                }),
+        );
+
+        const wrapper = mountAssistant();
+        void wrapper
+            .findAll("button")
+            .find((item) => item.text().includes("这一步要用到哪些 API？"))!
+            .trigger("click");
+
+        // 增量先到：不必等整段回答就能看到字
+        await vi.waitFor(() => expect(wrapper.text()).toContain("先看 region"));
+        expect(wrapper.text()).toContain("正在生成");
+
+        release!();
+        await vi.waitFor(() => expect(wrapper.text()).toContain("先看 region 列"));
+    });
+
+    it("swaps the send button for a stop button while streaming", async () => {
+        let release: (() => void) | null = null;
+        mockedSend.mockImplementation(
+            ({ signal }) =>
+                new Promise<void>((resolve) => {
+                    release = () => resolve();
+                    signal?.addEventListener("abort", () => resolve());
+                }),
+        );
+
+        const wrapper = mountAssistant();
+        await wrapper.find("textarea").setValue("看下这段");
+        const sendButton = wrapper
+            .findAll("button")
+            .find((item) => item.text().includes("发送"))!;
+        await sendButton.trigger("click");
+
+        await vi.waitFor(() => {
+            const texts = wrapper.findAll("button").map((item) => item.text());
+            expect(texts).toContain("停止");
+            expect(texts).not.toContain("发送");
+        });
+
+        const stop = wrapper
+            .findAll("button")
+            .find((item) => item.text().includes("停止"))!;
+        await stop.trigger("click");
+        await vi.waitFor(() => expect(wrapper.text()).toContain("已中断"));
+
+        release!();
+    });
 });

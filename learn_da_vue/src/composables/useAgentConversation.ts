@@ -15,9 +15,8 @@ import type {
 // - 结构化教学反馈与 interactionId 关联；
 // - 用户反馈提交（upsert）。
 //
-// 非流式：后端 /agent/chat 一次返回完整答案，这里如实反映——
-// 请求期间 assistant 消息为空且 isStreaming=true（界面显示"正在思考…"），
-// 拿到答案后整段落地。不做逐字吐字的假象（用户 E1 决定）。
+// 流式（E3）：后端 /agent/chat/stream 是真 SSE，文本增量边生成边下发。
+// assistant 消息的 content 会被逐段追加，isStreaming 在 done/error 后置 false。
 // =====================================================
 
 interface AgentConversationOptions {
@@ -34,6 +33,8 @@ export function useAgentConversation(options: AgentConversationOptions) {
     const copiedBlockId = ref<string | null>(null);
     const feedbackSubmittingId = ref<number | null>(null);
     const streamingMessageId = ref<string | null>(null);
+    /** 服务端此刻在调哪个工具（显示「正在查…」用），空表示没有 */
+    const activeTools = ref<string[]>([]);
 
     let abortController: AbortController | null = null;
 
@@ -91,24 +92,41 @@ export function useAgentConversation(options: AgentConversationOptions) {
                     history,
                     context: options.context(),
                 },
+                onDelta: (text) => {
+                    const msg = messages.value.find((m) => m.id === assistantId);
+                    if (msg) msg.content += text;
+                    activeTools.value = [];
+                    void options.scrollToBottom?.();
+                },
+                onTool: (names) => {
+                    activeTools.value = names;
+                },
                 onDone: (fullReply, feedback, interactionId) => {
                     const msg = messages.value.find((m) => m.id === assistantId);
                     if (msg) {
+                        // 以服务端最终 content 为准（增量拼接可能丢尾字）
                         msg.content = fullReply || msg.content;
                         msg.isStreaming = false;
                         msg.teachingFeedback = feedback ?? null;
                         msg.interactionId = interactionId ?? null;
                     }
+                    activeTools.value = [];
                     streamingMessageId.value = null;
                     isLoading.value = false;
                     void options.scrollToBottom?.();
                 },
-                onError: (error) => {
+                onError: (error, partial) => {
                     const msg = messages.value.find((m) => m.id === assistantId);
                     if (msg) {
-                        msg.content = formatAgentErrorMessage(error.message);
+                        if (partial && msg.content) {
+                            // 已经吐出的字保留，只在末尾补一句不完整
+                            msg.content = `${msg.content}\n\n（${error.message}）`;
+                        } else {
+                            msg.content = formatAgentErrorMessage(error.message);
+                        }
                         msg.isStreaming = false;
                     }
+                    activeTools.value = [];
                     streamingMessageId.value = null;
                     isLoading.value = false;
                     void options.scrollToBottom?.();
@@ -117,10 +135,11 @@ export function useAgentConversation(options: AgentConversationOptions) {
             });
         } catch {
             const msg = messages.value.find((m) => m.id === assistantId);
-            if (msg) {
-                msg.content = formatAgentErrorMessage();
+            if (msg && msg.isStreaming) {
+                msg.content = msg.content || formatAgentErrorMessage();
                 msg.isStreaming = false;
             }
+            activeTools.value = [];
             streamingMessageId.value = null;
             isLoading.value = false;
         }
@@ -132,15 +151,18 @@ export function useAgentConversation(options: AgentConversationOptions) {
 
         const msg = messages.value.find((m) => m.id === streamingMessageId.value);
         if (msg) {
-            msg.content = msg.content || "已中断";
+            // 已吐出的内容保留，只补一句「已停止」，不假装回答完整
+            msg.content = msg.content ? `${msg.content}\n\n（已停止生成）` : "已中断";
             msg.isStreaming = false;
         }
+        activeTools.value = [];
         streamingMessageId.value = null;
         isLoading.value = false;
     }
 
     function clearMessages() {
         messages.value = [];
+        activeTools.value = [];
     }
 
     async function copyCode(code: string, blockId: string) {
@@ -175,6 +197,7 @@ export function useAgentConversation(options: AgentConversationOptions) {
         copiedBlockId,
         feedbackSubmittingId,
         streamingMessageId,
+        activeTools,
         messageCount,
         sendMessage,
         stopStreaming,

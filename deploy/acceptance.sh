@@ -436,6 +436,83 @@ else
   bad "越层请求" "http=$code level=$forged（期望服务端算出 1，客户端不能指定层级）"
 fi
 
+# ---------- A13 流式对话（SSE）----------
+echo "[A13] 流式对话：真增量下发、事件格式与顺序、空消息在建立流之前被拒"
+# 用全新访客，避免复用到 A9 的 interaction（同一 requestId 会幂等重放）
+SSE_OUT="$WORK/sse.txt"
+SSE_HEAD="$WORK/sse_headers.txt"
+printf '%s' '{"message":"Polars 里 group_by 之后一般接什么？一句话回答。","history":[]}' > "$PAYLOAD"
+# -N 关掉 curl 自己的输出缓冲，否则「流式」在客户端这侧就看不出来了
+sse_code=$(curl -s -N -o "$SSE_OUT" -D "$SSE_HEAD" -w "%{http_code}" --max-time 120 \
+  -c "$JAR_FRESH" -b "$JAR_FRESH" \
+  -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+  -H "X-Request-ID: $(new_rid)" \
+  --data-binary "@$PAYLOAD" "$API/agent/chat/stream")
+sse_type=$(grep -i "^content-type:" "$SSE_HEAD" | tr -d '\r' | head -1 | cut -d' ' -f2)
+sse_buffering=$(grep -i "^x-accel-buffering:" "$SSE_HEAD" | tr -d '\r' | head -1 | cut -d' ' -f2)
+if [ "$sse_code" = "200" ] && [ "${sse_type%%;*}" = "text/event-stream" ] && [ "$sse_buffering" = "no" ]; then
+  ok "SSE 响应头正确（$sse_type / x-accel-buffering=no）"
+else
+  bad "SSE 响应头" "http=$sse_code content-type=$sse_type x-accel-buffering=$sse_buffering"
+fi
+
+# 事件结构：data: {...} 行 + 空行分隔；最后一条必须是 done
+sse_stats=$("$PY" - "$SSE_OUT" <<'PYEOF'
+import json, sys
+
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+events = []
+for block in raw.split("\n\n"):
+    line = next((x[len("data:"):].strip() for x in block.split("\n") if x.startswith("data:")), None)
+    if not line:
+        continue
+    try:
+        events.append(json.loads(line))
+    except Exception:
+        events.append({"type": "__bad__"})
+
+kinds = [e.get("type") for e in events]
+deltas = "".join(e.get("text") or "" for e in events if e.get("type") == "delta")
+done = next((e.get("data") or {} for e in events if e.get("type") == "done"), {})
+bad_lines = kinds.count("__bad__")
+print(f"{bad_lines}|{len([k for k in kinds if k == 'delta'])}|{len(deltas)}|{kinds[-1] if kinds else ''}|{done.get('usedFallback')}|{int((done.get('content') or '') == deltas)}|{done.get('interactionId')}")
+PYEOF
+)
+IFS='|' read -r sse_bad sse_deltas sse_chars sse_last sse_fallback sse_match sse_iid <<< "$sse_stats"
+if [ "${sse_bad:-1}" = "0" ] && [ "${sse_deltas:-0}" -ge 1 ] && [ "${sse_chars:-0}" -ge 10 ]; then
+  ok "事件全部是合法 JSON，收到 $sse_deltas 个增量 / $sse_chars 字符"
+else
+  bad "SSE 事件解析" "bad_lines=$sse_bad deltas=$sse_deltas chars=$sse_chars"
+fi
+if [ "$sse_last" = "done" ]; then
+  ok "最后一条事件是 done（顺序：delta… -> done）"
+else
+  bad "SSE 结束事件" "最后一条是 $sse_last（期望 done）"
+fi
+if [ "$sse_fallback" = "False" ] && [ "$sse_match" = "1" ]; then
+  ok "增量拼接与服务端最终 content 一致，且未降级"
+else
+  bad "SSE 内容一致性" "usedFallback=$sse_fallback content_matches_deltas=$sse_match"
+fi
+if [ -n "${sse_iid:-}" ] && [ "$sse_iid" != "None" ]; then
+  ok "流式回答落库了 AgentInteraction（interactionId=$sse_iid）"
+else
+  bad "SSE 审计落库" "interactionId=$sse_iid（期望非空）"
+fi
+
+# 空消息必须在建立流之前被拒（否则前端收到一个空流，以为模型没说话）
+printf '%s' '{"message":"   "}' > "$PAYLOAD"
+empty_code=$(curl -s -o "$WORK/sse_empty.json" -w "%{http_code}" --max-time 30 \
+  -c "$JAR_FRESH" -b "$JAR_FRESH" \
+  -H "Content-Type: application/json" -H "Accept: text/event-stream" \
+  --data-binary "@$PAYLOAD" "$API/agent/chat/stream")
+empty_msg=$(json_path "$WORK/sse_empty.json" msg)
+if [ "$empty_code" = "422" ]; then
+  ok "空消息在建立流之前被拒（HTTP 422：$empty_msg）"
+else
+  bad "SSE 空消息" "http=$empty_code（期望 422，不能返回一个空流）"
+fi
+
 # ---------- 汇总 ----------
 echo
 echo "=== 验收汇总 ==="

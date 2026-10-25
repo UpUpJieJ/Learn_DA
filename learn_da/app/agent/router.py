@@ -1,4 +1,8 @@
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.service import AnalyticsService
@@ -85,6 +89,62 @@ async def chat_with_agent(
     # 阶段 3：ai_help 已在 service 内与 AgentInteraction 同事务写入
     # （lesson/attempt 来自 evidence resolver，非客户端自报），此处不再重复埋点。
     return StdResp.success(data=data)
+
+
+@router.post("/chat/stream")
+@limiter.limit(settings.RATE_LIMIT_AGENT_CHAT)
+async def chat_with_agent_stream(
+    request: Request,
+    payload: AgentChatRequest,
+    visitor_id: str = Depends(get_anonymous_visitor_id),
+    service: AgentService = Depends(get_agent_service),
+):
+    """流式对话（E3，SSE）：边生成边下发，前端逐字渲染。
+
+    事件形状（每行 ``data: <json>``）：
+
+    - ``{"type": "delta", "text": "..."}``  文本增量
+    - ``{"type": "tool", "names": ["..."]}`` 正在调用服务端工具
+    - ``{"type": "error", "reason": "...", "partial": true}`` 中途失败
+    - ``{"type": "done", "data": {...}}``   完整结果（同非流式 AgentChatData）
+
+    为什么用 POST：请求体是完整上下文（历史 + 证据），不是可塞进 query 的
+    短参数；前端用 fetch + ReadableStream 读取，不依赖 EventSource。
+    """
+    user_message = service.extract_user_message(payload)
+    if not user_message:
+        return StdResp.error(msg="message is required", code=422).to_response()
+
+    async def event_source():
+        try:
+            async for event in service.chat_stream(
+                payload, visitor_id=visitor_id
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            # 前端主动断开（点「停止」）：不再补发事件，让连接安静结束
+            raise
+        except Exception:
+            log.exception("[agent] 流式对话异常")
+            reason = "upstream_error"
+            yield (
+                "data: "
+                + json.dumps(
+                    {"type": "error", "reason": reason, "partial": True},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # 关掉 nginx 等反向代理的缓冲，否则增量会被攒成整段才发出
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/feedback", response_model=StdResp[AgentFeedbackResponse])

@@ -151,4 +151,109 @@ describe("useAgentConversation", () => {
         conversation.clearMessages();
         expect(conversation.messages.value).toHaveLength(0);
     });
+
+    // ---- E3 流式 ----
+
+    it("appends deltas into the assistant message as they arrive", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onDelta, onDone }) => {
+            onDelta?.("先 ");
+            onDelta?.("group_by");
+            // 增量期间消息应处于 streaming 且已有内容
+            expect(conversation.messages.value[1]?.content).toBe("先 group_by");
+            expect(conversation.messages.value[1]?.isStreaming).toBe(true);
+            onDelta?.(" 再 agg。");
+            onDone?.("先 group_by 再 agg。", null, null);
+        });
+
+        await conversation.sendMessage("怎么分组");
+
+        const assistant = conversation.messages.value[1];
+        expect(assistant.content).toBe("先 group_by 再 agg。");
+        expect(assistant.isStreaming).toBe(false);
+    });
+
+    it("prefers the server final content over the concatenated deltas", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onDelta, onDone }) => {
+            onDelta?.("半句");
+            // 服务端最终内容才是权威（增量可能丢尾字）
+            onDone?.("完整回答", null, null);
+        });
+
+        await conversation.sendMessage("hi");
+
+        expect(conversation.messages.value[1]?.content).toBe("完整回答");
+    });
+
+    it("exposes the running tool so the panel can explain the wait", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onTool, onDelta, onDone }) => {
+            onTool?.(["search_knowledge"]);
+            expect(conversation.activeTools.value).toEqual(["search_knowledge"]);
+            onDelta?.("查到了");
+            // 一旦开始吐字，工具提示就该撤掉
+            expect(conversation.activeTools.value).toEqual([]);
+            onDone?.("查到了", null, null);
+        });
+
+        await conversation.sendMessage("hi");
+
+        expect(conversation.activeTools.value).toEqual([]);
+    });
+
+    it("keeps partial text and appends a note when the stream breaks", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onDelta, onError }) => {
+            onDelta?.("我先看");
+            onError?.(new Error("回答生成到一半中断了，上面的内容不完整"), true);
+            throw new Error("回答生成到一半中断了，上面的内容不完整");
+        });
+
+        await conversation.sendMessage("hi").catch(() => {});
+
+        const assistant = conversation.messages.value[1];
+        // 已吐出的字必须保留，只在末尾标注不完整
+        expect(assistant.content).toContain("我先看");
+        expect(assistant.content).toContain("不完整");
+        expect(assistant.isStreaming).toBe(false);
+        expect(conversation.isLoading.value).toBe(false);
+    });
+
+    it("replaces an empty message with the error hint when nothing was streamed", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onError }) => {
+            onError?.(new Error("模型超时"), false);
+            throw new Error("模型超时");
+        });
+
+        await conversation.sendMessage("hi").catch(() => {});
+
+        const assistant = conversation.messages.value[1];
+        expect(assistant.content).toContain("模型超时");
+        expect(assistant.isStreaming).toBe(false);
+    });
+
+    it("stopStreaming keeps the text already streamed", async () => {
+        const conversation = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onDelta, signal }) => {
+            onDelta?.("已经说了一半");
+            await new Promise<void>((resolve) => {
+                signal?.addEventListener("abort", () => resolve());
+            });
+        });
+
+        const pending = conversation.sendMessage("hi");
+        await vi.waitFor(() =>
+            expect(conversation.messages.value[1]?.content).toBe("已经说了一半"),
+        );
+
+        conversation.stopStreaming();
+
+        const assistant = conversation.messages.value[1];
+        expect(assistant.content).toContain("已经说了一半");
+        expect(assistant.content).toContain("已停止");
+        expect(assistant.isStreaming).toBe(false);
+        await pending.catch(() => {});
+    });
 });

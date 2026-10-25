@@ -268,7 +268,7 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
 
 ### 3. AI Agent 助手
 
-> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**助手已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`），非流式（「正在思考…」→ 整段落地）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）与 §17（E1）。
+> 状态：Agent 后端（证据链 + FC 工具 + 五态反馈）可用，**助手已接进工作区右栏**（改版 E1，`learn_da_vue/src/components/workspace/WorkspaceAssistant.vue`），对话走 `POST /api/v1/agent/chat/stream`（改版 E3，**真 SSE 逐字下发**，可中途停止）。见 `learn_da/docs/learning-workspace-redesign-2026-10-21.md` §16（E0）、§17（E1）、§19（E2）、§21（E3）。
 
 - **学习证据驱动**（阶段 3 / 改版 E0）：Agent 的判断完全基于服务端数据库证据
   —— 读 `TaskAttempt`（Runner 原始 `verdict` + 每条断言的 `actual`），
@@ -286,6 +286,10 @@ docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
   代码没跑通时提示读的是单元格真实 stderr（含报错里的 `valid columns`），不会拿
   「断言未求值」当结论。客户端没有「要第几层」的参数，越层请求天然无效。
   同一层级也会以 system 指令进对话 prompt，模型不再对所有人用同一套口吻。
+- **流式回答（改版 E3）**：对话走 SSE（`POST /api/v1/agent/chat/stream`），模型每吐一段就渲染一段，
+  工具调用期间显示「正在查课程资料…」而不是干等；可点「停止」中断，**已经生成的内容会保留**
+  （中断的回答标 `usedFallback` 并提示不完整，不会被降级文案盖掉）。思考模式下首字仍要约 5–6 秒
+  （`reasoning_tokens` 占大头），SSE 改善的是「首字之后立刻可见」，不是整体更快。
 - **模型不可用就明说不可用**：LLM 调用失败时返回「AI 助手暂时不可用（模型调用失败），
   这次我不会编造回答」，并说明 `teachingFeedback` 仍是服务端权威结果——不再用预置
   话术伪装成回答。
