@@ -3,7 +3,6 @@
 """
 
 from app.utils.base_response import StdResp
-from app.utils.pagination import PaginationResult, create_pagination_result
 
 
 # ──────────────────────────────────────────────
@@ -60,64 +59,3 @@ class TestStdResp:
         assert "code" in body
         assert "msg" in body
         assert "data" in body
-
-
-# ──────────────────────────────────────────────
-# 分页工具测试
-# ──────────────────────────────────────────────
-
-class TestPagination:
-    def test_basic(self):
-        result = create_pagination_result(
-            items=list(range(10)),
-            total=100,
-            page=1,
-            page_size=10,
-        )
-        assert isinstance(result, PaginationResult)
-        assert result.total == 100
-        assert result.total_pages == 10
-        assert result.has_next is True
-        assert result.has_prev is False
-
-    def test_last_page(self):
-        result = create_pagination_result(
-            items=list(range(5)),
-            total=25,
-            page=5,
-            page_size=5,
-        )
-        assert result.has_next is False
-        assert result.has_prev is True
-
-    def test_single_page(self):
-        result = create_pagination_result(
-            items=[1, 2, 3],
-            total=3,
-            page=1,
-            page_size=10,
-        )
-        assert result.total_pages == 1
-        assert result.has_next is False
-        assert result.has_prev is False
-
-    def test_total_pages_ceiling(self):
-        """total 不能整除 page_size 时，total_pages 向上取整"""
-        result = create_pagination_result(
-            items=[],
-            total=11,
-            page=1,
-            page_size=10,
-        )
-        assert result.total_pages == 2
-
-    def test_empty_result(self):
-        result = create_pagination_result(
-            items=[],
-            total=0,
-            page=1,
-            page_size=10,
-        )
-        assert result.total_pages == 0
-        assert result.has_next is False
-        assert result.has_prev is False

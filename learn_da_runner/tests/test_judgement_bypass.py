@@ -1,18 +1,17 @@
 """判定越权回归测试（报告 refactor-review-2026-10-26.md 附录 A 的五条 PoC）。
 
-这些测试驱动**真实的** execute_session 链路（prepare_workspace → driver
+这些测试驱动保留的内部父进程兼容模式的真实 execute_session 链路（prepare_workspace → driver
 parent 子进程 → learner_child 子进程 → 反向扫描 marker+nonce 行），断言的
 是**安全侧的期望行为**：学员代码不能伪造判定结论、不能触达参考结果
-（refs）。
+（refs）。正式工作区使用 observations，并在后端可信判定，另有全课程契约测试覆盖。
 
 判定隔离（附录 A.2，两进程拆分）落地后的状态：
 
 - PoC-1 / PoC-2 / PoC-2b / PoC-3 已修复：判定在 parent 进程内做，refs 经
   stdin 进 parent 内存、不落盘、不进学员进程；marker 行带 nonce，伪造行
   过不了解析。这四条现在是**常绿的回归护栏**；
-- PoC-4（鸭子类型绕过 expr_true）仍标记 xfail：expr_true 过渡期在学员
-  子进程内求值（需要学员命名空间里的对象），承认为不可信，要等类型契约
-  （P0-6 / 附录 A.3 第 2 步）落地后才删。
+- PoC-4（鸭子类型绕过 expr_true）已是常绿回归：兼容求值拒绝自定义对象，
+  正式课程已全部改用结构化类型契约；本文件没有 xfail。
 
 测试刻意只用 JSON refs 与纯 stdlib 学员代码（不 import polars），
 保证 runner venv 也能跑完整链路。
@@ -226,7 +225,7 @@ def test_poc3_plan_json_does_not_leak_refs() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PoC-4：鸭子类型万能相等对象绕过 expr_true（P0-6，等类型契约落地后才修）
+# PoC-4：兼容表达式不能接受鸭子类型万能相等对象
 # ---------------------------------------------------------------------------
 def test_poc4_duck_type_cannot_pass_expr_true() -> None:
     code = (

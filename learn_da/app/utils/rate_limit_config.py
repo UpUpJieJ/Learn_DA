@@ -2,7 +2,7 @@
 速率限制配置模块
 
 提供统一的速率限制配置和异常处理，确保：
-1. RateLimitMiddleware（中间件级别）和 SlowAPI（装饰器级别）返回一致的响应格式
+1. SlowAPI 限流异常返回统一响应格式
 2. 异常消息统一且友好
 3. 支持自定义限流规则，只需在一个地方配置
 """
@@ -11,7 +11,6 @@ from typing import Dict, Any, Optional, List
 from fastapi import status
 from app.utils.base_response import StdResp
 from app.utils import log
-import time
 import re
 
 
@@ -91,22 +90,6 @@ class RateLimitConfig:
     
     # HTTP 状态码
     RATE_LIMIT_STATUS_CODE = status.HTTP_429_TOO_MANY_REQUESTS
-    
-    @classmethod
-    def add_rule(cls, rule: EndpointRateLimitRule, priority: int = -1):
-        """
-        添加新的限流规则
-        
-        Args:
-            rule: 限流规则
-            priority: 优先级（-1 表示添加到末尾，0 表示添加到开头）
-        """
-        if priority == 0:
-            cls.RULES.insert(0, rule)
-        elif priority == -1:
-            cls.RULES.append(rule)
-        else:
-            cls.RULES.insert(priority, rule)
     
     @classmethod
     def get_rule_by_path(cls, path: str) -> EndpointRateLimitRule:
@@ -245,93 +228,3 @@ class RateLimitExceptionHandlers:
             retry_after=retry_after,
             detail=detail
         )
-    
-    @staticmethod
-    def handle_middleware_rate_limit(
-        limit: int,
-        remaining: int,
-        reset: int,
-        endpoint_type: str = "default"
-    ) -> StdResp:
-        """
-        处理中间件级别的速率限制
-        
-        Args:
-            limit: 限制数量
-            remaining: 剩余数量
-            reset: 重置时间戳
-            endpoint_type: 端点类型
-            
-        Returns:
-            StdResp: 统一格式的响应
-        """
-        return RateLimitConfig.create_rate_limit_response(
-            endpoint_type=endpoint_type,
-            retry_after=max(1, reset - int(__import__('time').time()))
-        )
-
-
-# 便捷函数，用于在路由中快速创建限流响应
-def create_rate_limit_response(
-    endpoint_type: str = "default",
-    retry_after: int = 60,
-    message: Optional[str] = None
-) -> StdResp:
-    """
-    创建速率限制响应的便捷函数
-    
-    Args:
-        endpoint_type: 端点类型
-        retry_after: 重试时间（秒）
-        message: 自定义错误消息
-        
-    Returns:
-        StdResp: 限流响应
-    """
-    return RateLimitConfig.create_rate_limit_response(
-        endpoint_type=endpoint_type,
-        retry_after=retry_after,
-        message=message
-    )
-
-
-# 装饰器：用于快速添加自定义限流规则
-def register_rate_limit_rule(
-    name: str,
-    path_patterns: List[str],
-    error_message: str,
-    default_retry_after: int = 60,
-    priority: int = -1
-):
-    """
-    注册限流规则的装饰器
-    
-    使用示例：
-    ```python
-    @register_rate_limit_rule(
-        name="custom",
-        path_patterns=[r"/custom", r".*custom.*"],
-        error_message="自定义请求过于频繁",
-        default_retry_after=120
-    )
-    def some_function():
-        pass
-    ```
-    
-    Args:
-        name: 规则名称
-        path_patterns: 路径模式列表（支持正则表达式）
-        error_message: 错误消息
-        default_retry_after: 默认重试时间（秒）
-        priority: 优先级（-1 表示添加到末尾，0 表示添加到开头）
-    """
-    def decorator(func):
-        rule = EndpointRateLimitRule(
-            name=name,
-            path_patterns=path_patterns,
-            error_message=error_message,
-            default_retry_after=default_retry_after
-        )
-        RateLimitConfig.add_rule(rule, priority)
-        return func
-    return decorator

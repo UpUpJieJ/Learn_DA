@@ -1,5 +1,7 @@
 # Learn DA Agent 整体功能与工作流程审查报告
 
+> 历史审查：以下能力、风险和测试数量描述 2026-07-14 基线，不代表当前 AI 助手。当前实现见[重构收口记录](refactor-closeout-2026-10-31.md)，操作入口见[文档索引](README.md)。
+
 > 审查日期：2026-07-14  
 > 审查基线：`main` / `5f1f1b8`  
 > 审查范围：Agent 前后端、知识检索、代码沙箱、学习推荐、行为分析、部署配置与相关测试
@@ -59,15 +61,15 @@ flowchart LR
 
 | 模块 | 当前职责 | 评价 |
 | --- | --- | --- |
-| [`AgentPanel.vue`](../../learn_da_vue/src/components/agent/AgentPanel.vue#L35) | 汇集 Playground/课程上下文、维护内存消息、快捷动作、渲染回答 | 功能集中但文件接近 1000 行，状态、网络和渲染耦合较深 |
-| [`agent.ts`](../../learn_da_vue/src/api/agent.ts#L14) | chat/fix/explain/guidance 请求封装 | chat 实际为非流式整包返回 |
-| [`router.py`](../app/agent/router.py#L27) | 4 个 Agent HTTP 入口和依赖组装 | 接口小，但每请求重建重型依赖 |
-| [`service.py`](../app/agent/service.py#L34) | 路由、检索、prompt、LLM、解析、修复验证编排 | 核心模块职责清楚，外部调用策略过薄 |
-| [`routing.py`](../app/agent/routing.py#L14) | 按关键词选择 6 种工具名 | 是意图标签器，不是工具执行器 |
-| [`tools.py`](../app/agent/tools.py#L105) | 每类回复的格式要求和 fallback | 名称为 tools，实际没有工具 schema 或可调用函数 |
-| [`knowledge.py`](../app/agent/knowledge.py#L62) | 课程切块、关键词/向量检索、知识块拼装 | 有降级能力，但缓存只活在单次请求对象内 |
-| [`SandboxService`](../app/sandbox/service.py#L14) | 安全检查并选择本地、Docker 或 mock runner | 生产默认和安全检查不足以隔离不可信代码 |
-| [`RecommendationService`](../app/learning/recommendation.py#L119) | 顺学、回补、分支、回流规则 | 推荐排序保持确定性，是正确的职责划分 |
+| [`AgentPanel.vue`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/components/agent/AgentPanel.vue#L35) | 汇集 Playground/课程上下文、维护内存消息、快捷动作、渲染回答 | 功能集中但文件接近 1000 行，状态、网络和渲染耦合较深 |
+| [`agent.ts`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/api/agent.ts#L14) | chat/fix/explain/guidance 请求封装 | chat 实际为非流式整包返回 |
+| [`router.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/router.py#L27) | 4 个 Agent HTTP 入口和依赖组装 | 接口小，但每请求重建重型依赖 |
+| [`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L34) | 路由、检索、prompt、LLM、解析、修复验证编排 | 核心模块职责清楚，外部调用策略过薄 |
+| [`routing.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/routing.py#L14) | 按关键词选择 6 种工具名 | 是意图标签器，不是工具执行器 |
+| [`tools.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/tools.py#L105) | 每类回复的格式要求和 fallback | 名称为 tools，实际没有工具 schema 或可调用函数 |
+| [`knowledge.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/knowledge.py#L62) | 课程切块、关键词/向量检索、知识块拼装 | 有降级能力，但缓存只活在单次请求对象内 |
+| [`SandboxService`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/sandbox/service.py#L14) | 安全检查并选择本地、Docker 或 mock runner | 生产默认和安全检查不足以隔离不可信代码 |
+| [`RecommendationService`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/learning/recommendation.py#L119) | 顺学、回补、分支、回流规则 | 推荐排序保持确定性，是正确的职责划分 |
 
 从模块深度看，`AgentService.chat/fix_code/explain_code/recommendation_guidance` 提供了较小的外部接口，内部隐藏了较多编排细节，方向合理；但 LLM、检索器和沙箱的生命周期、错误语义与性能特征仍泄漏为调用方难以预测的行为。
 
@@ -145,7 +147,7 @@ sequenceDiagram
 
 ### R-01 [P0] 生产默认在主后端容器执行不可信代码
 
-**证据**：生产 Compose 默认 `SANDBOX_DOCKER_ENABLED=false`、`SANDBOX_LOCAL_ENABLED=true`（[`docker-compose.prod.yml`](../../docker-compose.prod.yml#L23)，[`deploy/.env.example`](../../deploy/.env.example#L18)）；安全检查只是少量正则黑名单（[`safety_check.py`](../app/sandbox/safety_check.py#L6)）；修复接口会自动执行模型返回代码（[`service.py`](../app/agent/service.py#L107)）。本次复现中，`pathlib.Path` 文件系统访问被判定为安全。
+**证据**：生产 Compose 默认 `SANDBOX_DOCKER_ENABLED=false`、`SANDBOX_LOCAL_ENABLED=true`（[`docker-compose.prod.yml`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/docker-compose.prod.yml#L23)，[`deploy/.env.example`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/deploy/.env.example#L18)）；安全检查只是少量正则黑名单（[`safety_check.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/sandbox/safety_check.py#L6)）；修复接口会自动执行模型返回代码（[`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L107)）。本次复现中，`pathlib.Path` 文件系统访问被判定为安全。
 
 **影响**：攻击者可以通过 Playground 直接提交，或通过修复 prompt 诱导模型生成绕过黑名单的 Python，在后端容器中读取环境变量和应用文件、修改挂载数据，并通过容器网络外传。`appuser` 降低了主机权限，但无法保护 API key、SQLite 数据和应用可写卷。
 
@@ -155,7 +157,7 @@ sequenceDiagram
 
 ### R-02 [P1] LLM 输出未经净化直接进入 `v-html`
 
-**证据**：Markdown 渲染器只转义 fenced code，普通文本、原始 HTML 和链接地址未转义（[`markdown.ts`](../../learn_da_vue/src/lib/markdown.ts#L30)）；Agent 回答通过 `v-html` 注入（[`AgentPanel.vue`](../../learn_da_vue/src/components/agent/AgentPanel.vue#L653)）；CSP 仍被注释（[`security.py`](../app/middleware/security.py#L29)）。
+**证据**：Markdown 渲染器只转义 fenced code，普通文本、原始 HTML 和链接地址未转义（[`markdown.ts`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/lib/markdown.ts#L30)）；Agent 回答通过 `v-html` 注入（[`AgentPanel.vue`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/components/agent/AgentPanel.vue#L653)）；CSP 仍被注释（[`security.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/middleware/security.py#L29)）。
 
 **影响**：模型输出或提示注入可产生带事件处理器的 HTML、危险链接等内容，形成前端 XSS/钓鱼面。当前消息未跨用户持久化，降低了传播范围，但不能把第三方模型输出视为可信 HTML。
 
@@ -163,7 +165,7 @@ sequenceDiagram
 
 ### R-03 [P1] 普通对话第 4 轮会失败，且当前问题被重复发送
 
-**证据**：前端先 push 当前用户消息，再把所有非 streaming 消息构造成 history（[`AgentPanel.vue`](../../learn_da_vue/src/components/agent/AgentPanel.vue#L248)，[`agent.ts`](../../learn_da_vue/src/api/agent.ts#L72)）；后端 schema 限制 history 最多 6 条（[`schemas.py`](../app/agent/schemas.py#L62)），之后 prompt 又单独追加当前 user message（[`prompts.py`](../app/agent/prompts.py#L74)）。
+**证据**：前端先 push 当前用户消息，再把所有非 streaming 消息构造成 history（[`AgentPanel.vue`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/components/agent/AgentPanel.vue#L248)，[`agent.ts`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/api/agent.ts#L72)）；后端 schema 限制 history 最多 6 条（[`schemas.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/schemas.py#L62)），之后 prompt 又单独追加当前 user message（[`prompts.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/prompts.py#L74)）。
 
 **影响**：正常对话的 history 长度依次为 1、3、5、7，第 4 次请求返回 422；前三轮中当前问题还会出现两遍，浪费 token 并可能放大模型偏置。后端的 `compact_history()` 来不及裁剪，因为 schema 校验先失败。
 
@@ -171,7 +173,7 @@ sequenceDiagram
 
 ### R-04 [P1] 开启 embedding 后会按请求重复嵌入全部课程
 
-**证据**：FastAPI dependency 每次请求新建 `AgentService`（[`router.py`](../app/agent/router.py#L27)），构造函数又新建 `KnowledgeRetriever`（[`service.py`](../app/agent/service.py#L35)）；课程向量只缓存于 retriever 实例字段 `_chunk_embeddings`（[`knowledge.py`](../app/agent/knowledge.py#L69)），首次搜索会嵌入所有 chunks（[`knowledge.py`](../app/agent/knowledge.py#L94)）。
+**证据**：FastAPI dependency 每次请求新建 `AgentService`（[`router.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/router.py#L27)），构造函数又新建 `KnowledgeRetriever`（[`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L35)）；课程向量只缓存于 retriever 实例字段 `_chunk_embeddings`（[`knowledge.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/knowledge.py#L69)），首次搜索会嵌入所有 chunks（[`knowledge.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/knowledge.py#L94)）。
 
 **影响**：一旦配置 embedding，每次 chat/fix/explain 都可能重新调用整库 embedding，造成延迟、费用和上游限流放大。AsyncOpenAI 客户端同样重复创建且没有显式关闭。
 
@@ -179,7 +181,7 @@ sequenceDiagram
 
 ### R-05 [P1] 同步沙箱阻塞事件循环，LLM 失败又不可诊断
 
-**证据**：异步 `fix_code()` 内直接调用同步 `_verify_fixed_code()`（[`service.py`](../app/agent/service.py#L94)），本地 runner 使用阻塞 `subprocess.run`（[`local_runner.py`](../app/sandbox/local_runner.py#L11)）；LLM 调用没有项目级 timeout/retry，且捕获所有异常后直接返回 `None`（[`service.py`](../app/agent/service.py#L217)）。
+**证据**：异步 `fix_code()` 内直接调用同步 `_verify_fixed_code()`（[`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L94)），本地 runner 使用阻塞 `subprocess.run`（[`local_runner.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/sandbox/local_runner.py#L11)）；LLM 调用没有项目级 timeout/retry，且捕获所有异常后直接返回 `None`（[`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L217)）。
 
 **影响**：一次 5 秒沙箱执行会阻塞同 worker 的其他异步请求；上游鉴权、限流、超时和协议错误都表现成相同 fallback，运维无法区分“无 key”“模型故障”“限流”或“空响应”。
 
@@ -187,7 +189,7 @@ sequenceDiagram
 
 ### R-06 [P1] AI 求助统计和推荐冷却没有形成闭环
 
-**证据**：推荐规则依赖 `aiHelps` 阈值（[`recommendation.py`](../app/learning/recommendation.py#L540)），但 `AgentPanel` 没有调用 analytics `trackEvent("ai_help")`；冷却字典属于 `RecommendationService` 实例（[`recommendation.py`](../app/learning/recommendation.py#L162)），而 learning 与 agent 两个 dependency 都按请求新建该实例（[`learning/router.py`](../app/learning/router.py#L27)，[`agent/router.py`](../app/agent/router.py#L31)）。
+**证据**：推荐规则依赖 `aiHelps` 阈值（[`recommendation.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/learning/recommendation.py#L540)），但 `AgentPanel` 没有调用 analytics `trackEvent("ai_help")`；冷却字典属于 `RecommendationService` 实例（[`recommendation.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/learning/recommendation.py#L162)），而 learning 与 agent 两个 dependency 都按请求新建该实例（[`learning/router.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/learning/router.py#L27)，[`agent/router.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/router.py#L31)）。
 
 **影响**：Dashboard 的 AI 使用次数和基于求助次数的回补/停滞规则不会被真实 Agent 使用触发；24 小时冷却在请求结束后丢失，同一建议可被立即重复触发。
 
@@ -195,7 +197,7 @@ sequenceDiagram
 
 ### R-07 [P2] “停止生成”只改变 UI，不会取消请求
 
-**证据**：Agent API 把外部 signal 传给通用 `post()`（[`agent.ts`](../../learn_da_vue/src/api/agent.ts#L38)），但通用 request 又创建 controller，并在配置展开后用自己的 `signal` 覆盖传入值（[`api/index.ts`](../../learn_da_vue/src/api/index.ts#L157)）。后端本身也不是流式响应。
+**证据**：Agent API 把外部 signal 传给通用 `post()`（[`agent.ts`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/api/agent.ts#L38)），但通用 request 又创建 controller，并在配置展开后用自己的 `signal` 覆盖传入值（[`api/index.ts`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/src/api/index.ts#L157)）。后端本身也不是流式响应。
 
 **影响**：用户看到“已中断”，模型请求仍继续占用连接和费用；稍后完成的回调还有机会覆盖界面状态。
 
@@ -203,7 +205,7 @@ sequenceDiagram
 
 ### R-08 [P2] 路由与中文关键词检索过于脆弱
 
-**证据**：路由按固定顺序做 substring 匹配，“错误”优先于“解释”，“代码/Python/函数”等宽泛词直接归为示例生成（[`routing.py`](../app/agent/routing.py#L14)）；中文 tokenizer 把连续汉字视为一个完整 token（[`knowledge.py`](../app/agent/knowledge.py#L179)）。
+**证据**：路由按固定顺序做 substring 匹配，“错误”优先于“解释”，“代码/Python/函数”等宽泛词直接归为示例生成（[`routing.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/routing.py#L14)）；中文 tokenizer 把连续汉字视为一个完整 token（[`knowledge.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/knowledge.py#L179)）。
 
 **影响**：“解释这个错误”会被当作修复；一般代码问题容易被当作示例生成；没有 embedding 时，完整中文问句经常零召回。当前测试集中在单关键词和中英混合样例，没有覆盖意图冲突与自然中文问句。
 
@@ -211,7 +213,7 @@ sequenceDiagram
 
 ### R-09 [P2] 文档把模板路由描述成 Function Calling Agent
 
-**证据**：README 多处声明原生 Function Calling（[`README.md`](../../README.md#L15)），实际 LLM 请求没有 `tools`、`tool_choice` 或 `tool_calls` 处理（[`service.py`](../app/agent/service.py#L230)）；`AgentTool` 只有回复格式与 fallback（[`tools.py`](../app/agent/tools.py#L6)）。升级计划本身也把多步 tool use 列为未来 P-12。
+**证据**：README 多处声明原生 Function Calling（[`README.md`](../../README.md#L15)），实际 LLM 请求没有 `tools`、`tool_choice` 或 `tool_calls` 处理（[`service.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/service.py#L230)）；`AgentTool` 只有回复格式与 fallback（[`tools.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/agent/tools.py#L6)）。升级计划本身也把多步 tool use 列为未来 P-12。
 
 **影响**：维护者会错误估计系统能力、测试边界和成本；“工具执行成功率”“最大轮数”等术语与真实实现不一致。
 
@@ -219,7 +221,7 @@ sequenceDiagram
 
 ### R-10 [P2] 限流在默认反向代理拓扑下可能退化为全站共享桶
 
-**证据**：SlowAPI 使用 `get_remote_address`（[`limiter.py`](../app/utils/limiter.py#L18)），Nginx 通过容器网络代理并设置转发头（[`nginx.conf`](../../learn_da_vue/nginx.conf#L12)）。当前依赖版本的 `get_remote_address` 读取 `request.client.host`，不读取 `X-Forwarded-For`。
+**证据**：SlowAPI 使用 `get_remote_address`（[`limiter.py`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da/app/utils/limiter.py#L18)），Nginx 通过容器网络代理并设置转发头（[`nginx.conf`](https://github.com/UpUpJieJ/Learn_DA/blob/5f1f1b85fae70a1f28422d8f59f6f584ec7ff2ee/learn_da_vue/nginx.conf#L12)）。当前依赖版本的 `get_remote_address` 读取 `request.client.host`，不读取 `X-Forwarded-For`。
 
 **影响**：若 Uvicorn 未信任容器代理头，所有用户都以 Nginx 容器 IP 计数，20/minute 的 Agent 配额会被全站共享；反向方向上，盲目信任任意转发头又可被伪造。
 

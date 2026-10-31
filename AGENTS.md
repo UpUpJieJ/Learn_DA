@@ -16,13 +16,14 @@
 - **第三批收口**：报告与地图按当前有效任务统计，`tasksAttempted` 与一次通过率统一；UI lint 基线为 0，组件补无障碍及 HTTP 剪贴板；Lab 表预览/耗时/幂等事件完整。旧 Dashboard GET 与旧练习元数据已移除，`catalog`/`categories`/`recommendations` 公开 API 保留。沙箱默认使用版本 tag 并在 Runner 进程内锁定 image ID。
 - **当前验证与乱序保护**：`session_cells.task_verified`（迁移 `d8a42b6f9013`）仅在当前前缀下任务提交通过时置真；编辑或失效清除，普通运行不恢复。snapshot/报告/Agent 同口径；晚到的旧执行不覆盖新状态。新 TaskAttempt/RunEvent 记录执行开始时间，历史不重写。旧活动工作区升级后需逐任务重提一次；进入工作区时通过既有事件入口对齐旧完成投影。
 - **2026-11-01 正式部署完成**：应用源码版本 `9efd651`，已推送 GitHub，并在用户确认的 SSH 别名 `lavm` 上全新部署到 `/app/Learn_DA`，compose 项目名 `learn_da`。真实生产验收（含 LLM 与 Nginx SSE）29/29、全部 13 课 Docker 契约76/76；验收后再次重建空库，迁移 head `d8a42b6f9013`，14 张业务表均为 0 行。Hermes 用户服务按用户要求停止，其他项目容器保持运行。记录见 `learn_da/docs/deployment-2026-11-01.md`。
-- **最终门禁**：后端 604、Runner 60、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。生产镜像实际构建成功；后端80个依赖匹配 uv.lock、Runner32个依赖匹配哈希锁。原越权 PoC 5/5 符合安全预期（收口阶段验证），CI 账单外部限制不变。
+- **部署时门禁**（清理后数量见下方工程卫生条目）：后端 604、Runner 60、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。生产镜像实际构建成功；后端80个依赖匹配 uv.lock、Runner32个依赖匹配哈希锁。原越权 PoC 5/5 符合安全预期（收口阶段验证），CI 账单外部限制不变。
 - **容器化 Runner 工作目录**：`RUNNER_WORK_ROOT=/var/lib/learn_da/runner-work` 在宿主机与 Runner 内必须同绝对路径 bind；更新脚本用 `install -d -m 700 -o 65532 -g 0` 初始化。禁止用 Runner 私有 `/tmp` 作为宿主 Docker 的 bind source；沙箱仅只读挂载单次请求子目录，执行后清理。后端镜像冻结导出 uv.lock，Runner 镜像用 `requirements.lock`；Nginx 透传 SSE 的 `X-Accel-Buffering`。
 - **运维手册**：`deploy/README.md` 为当前单机更新/备份恢复/排障入口。仅更新沙箱镜像时，updater 不保证重建未变更的 Runner 容器，需手动 force-recreate Runner 以重新解析 image ID，再跑76/29项验证；普通更新保留数据。Hermes 当前仅停止且仍 enabled，跨重启停用需单独明确处理。
+- **工程卫生（2026-11-01）**：移除无业务引用的请求/分页/假统计/旧建表工具、临时Runner探针、重复Nginx配置，以及已被现用文档取代的旧计划和练习验收说明；迁移登记模型、公开API与安全PoC保留。清理后后端599项（原604减去仅验证孤儿分页工具的5项）、Runner60、前端172及类型/UI/内容校验通过；前端未使用的4项直接依赖已移除，现有依赖版本/哈希不变。
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **旧练习体系已下线**（2026-10-24）：13 门课 frontmatter 的 `exercise:` 块全部删除，`app/practice/` 的 validator / repository / service / router / schemas 与 `POST /playground/exercises/*`（resume/attempts/stats）、`POST /playground/format`、`GET /analytics/practice-stats`、`GET /analytics/recommended-lessons` 一并移除；`exercise_attempts` 表**冻结只读**（`app/practice/models.py` 仍登记给 Alembic，历史数据留存，不要再写入）。任务判定与教学证据全部走 `task_attempts`。`app/practice/` 现在只剩断言 DSL v2（`assertion_runtime.py` + `assertions.py`）。
-- **生产部署验收已改写为工作区链路**（2026-10-24，19/19 全绿）：真实 Runner 执行 → 起步代码必判失败 → 参考解逐格通过 → 同 requestId 幂等 → 进度/报告接口 → Agent 三场景（`no_evidence` / `passed_unconfirmed` / 跨访客隔离）→ 改上游代码下游失效 → `/analytics/track` 幂等；复测用 `bash deploy/acceptance.sh`（默认 `http://127.0.0.1:8000`，可用 `LEARN_DA_BASE_URL` 覆盖）。旧的 17 项练习链路验收记录见 `learn_da/docs/production-acceptance-2026-08-17.md`（已过时，只作历史）。
+- **生产部署验收已改写为工作区链路**（2026-10-24，后续扩至29项）：真实 Runner 执行 → 起步代码必判失败 → 参考解逐格通过 → 同 requestId 幂等 → 进度/报告接口 → Agent 三场景（`no_evidence` / `passed_unconfirmed` / 跨访客隔离）→ 改上游代码下游失效 → `/analytics/track` 幂等；复测用 `bash deploy/acceptance.sh`（默认 `http://127.0.0.1:8000`，可用 `LEARN_DA_BASE_URL` 覆盖）。当前生产验收记录见 `learn_da/docs/deployment-2026-11-01.md`，退役练习链路说明从 Git 历史追溯。
 - **CI 暂缓**（2026-08-21）：最小 CI 门禁已编写并本地验证（后端 pytest + content_lint + Runner 测试 + 前端 vitest/type-check/build），但 GitHub 账户因账单锁定无法运行 Actions，workflow 文件已暂时移除；账单解锁后用 `git checkout ac779dc -- .github/workflows/ci.yml` 恢复。在此之前，**提交前必须本地手动跑全部测试**（回到阶段 4 时的约定）。
 - **P1 收尾完成**（2026-08-21）：① 回流建议信号移除对 CodeSnapshot 表的读取（快照功能已删，死表不再参与推荐打分，只留 code_runs/ai_helps）；② Agent 分级提示 hint_level 改为**服务端真实连续求助计数**（按课程统计 AgentInteraction，1-2 次 L1 / 3-4 次 L2 / 5+ L3），不再信任客户端 history（可伪造/清空）；无 repo/身份/课程或查询失败时降级为 history 估算。
 - **学习工作区改版 M0–M4 + 页面重构 P0–P4 已完成**（2026-10-21/22）：确定性数据集 `learn_da/content/datasets/ecommerce/`（`scripts/build_datasets.py` 生成，`--check` 校验字节一致）+ 断言 DSL v2 骨架（`app/practice/assertion_runtime.py` 求值、`app/practice/assertions.py` 校验与生成尾巴，四型 `expr_true`/`frame_equal`/`schema`/`sql_rows`）+ 后端工作区表与 API（`app/workspace/`）+ Runner 会话执行（`POST /v1/sessions`）+ **前端三栏工作区**（`learn_da_vue/src/views/LessonWorkspace.vue`，路由 `/lesson/:slug`）。样板课最初是 `03-polars-groupby`；**M4 已把全部 13 门课迁到工作区格式**（每课 3 个任务、3–11 条断言，课程正文按数据课 260–330 行 / 纯 Python 课 180–240 行加厚），写作规范见 `learn_da/docs/workspace-content-spec.md`，参考解在 `learn_da/scripts/solutions/<slug>.py`（由 `learn_da/tests/test_workspace_content.py` 逐课校验「起步代码必失败 + 参考解必全过」）。
@@ -118,7 +119,7 @@ LEARN_DA_BASE_URL=http://<host>:8000 bash deploy/acceptance.sh   # 打远端
 ## 文档地图
 
 - 迭代路线图与阶段验收标准：`learn_da/docs/iteration-roadmap-2026-07-14.md`
-- 阶段完成总结：`learn_da/docs/phase3-evidence-agent-completion-summary.md`、`phase4-content-and-ui-completion-summary.md`
-- 部署与运维手册（更新/配置/备份恢复/排障/Hermes）：`deploy/README.md`；镜像问题：`deploy/DOCKER_MIRROR.md`；当前部署与验收记录：`learn_da/docs/deployment-2026-11-01.md`。`production-acceptance-2026-08-17.md` 仅为已退役练习链路的历史记录。
+- 文档入口：`learn_da/docs/README.md`；现用重构收口：`learn_da/docs/refactor-closeout-2026-10-31.md`。已退役练习/页面的旧计划与重复总结已移除，原文可从 Git 历史追溯。
+- 部署与运维手册（更新/配置/备份恢复/排障/Hermes）：`deploy/README.md`；镜像问题：`deploy/DOCKER_MIRROR.md`；当前部署与验收记录：`learn_da/docs/deployment-2026-11-01.md`。
 - 改版设计与阶段记录：`learn_da/docs/learning-workspace-redesign-2026-10-21.md`
 - 课程内容写作规范（`workspace:` 块、断言规则、正文结构）：`learn_da/docs/workspace-content-spec.md`

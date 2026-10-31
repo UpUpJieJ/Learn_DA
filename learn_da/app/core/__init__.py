@@ -1,5 +1,3 @@
-from builtins import BaseException
-
 from .database.base import (
     Base
 )

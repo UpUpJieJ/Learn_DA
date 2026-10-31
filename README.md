@@ -386,8 +386,7 @@ footer = render_assertion_source(assertions, runtime_path="/app/app/practice/ass
 | `GET` | `/api/v1/workspace/progress` | 课程级进度（课程地图用） |
 | `GET` | `/api/v1/workspace/report` | 学习报告（指标 / 能力分布 / 常见卡点 / 最近提交） |
 
-后端把这些请求转成 Runner 的 `POST /v1/sessions`（顺序重放 + 单进程）。**13 门课全部已迁到工作区格式**
-（每课 3 个任务、3–11 条断言），内容写法见
+后端把这些请求转成 Runner 的 `POST /v1/sessions`（顺序重放、隔离学员子进程，回传 observations 后由后端可信判定）。**13 门课全部已迁到工作区格式**，内容写法见
 [`learn_da/docs/workspace-content-spec.md`](learn_da/docs/workspace-content-spec.md)。
 端到端自检（需后端与 Runner 都在跑）：
 
@@ -415,8 +414,8 @@ cd learn_da
 
 ## 测试
 
-Phase 3 学习建议系统已经完成收口，整体设计、交付物与验证结果见
-[`learn_da/docs/phase3-evidence-agent-completion-summary.md`](learn_da/docs/phase3-evidence-agent-completion-summary.md)。
+当前设计与验证入口见[文档索引](learn_da/docs/README.md)，最近的实现与边界见
+[重构收口记录](learn_da/docs/refactor-closeout-2026-10-31.md)。
 
 ```bash
 cd learn_da
@@ -438,7 +437,7 @@ pytest --cov=app --cov=services --cov-report=html
 
 ```bash
 cd learn_da_vue
-npm test -- --run      # vitest（17 文件 / 117 项）
+npm test -- --run      # vitest，实际数量以当前测试输出为准
 npm run type-check     # vue-tsc
 npm run lint:ui        # 视觉规范（新增违规即失败）
 npm run build          # 生产构建

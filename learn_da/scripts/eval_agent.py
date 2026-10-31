@@ -22,7 +22,7 @@
     python scripts/eval_agent.py --fc
 
 FC 形态下意图理解由模型承担（不再有关键词路由），故 FC 版意图评测
-用强制 function calling 做六选一分类，与关键词基线同数据集同口径对比；
+用强制 function calling 按当前意图标签分类，与关键词路由使用同一数据集；
 检索层 FC 与旧路径共用同一 ``KnowledgeRetriever.search``，不劣化由构造保证。
 """
 
@@ -172,7 +172,7 @@ _CLASSIFY_SYSTEM = (
 
 
 async def evaluate_intent_fc(verbose: bool, concurrency: int = 4) -> None:
-    """FC 版意图评测：强制 function calling 六选一分类，与关键词基线同口径。"""
+    """FC 版意图评测：强制分类到当前意图标签，与关键词路由同口径。"""
     from openai import AsyncOpenAI
 
     from app.agent.llm_client import LLMClient
