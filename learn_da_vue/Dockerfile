@@ -1,6 +1,6 @@
 # 全局 ARG（必须在首个 FROM 之前声明，供多阶段 FROM 使用）
 ARG NODE_BASE_IMAGE=node:22-slim
-ARG NGINX_BASE_IMAGE=nginx:1.27-slim
+ARG NGINX_BASE_IMAGE=nginx:1.27
 
 # ── 阶段 1：构建前端 ──
 FROM ${NODE_BASE_IMAGE} AS build
