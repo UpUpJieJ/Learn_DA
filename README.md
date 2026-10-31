@@ -193,30 +193,23 @@ cd learn_da
 
 ### Docker Compose 生产部署
 
-生产环境分为两台服务器：应用服务器运行 Web 与 Backend，专用 Runner
-服务器运行用户代码的沙箱。不要在应用服务器挂载 Docker socket。
-
-完整步骤见 [`deploy/README.md`](deploy/README.md)。最简命令如下：
+当前生产使用单机双 Compose：Web、Backend、Runner 属于 `learn_da` 项目，
+Runner 仅监听宿主 `127.0.0.1:8080`，Backend 从内部网络访问它。
+日常更新、配置、备份恢复、排障和 Hermes 启停见
+[`部署与运维手册`](deploy/README.md)，本次版本与验收见
+[`2026-11-01 部署记录`](learn_da/docs/deployment-2026-11-01.md)。
 
 ```bash
-# Runner 服务器：先构建受限沙箱与 Runner
-cp deploy/runner.env.example deploy/runner.env
-docker compose --env-file deploy/runner.env -f docker-compose.runner.yml \
-  --profile sandbox build
-docker compose --env-file deploy/runner.env -f docker-compose.runner.yml \
-  up -d --build runner
-
-# 应用服务器：RUNNER_URL 指向 Runner 的私网地址
-cp deploy/app.env.example deploy/app.env
-docker compose --env-file deploy/app.env -f docker-compose.app.yml up -d --build
+# 本地仓库，Git Bash；先完成测试与提交，默认保留学习数据
+LEARN_DA_SERVER=lavm bash deploy/push-deploy.sh
 ```
 
-只有一台服务器时，可在同一条 Compose 命令中加载两份编排，并在
-`deploy/app.env` 设置 `RUNNER_URL=http://runner:8080`、在
-`deploy/runner.env` 设置 `RUNNER_BIND_ADDRESS=127.0.0.1`。Runner 不会
-对公网暴露，但它仍持有该主机 Docker socket，因此这是资源受限时的折中方案。
+Runner 仍持有该主机 Docker socket。未来拆到专用 Runner 主机时，使用可达的
+私网地址、相同 token 和各自主机的编排；应用服务器不挂 Docker socket。
 
-镜像基于 **Debian 12 (bookworm)**，基础镜像标签为 `python/node/nginx:*-slim`（避免部分镜像站对 `*-bookworm-slim` 返回 403）。构建时默认 **APT 清华源**、`pip/uv` **阿里 PyPI**、`npm` **npmmirror**。拉取失败见 [`deploy/DOCKER_MIRROR.md`](deploy/DOCKER_MIRROR.md)。
+当前基础镜像为 `python:3.12-slim`、`node:22-slim`、`nginx:1.27`，实际发行版以镜像为准。
+构建时默认 APT 清华源、pip/uv 阿里 PyPI、npm npmmirror。
+拉取失败见 [`镜像排查`](deploy/DOCKER_MIRROR.md)。
 
 ---
 

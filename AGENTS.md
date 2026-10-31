@@ -18,6 +18,7 @@
 - **2026-11-01 正式部署完成**：应用源码版本 `9efd651`，已推送 GitHub，并在用户确认的 SSH 别名 `lavm` 上全新部署到 `/app/Learn_DA`，compose 项目名 `learn_da`。真实生产验收（含 LLM 与 Nginx SSE）29/29、全部 13 课 Docker 契约76/76；验收后再次重建空库，迁移 head `d8a42b6f9013`，14 张业务表均为 0 行。Hermes 用户服务按用户要求停止，其他项目容器保持运行。记录见 `learn_da/docs/deployment-2026-11-01.md`。
 - **最终门禁**：后端 604、Runner 60、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。生产镜像实际构建成功；后端80个依赖匹配 uv.lock、Runner32个依赖匹配哈希锁。原越权 PoC 5/5 符合安全预期（收口阶段验证），CI 账单外部限制不变。
 - **容器化 Runner 工作目录**：`RUNNER_WORK_ROOT=/var/lib/learn_da/runner-work` 在宿主机与 Runner 内必须同绝对路径 bind；更新脚本用 `install -d -m 700 -o 65532 -g 0` 初始化。禁止用 Runner 私有 `/tmp` 作为宿主 Docker 的 bind source；沙箱仅只读挂载单次请求子目录，执行后清理。后端镜像冻结导出 uv.lock，Runner 镜像用 `requirements.lock`；Nginx 透传 SSE 的 `X-Accel-Buffering`。
+- **运维手册**：`deploy/README.md` 为当前单机更新/备份恢复/排障入口。仅更新沙箱镜像时，updater 不保证重建未变更的 Runner 容器，需手动 force-recreate Runner 以重新解析 image ID，再跑76/29项验证；普通更新保留数据。Hermes 当前仅停止且仍 enabled，跨重启停用需单独明确处理。
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **旧练习体系已下线**（2026-10-24）：13 门课 frontmatter 的 `exercise:` 块全部删除，`app/practice/` 的 validator / repository / service / router / schemas 与 `POST /playground/exercises/*`（resume/attempts/stats）、`POST /playground/format`、`GET /analytics/practice-stats`、`GET /analytics/recommended-lessons` 一并移除；`exercise_attempts` 表**冻结只读**（`app/practice/models.py` 仍登记给 Alembic，历史数据留存，不要再写入）。任务判定与教学证据全部走 `task_attempts`。`app/practice/` 现在只剩断言 DSL v2（`assertion_runtime.py` + `assertions.py`）。
@@ -107,7 +108,7 @@ LEARN_DA_BASE_URL=http://<host>:8000 bash deploy/acceptance.sh   # 打远端
 2. 本地推 GitHub 经常被重置：可用本地代理 `git -c http.proxy=http://127.0.0.1:7897 push origin main`（代理没开就靠 bundle 路径）。
 3. Git Bash 会把 `/` 开头的命令行参数改写成 Windows 路径——传服务器绝对路径时加 `MSYS_NO_PATHCONV=1`。
 4. ZCode 内嵌浏览器（IAB）不持久化 cookie，每个请求都是新 visitor——**测身份相关功能（进度/尝试列表）用 curl 带 cookie jar 或真实浏览器**。
-5. 服务器内存 3.6G 无 swap：前端镜像构建是内存峰值点，其余容器同时跑时留意。
+5. 当前 lavm 约 1.9 GiB 内存、2 GiB swap（2026-11-01 核对），前端镜像构建是内存峰值点；更新前检查 `free -h` / `df -h /`，不要沿用旧服务器 3.6G 无 swap 的假设。
 6. 明文 HTTP 部署下浏览器安全上下文 API 受限（randomUUID、剪贴板等）——新前端代码生成 ID 一律用 `lib/uuid` 的 `randomId()`，勿直接调 `crypto.randomUUID`。
 7. 课程 frontmatter 的标量字段（如 hints 条目）含“冒号+空格”会被 YAML 解析成 mapping 而被 fail-closed 拦截——此类条目整体加双引号；改完跑 `scripts/content_lint.py`。
 8. **本地开发的 API 地址必须走 vite 代理**：`learn_da_vue/.env.development` 的 `VITE_API_BASE_URL=/api/v1`（同源）。若写死成 `http://127.0.0.1:8000/api/v1`，页面（`localhost:5173`）到 API 就是**跨站**请求，`SameSite=Lax` 的会话 cookie 不随请求发送 → 每个请求都是新访客，工作区/进度会报「会话不存在」。
@@ -118,6 +119,6 @@ LEARN_DA_BASE_URL=http://<host>:8000 bash deploy/acceptance.sh   # 打远端
 
 - 迭代路线图与阶段验收标准：`learn_da/docs/iteration-roadmap-2026-07-14.md`
 - 阶段完成总结：`learn_da/docs/phase3-evidence-agent-completion-summary.md`、`phase4-content-and-ui-completion-summary.md`
-- 部署细节：`deploy/README.md`；配置项：根 `README.md` 配置表；生产验收记录：`learn_da/docs/production-acceptance-2026-08-17.md`
+- 部署与运维手册（更新/配置/备份恢复/排障/Hermes）：`deploy/README.md`；镜像问题：`deploy/DOCKER_MIRROR.md`；当前部署与验收记录：`learn_da/docs/deployment-2026-11-01.md`。`production-acceptance-2026-08-17.md` 仅为已退役练习链路的历史记录。
 - 改版设计与阶段记录：`learn_da/docs/learning-workspace-redesign-2026-10-21.md`
 - 课程内容写作规范（`workspace:` 块、断言规则、正文结构）：`learn_da/docs/workspace-content-spec.md`

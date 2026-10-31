@@ -2,6 +2,8 @@
 
 用户明确授权提交全部重构、停止 Hermes、清空 Learn DA 历史并部署。应用源码版本为 `9efd651221abc50385d1550b3266a072579f18d7`，已推送 GitHub。后续文档提交不改变运行镜像。
 
+日常更新、配置、备份恢复和故障处理统一查阅[部署与运维手册](../../deploy/README.md)，本文保留这次上线的事实快照。
+
 ## 最终状态
 
 - 目标为用户确认的 SSH 别名 `lavm`，项目 `/app/Learn_DA`，Compose 项目 `learn_da`。此主机未发现旧 Learn DA checkout、容器或数据卷，因此从新卷安装。
@@ -9,7 +11,7 @@
 - 生产验收 `deploy/acceptance.sh` **29/29**，包含实际 Docker 执行、失败/通过、幂等、失效、提示、真实 LLM 与经过 Nginx 的 SSE；流式回答未走 fallback。
 - 在生产 Backend 容器内执行 `scripts/verify_observation_runner.py`，经生产 Runner 容器与真实沙箱执行，13 课 38 个任务的起步/参考解 **76/76**。
 - 验收后停写、归档验收数据库，再重建空库并迁移。最终 head `d8a42b6f9013`，**14 张业务表共 0 行**；包括冻结的 exercise_attempts、历史快照表与所有任务/提示/Agent/学习事件表。共享运行目录 0 个残留条目。
-- Hermes 用户服务 `hermes-gateway.service` 为 `inactive`、`MainPID=0`。其他业务容器未被停止或删除。
+- Hermes 用户服务 `hermes-gateway.service` 为 `inactive`、`MainPID=0`，`UnitFileState=enabled`；本次仅停止，未关闭开机启动。其他业务容器未被停止或删除。
 - 最后资源核对约 1.1 GiB 可用内存、3.7 GiB 可用磁盘；本机已有 swap。
 
 ## 部署中实际修复
