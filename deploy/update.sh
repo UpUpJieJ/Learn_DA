@@ -96,6 +96,7 @@ if [[ "$FRESH" == 1 ]]; then
 fi
 
 echo "==> [4/6] Start Runner, migrate database, start Backend/Web"
+install -d -m 700 -o 65532 -g 0 /var/lib/learn_da/runner-work
 "${DC[@]}" up -d --no-deps --wait --wait-timeout 120 runner
 "${DC[@]}" run --rm --no-deps migrate
 "${DC[@]}" up -d --no-deps --wait --wait-timeout 180 backend

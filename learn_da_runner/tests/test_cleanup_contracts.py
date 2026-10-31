@@ -5,6 +5,41 @@ from runner.provider import DockerExecutionProvider
 from runner.schemas import RunnerExecutionRequest, RunnerSessionRequest
 
 
+def test_containerized_runner_uses_daemon_visible_workspace(tmp_path):
+    """The Docker daemon cannot read a Runner container's private /tmp."""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from runner.settings import runner_settings
+
+    shared = tmp_path / "shared-with-daemon"
+    shared.mkdir()
+    config = runner_settings.model_dump()
+    config["RUNNER_WORK_ROOT"] = str(shared)
+    client = MagicMock()
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = b""
+
+    def run(**kwargs):
+        source = Path(next(iter(kwargs["volumes"])))
+        assert source.parent == shared
+        assert (source / "driver.py").is_file()
+        assert kwargs["volumes"][str(source)]["mode"] == "ro"
+        return container
+
+    client.containers.run.side_effect = run
+    request = RunnerSessionRequest(
+        requestId="22222222-2222-2222-2222-222222222222",
+        cells=[{"cellId": "c1", "code": "x=1"}],
+    )
+    with patch("runner.provider.runner_settings", SimpleNamespace(**config)):
+        provider = DockerExecutionProvider()
+        provider._client = client
+        result = provider.execute_session(request)
+    assert result["errorType"] == "driver_protocol_error", result
+    assert not list(shared.iterdir()), "Session files must be cleaned after execution"
+
+
 def test_docker_stdout_and_stderr_are_separate():
     client = MagicMock()
     container = client.containers.run.return_value

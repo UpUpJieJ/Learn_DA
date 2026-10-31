@@ -15,6 +15,7 @@ services:
       - ./deploy/runner.env
     environment:
       RUNNER_ENV: production
+      RUNNER_WORK_ROOT: /var/lib/learn_da/runner-work
       RUNNER_PORT: 8080
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/runner.env}
       RUNNER_DOCKER_IMAGE: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:pl1.39.3-duck1.5.1-arrow25.0.1}
@@ -29,6 +30,12 @@ services:
       RUNNER_MAX_OUTPUT_BYTES: ${RUNNER_MAX_OUTPUT_BYTES:-65536}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Docker resolves sandbox bind sources on the HOST, not in this container.
+      - type: bind
+        source: /var/lib/learn_da/runner-work
+        target: /var/lib/learn_da/runner-work
+        bind:
+          create_host_path: false
     group_add:
       - "${DOCKER_SOCKET_GID:?Set Docker socket group ID in deploy/runner.env}"
     ports:

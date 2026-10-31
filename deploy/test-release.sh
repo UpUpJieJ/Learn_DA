@@ -43,6 +43,10 @@ cat > "$WORK/repo/deploy/acceptance.sh" <<'SH'
 #!/usr/bin/env bash
 echo acceptance >> "$RELEASE_TEST_LOG"
 SH
+cat > "$WORK/bin/install" <<'SH'
+#!/usr/bin/env bash
+echo "install $*" >> "$RELEASE_TEST_LOG"
+SH
 chmod +x "$WORK/bin/"*
 export LEARN_DA_BACKUP_ROOT="$WORK/backups"
 
@@ -76,6 +80,7 @@ def at(text):
     return next(i for i,line in enumerate(calls) if text in line)
 assert at('build sandbox-image') < at('stop web backend')
 assert at('--entrypoint python') < at(' down') < at('volume rm')
+assert at('install -d') < at('--wait-timeout 120 runner')
 removed=[line for line in calls if 'volume rm' in line]
 assert removed == ['docker volume rm learn_da_learn_da_data', 'docker volume rm learn_da_learn_da_logs']
 assert at('--wait-timeout 120 runner') < at('run --rm --no-deps migrate') < at('--wait-timeout 180 backend') < at('--wait-timeout 60 web') < at('acceptance')

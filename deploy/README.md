@@ -39,7 +39,14 @@ docker compose --env-file deploy/runner.env -f docker-compose.runner.yml \
 docker compose --env-file deploy/runner.env -f docker-compose.runner.yml ps
 ```
 
-`runner` 状态应为 `healthy`。从应用服务器可执行：
+`runner` 状态应为 `healthy`。
+
+容器化 Runner 启动前还需准备共享临时目录（`deploy/update.sh` 会自动执行）：
+`install -d -m 700 -o 65532 -g 0 /var/lib/learn_da/runner-work`。Compose 将其在
+宿主机和 Runner 内挂到相同路径；沙箱只读挂载其中单次请求的目录，完成后自动删除。
+不能使用 Runner 私有的 `/tmp` 作为 Docker bind source，否则宿主机找不到 driver。
+
+从应用服务器可执行：
 
 ```bash
 curl -fsS http://RUNNER_PRIVATE_IP:8080/ready

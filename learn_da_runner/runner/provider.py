@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import os
 import socket
 import tempfile
 import time
@@ -74,6 +75,17 @@ class DockerExecutionProvider:
         self._docker_host = docker_host or runner_settings.RUNNER_DOCKER_HOST
         self._client: docker.DockerClient | None = None
         self._resolved_image: str | None = None
+        root = runner_settings.RUNNER_WORK_ROOT.strip()
+        self._work_root = Path(root) if root else None
+        if self._work_root is not None and (
+            not self._work_root.is_absolute()
+            or not self._work_root.is_dir()
+            or not os.access(self._work_root, os.W_OK | os.X_OK)
+        ):
+            raise RuntimeError(
+                "RUNNER_WORK_ROOT must be an existing writable absolute directory "
+                "shared at the same path with the Docker host"
+            )
 
     def _get_client(self) -> docker.DockerClient:
         """Lazily create the Docker client on first use."""
@@ -200,7 +212,7 @@ class DockerExecutionProvider:
         container = None
         timeout = runner_settings.RUNNER_SESSION_TIMEOUT_SECONDS
 
-        with tempfile.TemporaryDirectory(prefix="learn_da_session_") as workdir:
+        with tempfile.TemporaryDirectory(prefix="learn_da_session_", dir=self._work_root) as workdir:
             work = Path(workdir)
             try:
                 prepare_workspace(work, request)
