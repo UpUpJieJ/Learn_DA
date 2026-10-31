@@ -30,7 +30,9 @@ COPY pyproject.toml uv.lock* ./
 
 RUN pip install --upgrade pip -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
     pip install uv -i "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" && \
-    uv pip install --system -i "${PIP_INDEX_URL}" -e .
+    uv export --frozen --no-dev --no-emit-project --format requirements-txt -o /tmp/requirements.txt && \
+    uv pip install --system --require-hashes -i "${PIP_INDEX_URL}" -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 COPY . .
 

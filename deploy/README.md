@@ -97,6 +97,12 @@ docker compose --env-file deploy/runner.env -f docker-compose.runner.yml logs --
 正式判定使用 observations 协议，后端与 Runner 必须配套更新。不要把
 `deploy/app.env` 或 `deploy/runner.env` 提交到 Git。
 
+后端镜像从 `learn_da/uv.lock` 冻结导出生产依赖并校验哈希；Runner 从
+`learn_da_runner/requirements.lock` 安装，避免全新构建暗中升级依赖。
+Runner 升级依赖时用 `uv pip compile learn_da_runner/pyproject.toml --universal
+--python-version 3.12 --generate-hashes --no-header --no-annotate -o
+learn_da_runner/requirements.lock` 更新锁，再在相同依赖环境跑测试及 Docker 验收。
+
 ## 单台服务器部署
 
 推荐使用两台服务器。只有一台服务器时，Runner 仍会持有宿主 Docker

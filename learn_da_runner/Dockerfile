@@ -20,8 +20,8 @@ COPY learn_da/docker/setup-debian-apt-mirrors.sh /tmp/setup-debian-apt-mirrors.s
 RUN chmod +x /tmp/setup-debian-apt-mirrors.sh && APT_MIRROR=${APT_MIRROR} /tmp/setup-debian-apt-mirrors.sh \
     && rm -f /tmp/setup-debian-apt-mirrors.sh
 
-COPY learn_da_runner/pyproject.toml /app/pyproject.toml
-RUN pip install --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" .
+COPY learn_da_runner/requirements.lock /app/requirements.lock
+RUN pip install --require-hashes --index-url "${PIP_INDEX_URL}" --trusted-host "${PIP_TRUSTED_HOST}" -r /app/requirements.lock
 
 COPY learn_da_runner/runner /app/runner
 
