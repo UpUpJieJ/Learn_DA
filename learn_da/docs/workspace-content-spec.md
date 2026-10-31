@@ -68,12 +68,13 @@ workspace:
 5. 禁止：`input()`、网络、随机、`datetime.now()`、写文件、`sys.exit`、`os`/`subprocess`。
 6. `order_date` / `signup_date` / `launch_date` 读进来是 **字符串**，需要日期课时用 `.str.to_date("%Y-%m-%d")`。
 
-## 4. 断言 DSL（四型，只能用这四种）
+## 4. 断言 DSL（工作区使用五种结构化类型）
 
 | type | 必填 | 语义 |
 |---|---|---|
 | `schema` | `var`、`columns` | `var` 的列**包含** `columns`；`exact: true` 时才要求完全一致（含顺序） |
-| `expr_true` | `expr` | Python 表达式为真；可用命名空间里的变量 + `abs`/`round`/`sorted`/`len`/`sum` 等安全内建 |
+| `value` | `var`、`expect` | 严格 JSON 值比较；拒绝自定义对象和类型伪装，`comparison: contains` 可检查字符串片段 |
+| `call` | `function`、`args`、`expect` | 在沙箱用固定 JSON 参数调用 `def` 函数，仅回传返回值，由后端比较 |
 | `frame_equal` | `var`、`ref` | 与 `content/expected/<ref>` 逐行逐列比对（parquet）；`rtol`/`atol` 控容差、`order_matters` 控顺序 |
 | `sql_rows` | `query`、`ref` | 在 `connection`（默认 `con`）上执行 SQL，结果与 `content/expected/<ref>`（json，含 `columns`/`rows`）比对 |
 
@@ -81,27 +82,38 @@ workspace:
 
 - `id` 全局唯一，建议 `<taskId>-<语义>`，如 `t1-schema`、`t1-sorted`。
 - `title` 写给学员看，会显示在断言列表里。
-- 浮点不要精确相等：`frame_equal` 用 `rtol: 1e-6`，`expr_true` 用 `abs(x - y) < 1e-6`，或先 `round`。
-- `expr` 里出现 `__`（双下划线）会被直接拒绝。
+- 浮点使用 `rtol: 1e-6` / `atol`；`value`、`call` 对嵌套 JSON 数值也应用容差，但布尔值不等同于数字。
+- 工作区不接受 `expr_true`：内容加载、lint 和正式提交均拒绝自由表达式。低层兼容运行时仍保留它供旧测试使用。
 - 典型组合：`schema`（列名/列存在）+ `frame_equal`（整表数值）。
+- 允许并列值任意顺序但要求主键单调时，`frame_equal` 用 `order_matters: false`，再加 `sorted_by: [amount]`、`descending: true`。不要为了容忍并列行而丢掉排序检查。
 - 断言要**能区分对错**：只查 `height == 4` 而不查数值，等于放过算错的答案。
   聚合结果优先用 `frame_equal` 与参考结果比对，而不是把汇总数字手抄进 `expr`——
   手抄的数字换数据集就得重抄，而且「整列错值但 sum 恰好对得上」时抓不出来。
 
-断言写法参考（都在 03 课里验证过）：
+断言写法参考：
 
 ```yaml
 - id: t1-schema
   type: schema
   var: region_stats
   columns: [region, revenue, orders]
-- id: t1-sorted
-  type: expr_true
-  expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
-- id: t2-sum
-  type: expr_true
-  expr: "abs(region_share['share'].sum() - 1.0) < 1e-2"
+- id: t1-frame
+  type: frame_equal
+  var: region_stats
+  ref: 03-t1-region-stats.parquet
+  order_matters: false
+- id: t1-bonus
+  type: call
+  function: add_bonus
+  args: [95]
+  expect: 100
 ```
+
+正式执行链路中，Runner 请求不包含 `refs`、运行时源码或 `expect`。沙箱只回传有大小限制的 JSON 表、原生 JSON 值及 SQL 查询行；后端持有参考结果并完成可信比较，不解析学员提供的 Arrow/IPC 等原生二进制。JSON 表校验列名唯一性、行宽、类型与实际值的一致性。
+
+执行状态与任务验证分离：编辑第 k 格会清除自身及后续格的当前验证标记；只有对应任务在当前代码前缀下重新提交通过才能恢复。普通运行或下游重放成功不能把旧通过记录重新激活，历史 TaskAttempt 不改写。
+
+`order_matters: false` 的 parquet 参考结果在生成时规范排序，保证 `unique()` 等无序算子的输出字节可复现。数据集与参考文件仍只能由生成脚本维护。
 
 ## 5. 参考解文件
 

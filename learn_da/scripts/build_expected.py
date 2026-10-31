@@ -37,7 +37,7 @@ from typing import Any
 # 固定单线程再 import polars：分组聚合的浮点求和顺序随线程数变化，
 # 多线程下同一份数据两次跑出来的 sum 末位不同，预期结果就不可复现了。
 # 学员侧仍是多线程，所以断言用 rtol 容差比对，而不是要求逐位相等。
-os.environ.setdefault("POLARS_MAX_THREADS", "1")
+os.environ["POLARS_MAX_THREADS"] = "1"
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -49,6 +49,7 @@ from app.workspace.content import (  # noqa: E402
     _resolve_expected_path,
     WorkspaceSpec,
     load_workspace,
+    orphan_references,
 )
 
 LESSON_DIR = ROOT / "content" / "lessons"
@@ -83,10 +84,14 @@ def _replay(spec: WorkspaceSpec, codes: dict[str, str], stop_at: str) -> dict[st
     return namespace
 
 
-def _dump_frame_equal(value: Any) -> bytes:
+def _dump_frame_equal(value: Any, *, order_matters: bool = True) -> bytes:
     import polars as pl
 
     frame = value if isinstance(value, pl.DataFrame) else pl.DataFrame(value)
+    # unique()/group_by() can return the same rows in a different order. An
+    # unordered assertion must produce identical reference bytes in either case.
+    if not order_matters and frame.columns:
+        frame = frame.sort(frame.columns)
     buffer = io.BytesIO()
     frame.write_parquet(buffer)
     return buffer.getvalue()
@@ -126,7 +131,9 @@ def _build(spec: WorkspaceSpec, solutions: dict[str, str]) -> dict[str, bytes]:
                     raise RuntimeError(
                         f"{spec.lesson_slug}/{assertion['id']}: 参考解里没有变量 {var!r}"
                     )
-                produced[ref] = _dump_frame_equal(namespace[var])
+                produced[ref] = _dump_frame_equal(
+                    namespace[var], order_matters=assertion.get("order_matters", True)
+                )
             elif assertion["type"] == "sql_rows":
                 connection = namespace.get(assertion.get("connection") or "con")
                 if connection is None:
@@ -147,6 +154,11 @@ def generate(check: bool) -> int:
     specs = _specs()
     solutions = _solution_files()
     targets = {slug: spec for slug, spec in specs.items() if spec.ref_names()}
+    orphans = orphan_references({name for spec in specs.values() for name in spec.ref_names()})
+    if orphans:
+        for name in orphans:
+            print(f"孤儿预期结果（已无课程引用）：{name}")
+        return 1
     if not targets:
         print("没有课程使用 frame_equal / sql_rows 断言，无需生成预期结果。")
         return 0

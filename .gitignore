@@ -6,3 +6,6 @@ logs/
 
 # 本次本地验证产物（截图等）
 .tmp_verify/
+
+# pytest uses the workspace as TEMP in some desktop environments.
+**/pytest-of-*/

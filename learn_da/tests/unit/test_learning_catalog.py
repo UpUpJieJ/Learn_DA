@@ -171,48 +171,20 @@ async def test_category_stats_returns_general_topic_labels(client):
 
 
 @pytest.mark.unit
-async def test_home_stats_uses_loaded_lesson_count(client):
-    resp = await client.get("/api/v1/analytics/home-stats")
-    body = resp.json()
-
-    assert resp.status_code == 200
-    assert body["code"] == 200
-    assert body["data"]["totalLessons"] == len(LearningRepository().list_lessons())
-
-
-@pytest.mark.unit
-async def test_category_progress_uses_lesson_metadata_for_all_categories(client, db_session):
-    from app.core import get_anonymous_visitor_id
-    from main import app
-
+async def test_internal_analytics_uses_loaded_lesson_metadata(db_session):
+    # Keep internal historical aggregates usable by recommendation/audit callers;
+    # the retired Dashboard HTTP surface is tested separately.
+    from app.analytics.service import AnalyticsService
+    service = AnalyticsService(db_session)
+    stats = await service.get_home_stats()
+    assert stats["totalLessons"] == len(LearningRepository().list_lessons())
     visitor_id = "catalog-progress-user"
-    db_session.add_all(
-        [
-            LearningRecord(
-                visitor_id=visitor_id,
-                event_type="lesson_complete",
-                lesson_slug=slug,
-            )
-            for slug in ["python-functions", "polars-duckdb-workflow"]
-        ]
-    )
+    db_session.add_all([LearningRecord(visitor_id=visitor_id, event_type="lesson_complete", lesson_slug=slug)
+                        for slug in ["python-functions", "polars-duckdb-workflow"]])
     await db_session.flush()
-
-    app.dependency_overrides[get_anonymous_visitor_id] = lambda: visitor_id
-    try:
-        resp = await client.get(
-            "/api/v1/analytics/category-progress",
-        )
-    finally:
-        app.dependency_overrides.clear()
-    body = resp.json()
-
-    assert resp.status_code == 200
-    assert body["code"] == 200
-    assert body["data"]["python"] == 1
-    assert body["data"]["combined"] == 1
-    assert body["data"]["polars"] == 0
-    assert body["data"]["duckdb"] == 0
+    counts = await service.get_category_progress(visitor_id)
+    assert counts["python"] == 1 and counts["combined"] == 1
+    assert counts["polars"] == 0 and counts["duckdb"] == 0
 
 
 def test_recommendation_metadata_uses_lesson_model_fields():

@@ -116,10 +116,13 @@ async def chat_with_agent_stream(
         return StdResp.error(msg="message is required", code=422).to_response()
 
     async def event_source():
+        partial_text = []
         try:
             async for event in service.chat_stream(
                 payload, visitor_id=visitor_id
             ):
+                if event.get("type") == "delta":
+                    partial_text.append(event.get("text") or "")
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             # 前端主动断开（点「停止」）：不再补发事件，让连接安静结束
@@ -135,6 +138,8 @@ async def chat_with_agent_stream(
                 )
                 + "\n\n"
             )
+            data = await service.stream_error_data(visitor_id, "".join(partial_text))
+            yield "data: " + json.dumps({"type": "done", "data": data.model_dump(by_alias=True)}, ensure_ascii=False) + "\n\n"
 
     return StreamingResponse(
         event_source(),

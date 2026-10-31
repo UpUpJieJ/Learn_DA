@@ -94,4 +94,7 @@ async def test_stream_endpoint_surfaces_service_crash_as_error_event(
     # 已经吐了「开头」，异常只能变成 error 事件，不能 500（响应头已发出）
     assert resp.status_code == 200
     assert events[0]["type"] == "delta"
-    assert events[-1] == {"type": "error", "reason": "upstream_error", "partial": True}
+    assert events[-2] == {"type": "error", "reason": "upstream_error", "partial": True}
+    assert events[-1]["type"] == "done"
+    assert events[-1]["data"]["content"] == "开头"
+    assert events[-1]["data"]["interactionId"] is not None

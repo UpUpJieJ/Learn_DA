@@ -1,59 +1,7 @@
 import { get } from '@/api/index'
-import type {
-  LessonSummary,
-  LessonDetail,
-  LessonCategory,
-  LessonDifficulty,
-  PlatformCatalog,
-} from '@/types/api'
+import type { LessonDetail } from '@/types/api'
 
-// =====================================================
-// 课程列表查询参数
-// =====================================================
-
-export interface LessonListParams {
-  topic?: string
-  track?: string
-  category?: LessonCategory
-  difficulty?: LessonDifficulty
-  keyword?: string
-}
-
-// =====================================================
-// 课程 API
-// =====================================================
-
-/**
- * 获取课程列表（支持分类、难度、关键词过滤）
- */
-export function fetchLessons(params?: LessonListParams) {
-  return get<LessonSummary[]>('/lessons', params as Record<string, unknown>)
-}
-
-/**
- * 根据 slug 获取课程详情
- */
+/** Workspace lesson prose; task state is read from /workspace. */
 export function fetchLessonBySlug(slug: string) {
   return get<LessonDetail>(`/lessons/${slug}`)
 }
-
-/**
- * 获取学习平台目录配置（主题、路径和平台文案）
- */
-export function fetchCatalog() {
-  return get<PlatformCatalog>('/catalog')
-}
-
-/**
- * 获取课程分类统计（每个分类下的课程数）
- */
-export interface CategoryStat {
-  category: LessonCategory
-  label: string
-  count: number
-}
-
-export function fetchCategoryStats() {
-  return get<CategoryStat[]>('/lessons/categories')
-}
-

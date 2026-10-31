@@ -1,10 +1,9 @@
 // =====================================================
-// 任务/练习状态的四态定义与样式映射
+// 任务与课程展示状态的定义及样式映射
 //
-// 状态语义来自后端 TaskAttempt / ExerciseAttempt：
+// 状态语义来自后端 TaskAttempt：
 //   todo         未开始
 //   in_progress  进行中（有运行记录但未提交）
-//   needs_review 曾通过、但上游 cell 变更导致需复核
 //   passed       已通过
 //   failed       提交判定未通过
 //   skipped      学习者主动跳过
@@ -16,7 +15,6 @@
 export type TaskStatusKind =
     | "todo"
     | "in_progress"
-    | "needs_review"
     | "passed"
     | "failed"
     | "skipped";
@@ -42,12 +40,6 @@ export const TASK_STATUS_META: Record<TaskStatusKind, TaskStatusMeta> = {
         label: "进行中",
         pillClass: "border-brand-200 bg-brand-50 text-brand-700",
         dotClass: "bg-brand-500",
-        completed: false,
-    },
-    needs_review: {
-        label: "需复核",
-        pillClass: "border-warn-500/40 bg-warn-50 text-warn-700",
-        dotClass: "bg-warn-500",
         completed: false,
     },
     passed: {

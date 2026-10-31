@@ -27,7 +27,8 @@ describe("AppButton", () => {
             slots: { default: "提交中" },
         });
 
-        expect(wrapper.attributes("disabled")).toBeDefined();
+        expect(wrapper.attributes("disabled")).toBeUndefined();
+        expect(wrapper.attributes("aria-disabled")).toBe("true");
         expect(wrapper.attributes("aria-busy")).toBe("true");
         expect(wrapper.find("svg.animate-spin").exists()).toBe(true);
 

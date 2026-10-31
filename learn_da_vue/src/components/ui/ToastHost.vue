@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount } from "vue";
 import { useToast, type ToastKind } from "@/composables/useToast";
 
 // =====================================================
@@ -6,7 +7,9 @@ import { useToast, type ToastKind } from "@/composables/useToast";
 // 页面里调 useToast().success(...) 即可，不要各自渲染。
 // =====================================================
 
-const { toasts, dismiss } = useToast();
+const { toasts, dismiss, clear } = useToast();
+
+onBeforeUnmount(clear);
 
 const KIND_CLASS: Record<ToastKind, string> = {
     success: "border-ok-600/40 bg-ok-50 text-ok-700",
@@ -18,7 +21,7 @@ const KIND_CLASS: Record<ToastKind, string> = {
 <template>
     <Teleport to="body">
         <div
-            class="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4"
+            class="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex max-h-[40vh] flex-col items-center gap-2 overflow-auto px-4"
             role="status"
             aria-live="polite"
         >

@@ -44,13 +44,13 @@ const isDisabled = computed(() => props.disabled || props.loading);
 
 const VARIANTS: Record<Variant | "danger", string> = {
     primary:
-        "bg-brand-600 text-white hover:bg-brand-700 focus-visible:outline-brand-600 shadow-sm",
+        "bg-brand-600 text-on-accent hover:bg-brand-700 focus-visible:outline-brand-600 shadow-card",
     secondary:
         "border border-line bg-surface-card text-ink-700 hover:bg-surface-raised focus-visible:outline-brand-600",
     ghost:
         "text-ink-500 hover:bg-surface-raised hover:text-ink-700 focus-visible:outline-brand-600",
     danger:
-        "bg-err-600 text-white hover:bg-err-700 focus-visible:outline-err-600 shadow-sm",
+        "bg-err-600 text-on-accent hover:bg-err-700 focus-visible:outline-err-600 shadow-card",
 };
 
 const SIZES: Record<Size, string> = {
@@ -61,14 +61,18 @@ const SIZES: Record<Size, string> = {
 const classes = computed(() => [
     "inline-flex items-center justify-center rounded-control font-medium transition-colors",
     "focus-visible:outline-2 focus-visible:outline-offset-2",
-    "disabled:cursor-not-allowed disabled:opacity-60",
+    "disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60",
     props.danger && props.variant === "primary" ? VARIANTS.danger : VARIANTS[props.variant],
     SIZES[props.size],
     props.block ? "w-full" : "",
 ]);
 
 function onNativeClick(event: MouseEvent): void {
-    if (isDisabled.value) return;
+    if (isDisabled.value) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+    }
     emit("click", event);
 }
 </script>
@@ -77,7 +81,8 @@ function onNativeClick(event: MouseEvent): void {
     <button
         :type="type"
         :class="classes"
-        :disabled="isDisabled"
+        :disabled="disabled"
+        :aria-disabled="isDisabled || undefined"
         :aria-busy="loading || undefined"
         :aria-label="label"
         :title="label"

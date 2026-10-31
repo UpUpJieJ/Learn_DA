@@ -68,6 +68,11 @@ def _make_repo(attempt: SimpleNamespace | None, lesson_completed: bool) -> Magic
     repo.get_attempt = AsyncMock(return_value=attempt)
     repo.latest_attempt = AsyncMock(return_value=attempt)
     passed = set(LESSON_TASKS) if lesson_completed else set()
+    # A current passed submission can coexist with an unfinished lesson. The
+    # repository double must include that task, otherwise it describes a stale
+    # historical pass which correctly requires re-verification.
+    if attempt is not None and attempt.status == "passed":
+        passed.add(attempt.task_id)
     repo.lesson_task_stats = AsyncMock(return_value=(passed, len(LESSON_TASKS)))
     return repo
 

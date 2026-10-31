@@ -370,4 +370,107 @@ describe("workspace store", () => {
         expect(store.hintsFor("t1")).toEqual([]);
         expect(store.hintingTaskId).toBeNull();
     });
+    it("ignores a load that finishes after reset", async () => {
+        const store = useWorkspaceStore();
+        let resolve!: (value: ReturnType<typeof snapshot>) => void;
+        createSession.mockReturnValue(new Promise((r) => { resolve = r; }));
+        const pending = store.load("old");
+        store.reset();
+        resolve(snapshot());
+        await pending;
+        expect(store.snapshot).toBeNull();
+    });
+
+    it("does not let an older lesson load replace a newer lesson", async () => {
+        const store = useWorkspaceStore();
+        let resolve!: (value: ReturnType<typeof snapshot>) => void;
+        createSession.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+        const old = store.load("old");
+        createSession.mockResolvedValueOnce(snapshot({ sessionId: 8, lessonSlug: "new" }));
+        await store.load("new");
+        resolve(snapshot());
+        await old;
+        expect(store.snapshot?.sessionId).toBe(8);
+    });
+    it("preserves another cell's unsaved edit when saving one cell", async () => {
+        const store = useWorkspaceStore();
+        createSession.mockResolvedValue(snapshot());
+        await store.load("lesson");
+        store.editCell("c1", "new one");
+        store.editCell("c2", "new two");
+        updateCell.mockResolvedValue(snapshot());
+        await store.flush("c1");
+        expect(store.snapshot?.cells[1]?.code).toBe("new two");
+        store.reset();
+    });
+
+    it("waits for an in-flight save before running a cell", async () => {
+        const store = useWorkspaceStore();
+        createSession.mockResolvedValue(snapshot());
+        await store.load("lesson");
+        store.editCell("c2", "new code");
+        let resolve!: (value: ReturnType<typeof snapshot>) => void;
+        updateCell.mockReturnValue(new Promise((r) => { resolve = r; }));
+        const save = store.flush("c2");
+        const run = store.runCell("c2");
+        await Promise.resolve();
+        expect(runCellApi).not.toHaveBeenCalled();
+        resolve(snapshot());
+        await save;
+        await run;
+        store.reset();
+    });
+    it("does not run stale server code when saving fails", async () => {
+        const store = useWorkspaceStore();
+        createSession.mockResolvedValue(snapshot());
+        await store.load("lesson");
+        store.editCell("c2", "new code");
+        updateCell.mockRejectedValue(new Error("save failed"));
+        await store.runCell("c2");
+        expect(runCellApi).not.toHaveBeenCalled();
+        expect(store.saveState).toBe("error");
+        store.reset();
+    });
+
+    it("keeps new lesson busy state when an old run finishes", async () => {
+        const store = useWorkspaceStore();
+        createSession.mockResolvedValue(snapshot());
+        await store.load("lesson");
+        let finishOld!: (value: ReturnType<typeof runResponse>) => void;
+        runCellApi.mockReturnValueOnce(new Promise((r) => { finishOld = r; }));
+        const oldRun = store.runCell("c2");
+        await Promise.resolve();
+        store.reset();
+        createSession.mockResolvedValue(snapshot({sessionId: 8}));
+        await store.load("new");
+        let finishNew!: (value: ReturnType<typeof runResponse>) => void;
+        runCellApi.mockReturnValueOnce(new Promise((r) => { finishNew = r; }));
+        const newRun = store.runCell("c2");
+        await Promise.resolve();
+        finishOld(runResponse());
+        await oldRun;
+        expect(store.runningCellId).toBe("c2");
+        expect(store.runs).toEqual({});
+        finishNew(runResponse());
+        await newRun;
+        store.reset();
+    });
+    it("persists the latest draft on destroy after an earlier save completes", async () => {
+        const store = useWorkspaceStore();
+        createSession.mockResolvedValue(snapshot());
+        await store.load("lesson");
+        let finishSave!: (value: ReturnType<typeof snapshot>) => void;
+        updateCell.mockReturnValueOnce(new Promise((r) => { finishSave = r; }));
+        store.editCell("c2", "first edit");
+        const first = store.flush("c2");
+        store.editCell("c2", "latest edit");
+        updateCell.mockResolvedValueOnce(snapshot());
+        const disposing = store.destroy();
+        expect(store.snapshot).toBeNull();
+        finishSave(snapshot());
+        await first;
+        await disposing;
+        expect(updateCell).toHaveBeenLastCalledWith(7, "c2", "latest edit");
+        expect(store.snapshot).toBeNull();
+    });
 });

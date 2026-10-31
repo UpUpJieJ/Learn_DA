@@ -13,15 +13,6 @@ prev_lesson:
 next_lesson:
   slug: duckdb-joins-cte
   title: DuckDB JOIN 与 CTE
-practice_objective: >-
-  掌握用 DuckDB 执行 SQL 查询的基本流程，能用 SELECT、WHERE、GROUP BY、ORDER BY
-  从明细数据中提取汇总指标。
-completion_criteria:
-  - 用 CREATE TABLE AS VALUES 构造测试数据
-  - 用 SELECT + WHERE 筛选行
-  - 用 GROUP BY + 聚合函数做分组统计
-  - 用 ORDER BY 排序结果
-  - 用 HAVING 过滤分组后的结果
 # Phase 3: 建议系统元数据
 track: duckdb_basics
 prerequisites: ['duckdb-analytics']
@@ -120,19 +111,17 @@ workspace:
           type: schema
           title: big_channels 含 channel / orders / revenue
           var: big_channels
-          columns: [channel, orders, revenue]
-        - id: t3-rows
-          type: expr_true
-          title: 只剩 2 个渠道
-          expr: "big_channels.height == 2"
-        - id: t3-channels
-          type: expr_true
-          title: 剩下的是 app 与 web
-          expr: "sorted(big_channels['channel'].to_list()) == ['app', 'web']"
-        - id: t3-threshold
-          type: expr_true
-          title: 每行订单数都 >= 1260
-          expr: "all(int(n) >= 1260 for n in big_channels['orders'].to_list())"
+          columns:
+          - channel
+          - orders
+          - revenue
+        - id: t3-big-channels
+          type: frame_equal
+          title: HAVING 保留的两个渠道与汇总数值一致
+          var: big_channels
+          ref: 07-t3-big-channels.parquet
+          order_matters: false
+          rtol: 1.0e-06
 ---
 
 # DuckDB SQL 分析基础

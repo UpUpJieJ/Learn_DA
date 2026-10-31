@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: polars-cleaning
   title: Polars 数据清洗
-practice_objective: >-
-  掌握 Polars 表达式的核心写法，能用 with_columns 完成列计算、
-  用 pl.when().then().otherwise() 完成条件分层。
-completion_criteria:
-  - 用 with_columns + 算术表达式创建派生列
-  - 用 pl.when().then().otherwise() 做条件分层
-  - 用 alias() 给新列命名
-  - 用 pl.lit() 插入常量值
 # Phase 3: 建议系统元数据
 track: polars_basics
 prerequisites: ['polars-basics', 'polars-groupby']
@@ -78,18 +70,13 @@ workspace:
           title: with_amounts 新增 gross 与 net_amount
           var: with_amounts
           columns: [order_id, unit_price, quantity, discount, gross, net_amount]
-        - id: t1-rows
-          type: expr_true
-          title: 行数不变（5000）
-          expr: "with_amounts.height == 5000"
-        - id: t1-gross
-          type: expr_true
-          title: gross 合计等于单价乘数量的总和
-          expr: "abs(with_amounts['gross'].sum() - 5717859.02) < 1.0"
-        - id: t1-net
-          type: expr_true
-          title: net_amount 合计正确且与实付列 amount 只差分位舍入
-          expr: "abs(with_amounts['net_amount'].sum() - 5287843.90) < 1.0 and (with_amounts['net_amount'] - with_amounts['amount']).abs().max() < 0.02"
+        - id: t1-frame
+          type: frame_equal
+          title: 派生两列后的整表与参考结果一致
+          var: with_amounts
+          ref: 04-t1-with-amounts.parquet
+          order_matters: false
+          rtol: 1e-6
     - id: t2
       title: 按客单价做条件分层
       cell: c3
@@ -101,19 +88,16 @@ workspace:
           type: schema
           title: tiered_orders 含 amount 与 amount_tier
           var: tiered_orders
-          columns: [amount, amount_tier]
-        - id: t2-counts
-          type: expr_true
-          title: 高客单 1886 单、低客单 1936 单
-          expr: "tiered_orders.filter(pl.col('amount_tier') == '高客单').height == 1886 and tiered_orders.filter(pl.col('amount_tier') == '低客单').height == 1936"
-        - id: t2-low-bound
-          type: expr_true
-          title: 低客单的最大金额小于 200
-          expr: "tiered_orders.filter(pl.col('amount_tier') == '低客单')['amount'].max() < 200"
-        - id: t2-high-bound
-          type: expr_true
-          title: 高客单的最小金额不小于 500
-          expr: "tiered_orders.filter(pl.col('amount_tier') == '高客单')['amount'].min() >= 500"
+          columns:
+          - amount
+          - amount_tier
+        - id: t2-tiered-orders
+          type: frame_equal
+          title: 每笔订单的金额分层与参考结果一致
+          var: tiered_orders
+          ref: 04-t2-tiered-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t3
       title: 用 pl.lit 打标并换算金额
       cell: c4
@@ -125,19 +109,16 @@ workspace:
           type: schema
           title: tagged_orders 含 source 与 amount_k
           var: tagged_orders
-          columns: [source, amount_k]
-        - id: t3-source
-          type: expr_true
-          title: source 只有一个取值 ecommerce
-          expr: "tagged_orders['source'].unique().to_list() == ['ecommerce']"
-        - id: t3-sum
-          type: expr_true
-          title: amount_k 合计约为 5288.34（千元，两位小数）
-          expr: "abs(tagged_orders['amount_k'].sum() - 5288.34) < 0.05"
-        - id: t3-rows
-          type: expr_true
-          title: 打标不增加也不减少行（5000）
-          expr: "tagged_orders.height == 5000"
+          columns:
+          - source
+          - amount_k
+        - id: t3-tagged-orders
+          type: frame_equal
+          title: 来源标签与千元金额逐行正确
+          var: tagged_orders
+          ref: 04-t3-tagged-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
 ---
 # Polars 表达式与列计算
 

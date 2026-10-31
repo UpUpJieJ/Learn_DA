@@ -13,6 +13,7 @@
 // =====================================================
 
 import { computed, onMounted } from "vue";
+import { formatFirstTryRate } from "@/lib/metrics";
 import { useRouter } from "vue-router";
 import { fetchReport, type ErrorPattern, type LessonProgress, type ReportPayload } from "@/api/workspace";
 import { AppButton, AppCard, EmptyState, StatusPill } from "@/components/ui";
@@ -60,15 +61,11 @@ const overviewLine = computed(() => {
     if (!value || !hasHistory.value) return "还没有学习记录 —— 从下面这门课的第一个任务开始。";
     const parts = [`已完成 ${value.tasksPassed}/${value.tasksTotal} 个任务`];
     if (value.streakDays > 0) parts.push(`连续学习 ${value.streakDays} 天`);
-    if ((value.daysSinceActive ?? 0) >= 3) parts.push(`已经 ${value.daysSinceActive} 天没练了`);
+    if ((value.daysSinceActive ?? 0) >= 3) parts.push(`已经 ${value.daysSinceActive} 天没练了（UTC 计日）`);
     return parts.join(" · ");
 });
 
-const firstTryRate = computed(() => {
-    const value = summary.value;
-    if (!value || value.tasksPassed <= 0) return "—";
-    return `${Math.round((Math.min(value.tasksFirstTry, value.tasksPassed) / value.tasksPassed) * 100)}%`;
-});
+const firstTryRate = computed(() => formatFirstTryRate(summary.value));
 
 const metrics = computed(() => {
     const value = summary.value;
@@ -76,7 +73,7 @@ const metrics = computed(() => {
         { label: "已通过任务", value: value ? `${value.tasksPassed}` : "—", suffix: value ? `/ ${value.tasksTotal}` : "" },
         { label: "完成课程", value: value ? `${value.lessonsCompleted}` : "—", suffix: value ? `/ ${value.lessonsTotal}` : "" },
         { label: "一次通过率", value: firstTryRate.value, suffix: "" },
-        { label: "连续学习", value: value ? `${value.streakDays}` : "—", suffix: "天" },
+        { label: "连续学习（UTC）", value: value ? `${value.streakDays}` : "—", suffix: "天" },
     ];
 });
 
@@ -177,9 +174,9 @@ onMounted(() => {
                             <h2 class="mt-1 text-lg font-semibold text-ink-900">{{ continueTarget.title }}</h2>
                             <p class="mt-1 text-sm text-ink-500">{{ lessonMeta(continueTarget) }}</p>
                             <div class="mt-3 flex items-center gap-3">
-                                <div class="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface-raised">
+                                <div class="h-1.5 w-full max-w-xs overflow-hidden rounded-pill bg-surface-raised">
                                     <div
-                                        class="h-full rounded-full"
+                                        class="h-full rounded-pill"
                                         :class="continueTarget.status === 'completed' ? 'bg-ok-500' : 'bg-brand-500'"
                                         :style="{ width: `${ratio(continueTarget.passedTasks, continueTarget.totalTasks)}%` }"
                                     />
@@ -202,7 +199,7 @@ onMounted(() => {
                     <p class="text-xs font-medium text-ink-500">{{ metric.label }}</p>
                     <p class="mt-1 text-xl font-bold text-ink-900">
                         {{ metric.value }}
-                        <span v-if="metric.suffix" class="text-sm font-medium text-ink-300">{{ metric.suffix }}</span>
+                        <span v-if="metric.suffix" class="text-sm font-medium text-ink-500">{{ metric.suffix }}</span>
                     </p>
                 </AppCard>
             </section>
@@ -260,8 +257,8 @@ onMounted(() => {
                     <div class="space-y-3">
                         <div v-for="track in tracks" :key="track.track" class="flex items-center gap-3">
                             <span class="w-28 shrink-0 truncate text-xs text-ink-700">{{ track.label }}</span>
-                            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-raised">
-                                <div class="h-full rounded-full bg-brand-500" :style="{ width: `${trackRatio(track)}%` }" />
+                            <div class="h-1.5 flex-1 overflow-hidden rounded-pill bg-surface-raised">
+                                <div class="h-full rounded-pill bg-brand-500" :style="{ width: `${trackRatio(track)}%` }" />
                             </div>
                             <span class="w-16 shrink-0 text-right text-xs text-ink-500">
                                 {{ track.passedTasks }}/{{ track.totalTasks }}

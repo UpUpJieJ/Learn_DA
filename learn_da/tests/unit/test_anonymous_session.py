@@ -24,7 +24,7 @@ async def test_session_cookie_not_secure_on_plain_http(client):
     from config.settings import settings
 
     assert settings.PUBLIC_SCHEME == "http"
-    response = await client.get("/api/v1/analytics/user-profile")
+    response = await client.get("/api/v1/learner-state/progress")
     assert response.status_code == 200
     set_cookie = response.headers.get("set-cookie", "")
     assert "learn_da_session=" in set_cookie
@@ -45,7 +45,7 @@ def test_public_scheme_validator_rejects_invalid_value():
 @pytest.mark.unit
 async def test_first_request_creates_session_cookie(client):
     """A request without a cookie should receive a signed session cookie."""
-    response = await client.get("/api/v1/analytics/user-profile")
+    response = await client.get("/api/v1/learner-state/progress")
     assert response.status_code == 200
     # Session cookie should be set in the response
     cookies = response.cookies
@@ -56,12 +56,12 @@ async def test_first_request_creates_session_cookie(client):
 async def test_session_cookie_provides_stable_visitor_id(client):
     """Reusing the session cookie should return the same visitor ID."""
     # First request — creates session
-    response1 = await client.get("/api/v1/analytics/user-profile")
+    response1 = await client.get("/api/v1/learner-state/progress")
     assert response1.status_code == 200
     data1 = response1.json()
 
     # Second request with same cookie jar — same visitor ID
-    response2 = await client.get("/api/v1/analytics/user-profile")
+    response2 = await client.get("/api/v1/learner-state/progress")
     assert response2.status_code == 200
     data2 = response2.json()
 
@@ -73,7 +73,7 @@ async def test_session_cookie_provides_stable_visitor_id(client):
 async def test_tampered_cookie_creates_new_identity(client):
     """Modifying the session cookie should result in a new visitor identity."""
     # First request — creates session
-    response1 = await client.get("/api/v1/analytics/user-profile")
+    response1 = await client.get("/api/v1/learner-state/progress")
     assert response1.status_code == 200
 
     # Get the session cookie and tamper with it
@@ -85,7 +85,7 @@ async def test_tampered_cookie_creates_new_identity(client):
     client.cookies.set("learn_da_session", tampered)
 
     # Request with tampered cookie should get a new identity
-    response2 = await client.get("/api/v1/analytics/user-profile")
+    response2 = await client.get("/api/v1/learner-state/progress")
     assert response2.status_code == 200
 
     # A new session cookie should have been set (replacing the tampered one)
@@ -116,14 +116,14 @@ async def test_cross_session_isolation(db_session, test_engine):
         async with HttpxAsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client_a:
-            response_a = await client_a.get("/api/v1/analytics/user-profile")
+            response_a = await client_a.get("/api/v1/learner-state/progress")
             assert response_a.status_code == 200
 
             # Session B (separate client = separate cookie jar)
             async with HttpxAsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client_b:
-                response_b = await client_b.get("/api/v1/analytics/user-profile")
+                response_b = await client_b.get("/api/v1/learner-state/progress")
                 assert response_b.status_code == 200
 
                 # Each client has its own session cookie

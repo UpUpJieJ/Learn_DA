@@ -29,6 +29,7 @@ function summary(overrides: Partial<ReportPayload["summary"]> = {}): ReportPaylo
         tasksPassed: 2,
         attemptsTotal: 5,
         tasksFirstTry: 1,
+        tasksAttempted: 3,
         activeDays: 2,
         streakDays: 1,
         lastActiveAt: "2026-10-22T10:00:00+00:00",
@@ -174,7 +175,7 @@ describe("Report", () => {
         expect(target).toBeTruthy();
 
         await target!.trigger("click");
-        expect(push).toHaveBeenCalledWith("/lesson/polars-groupby");
+        expect(push).toHaveBeenCalledWith({path: "/lesson/polars-groupby", query: {task: "t2"}});
     });
 
     it("最近提交的每一行也能点回课程", async () => {
@@ -189,7 +190,7 @@ describe("Report", () => {
         expect(target).toBeTruthy();
 
         await target!.trigger("click");
-        expect(push).toHaveBeenCalledWith("/lesson/polars-groupby");
+        expect(push).toHaveBeenCalledWith({path: "/lesson/polars-groupby", query: {task: "t1"}});
     });
 
     it("attemptsTotal === 0 时只显示空态，不渲染空表", async () => {

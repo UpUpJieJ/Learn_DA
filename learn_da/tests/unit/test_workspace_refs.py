@@ -45,8 +45,8 @@ def _lesson_with(assertions: list[dict], *, cells: int = 2) -> dict:
                 {"id": f"t{index + 1}", "title": f"任务 {index + 1}",
                  "cell": f"c{index + 1}", "objective": "把值算出来",
                  "assertions": assertions if index == 0 else [
-                     {"id": f"t{index + 1}-ok", "type": "expr_true",
-                      "expr": f"value_{index + 1} == {index + 1}"}
+                     {"id": f"t{index + 1}-ok", "type": "value",
+                      "var": f"value_{index + 1}", "expect": index + 1}
                  ]}
                 for index in range(cells)
             ],
@@ -69,7 +69,7 @@ class TestRefPathValidation:
 
     def test_lesson_without_refs_has_empty_ref_names(self):
         spec = load_workspace(_lesson_with([
-            {"id": "a", "type": "expr_true", "expr": "value_1 == 1"},
+            {"id": "a", "type": "value", "var": "value_1", "expect": 1},
         ]))
         assert spec is not None
         assert spec.ref_names() == ()

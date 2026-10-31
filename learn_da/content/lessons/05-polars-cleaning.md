@@ -13,15 +13,6 @@ prev_lesson:
 next_lesson:
   slug: polars-joins
   title: Polars 连接与合并
-practice_objective: >-
-  掌握 Polars 中缺失值、重复值、类型转换的处理方法，
-  能把一张"脏数据"清洗成可分析的干净表。
-completion_criteria:
-  - 用 null_count() 查看每列缺失数量
-  - 用 fill_null() 填充缺失值（固定值或统计值）
-  - 用 unique() 去重
-  - 用 cast() 转换字段类型
-  - 用 str.to_date() 解析日期字符串
 # Phase 3: 建议系统元数据
 track: polars_basics
 prerequisites: ['polars-basics', 'polars-expressions']
@@ -74,22 +65,20 @@ workspace:
         用 null_count() 统计整表每列缺失数并存成 null_counts(DataFrame)；
         再用 fill_null 把 discount 缺失填成 1.0、quantity 缺失填成 1，结果命名为 filled_orders。
       assertions:
-        - id: t1-null-quantity
-          type: expr_true
-          title: null_counts 统计出 quantity 缺失 23 个
-          expr: "null_counts['quantity'][0] == 23"
-        - id: t1-null-discount
-          type: expr_true
-          title: null_counts 统计出 discount 缺失 33 个
-          expr: "null_counts['discount'][0] == 33"
-        - id: t1-null-left
-          type: expr_true
-          title: filled_orders 的 discount 与 quantity 已无缺失
-          expr: "filled_orders['discount'].null_count() == 0 and filled_orders['quantity'].null_count() == 0"
-        - id: t1-sum
-          type: expr_true
-          title: 填充后 discount 合计 1140.05、quantity 合计 2233（1230 行）
-          expr: "filled_orders.height == 1230 and abs(filled_orders['discount'].sum() - 1140.05) < 0.01 and filled_orders['quantity'].sum() == 2233"
+        - id: t1-null-counts
+          type: frame_equal
+          title: 各列缺失计数与参考结果一致
+          var: null_counts
+          ref: 05-t1-null-counts.parquet
+          order_matters: false
+          rtol: 1.0e-06
+        - id: t1-filled-orders
+          type: frame_equal
+          title: 缺失值填充后的整表与参考结果一致
+          var: filled_orders
+          ref: 05-t1-filled-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t2
       title: 按 order_id 去重并规范文本
       cell: c3
@@ -98,22 +87,13 @@ workspace:
         再把 region 两端空格去掉（str.strip_chars）、channel 统一小写（str.to_lowercase），
         结果命名为 cleaned_text。
       assertions:
-        - id: t2-rows
-          type: expr_true
-          title: 去重后剩 1200 行
-          expr: "cleaned_text.height == 1200"
-        - id: t2-key
-          type: expr_true
-          title: order_id 不再重复
-          expr: "cleaned_text['order_id'].n_unique() == cleaned_text.height"
-        - id: t2-region
-          type: expr_true
-          title: region 只剩四个大区，且没有空格变体
-          expr: "sorted(cleaned_text['region'].unique().to_list()) == ['华东', '华北', '华南', '西南']"
-        - id: t2-channel
-          type: expr_true
-          title: channel 只剩四个小写取值
-          expr: "sorted(cleaned_text['channel'].unique().to_list()) == ['app', 'mini_program', 'offline', 'web']"
+        - id: t2-cleaned-text
+          type: frame_equal
+          title: 去重与文本规范化后的整表一致
+          var: cleaned_text
+          ref: 05-t2-cleaned-text.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t3
       title: 修金额与日期类型
       cell: c4
@@ -125,22 +105,20 @@ workspace:
           type: schema
           title: amount 是 Float64、order_date 是 Date
           var: typed_orders
-          columns: [order_id, amount, order_date]
+          columns:
+          - order_id
+          - amount
+          - order_date
           dtypes:
             amount: Float64
             order_date: Date
-        - id: t3-amount-null
-          type: expr_true
-          title: amount 里 29 个坏值转成了 null，其余可计算
-          expr: "typed_orders['amount'].null_count() == 29"
-        - id: t3-date
-          type: expr_true
-          title: 日期全部解析成功，覆盖 2025 全年
-          expr: "typed_orders['order_date'].null_count() == 0 and str(typed_orders['order_date'].min()) == '2025-01-01' and str(typed_orders['order_date'].max()) == '2025-12-31'"
-        - id: t3-rows
-          type: expr_true
-          title: 类型修复不改变行数（1200）
-          expr: "typed_orders.height == 1200"
+        - id: t3-typed-orders
+          type: frame_equal
+          title: 修复类型后的整表与参考结果一致
+          var: typed_orders
+          ref: 05-t3-typed-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
 ---
 # Polars 数据清洗
 

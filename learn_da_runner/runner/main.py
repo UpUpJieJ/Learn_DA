@@ -39,12 +39,11 @@ def build_provider() -> ExecutionProvider:
             raise RuntimeError(
                 "RUNNER_PROVIDER=local requires RUNNER_ALLOW_LOCAL_EXECUTION=1"
             )
-        environment = (
-            runner_settings.RUNNER_ENV or os.environ.get("APP_ENV", "")
-        ).strip().lower()
-        if environment == "production":
+        environments = {value.strip().lower() for value in
+                        (runner_settings.RUNNER_ENV, os.environ.get("APP_ENV", "")) if value.strip()}
+        if not environments or not environments <= {"development", "test"}:
             raise RuntimeError(
-                "RUNNER_PROVIDER=local is refused in production; use docker"
+                "RUNNER_PROVIDER=local is refused in production or unknown environments; use docker"
             )
         return LocalSubprocessProvider()
 

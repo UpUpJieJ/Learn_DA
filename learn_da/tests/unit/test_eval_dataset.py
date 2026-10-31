@@ -1,7 +1,7 @@
 """评测数据集 schema 校验（阶段 ③ Task 3.2）。
 
 保证 tests/eval/ 下两个用例文件结构合法：
-- 意图用例：expected_intent 落在 ToolName 六值域内，条数 30-50；
+- 意图用例：expected_intent 落在当前关键词路由值域内，条数 30-50；
 - 检索用例：expected_lesson_slug 是真实存在的课程 slug，条数 15-20。
 数据文件损坏时评测 runner 的基线数字不可信，因此纳入单测门禁。
 """
@@ -12,6 +12,7 @@ from typing import get_args
 import yaml
 
 from app.agent.schemas import ToolName
+from app.agent.routing import AgentRouter
 from app.core.content_loader import load_all_lessons
 
 EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
@@ -19,6 +20,7 @@ INTENT_FILE = EVAL_DIR / "agent_intent_cases.yml"
 RETRIEVAL_FILE = EVAL_DIR / "agent_retrieval_cases.yml"
 
 VALID_INTENTS = set(get_args(ToolName))
+ROUTED_INTENTS = {rule[0] for rule in AgentRouter.rules} | {"general_chat"}
 
 
 def load_cases(path: Path) -> list[dict]:
@@ -54,7 +56,9 @@ def test_intent_cases_messages_unique():
 def test_intent_cases_cover_all_intents():
     cases = load_cases(INTENT_FILE)
     covered = {case["expected_intent"] for case in cases}
-    assert covered == VALID_INTENTS, f"缺少意图覆盖：{VALID_INTENTS - covered}"
+    # ToolName also retains historical/tool-derived audit labels such as
+    # suggest_next_step; these are no longer keyword intents offered to users.
+    assert covered == ROUTED_INTENTS, f"意图覆盖不一致：{ROUTED_INTENTS ^ covered}"
 
 
 def test_retrieval_cases_schema():

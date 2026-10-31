@@ -92,8 +92,9 @@ docker compose --env-file deploy/runner.env -f docker-compose.runner.yml ps
 docker compose --env-file deploy/runner.env -f docker-compose.runner.yml logs --tail=100 runner
 ```
 
-发布新版本时，先更新并重建 Runner，再更新应用服务器。部署后分别验证三节
-样板课程的练习执行、验证结果、草稿恢复和 Dashboard 指标。不要把
+发布新版本时，先更新并重建 Runner，再运行 Alembic 并更新应用服务器。部署后运行
+`bash deploy/acceptance.sh`，验证工作区真实执行、幂等、进度/报告、分级提示与 SSE。
+正式判定使用 observations 协议，后端与 Runner 必须配套更新。不要把
 `deploy/app.env` 或 `deploy/runner.env` 提交到 Git。
 
 ## 单台服务器部署
@@ -130,28 +131,39 @@ docker compose --env-file deploy/app.env --env-file deploy/runner.env \
 /app/Learn_DA/deploy/update.sh
 ```
 
-脚本会拉取代码（优先 GitHub，不可达时回退 `/root/learnda.bundle`）、
-重建镜像、滚动更新容器并显示状态。数据卷不受影响。
+脚本会拉取代码（优先 GitHub，不可达时回退 `/root/learnda.bundle`），
+按内容缓存构建版本化沙箱镜像，再顺序构建应用镜像。停止写入后冷备份本项目
+数据和日志卷，依次等待 Runner、迁移、Backend、Web 就绪，最后运行 29 项验收。
+默认保留数据。备份保存在服务器 `/var/backups/learn_da/`，权限为 700。
+
+单机双 compose 下，后端请求超时在 `app.env` 使用
+`BACKEND_RUNNER_TIMEOUT_SECONDS=7` 和 `BACKEND_RUNNER_SESSION_TIMEOUT_SECONDS=30`；
+Runner 仍用 `RUNNER_TIMEOUT_SECONDS=5` 和 `RUNNER_SESSION_TIMEOUT_SECONDS=20`。
+分开配置可避免后加载的 `runner.env` 把后端超时一起改短。
 
 ### 本地侧：把新提交送到服务器
 
-方式 A（GitHub 通畅，推荐）：
+先提交全部发布文件（含新迁移、参考结果和 Runner 子进程文件），再指定已确认的 SSH 别名：
 
 ```bash
-git push origin main
-ssh root@<服务器IP> /app/Learn_DA/deploy/update.sh
+LEARN_DA_SERVER=<SSH别名> bash deploy/push-deploy.sh
 ```
 
-方式 B（GitHub 不可达，本地代理也失效时的兜底）：
+脚本拒绝脏工作区；尽力推 GitHub，并始终上传完整 main bundle，部署时核验确切
+commit。服务器执行新上传的更新脚本，避免旧脚本遗漏沙箱构建。首次安装需先在目标
+`/app/Learn_DA` 克隆 bundle、设置 origin，并准备两个未跟踪的 env 文件。
+
+用户明确要求清空历史时使用：
 
 ```bash
-git bundle create /tmp/learnda.bundle origin/main..main   # 未推送的提交
-scp /tmp/learnda.bundle root@<服务器IP>:/root/learnda.bundle
-ssh root@<服务器IP> /app/Learn_DA/deploy/update.sh
+LEARN_DA_SERVER=<SSH别名> bash deploy/push-deploy.sh --fresh
 ```
 
-> 注意：方式 B 的 `origin/main..main` 假设已推送到 GitHub 的部分不需要
-> 打包；若不确定，用 `git bundle create /tmp/learnda.bundle main` 打全量。
+`--fresh` 在冷备份成功后删除这一个 compose 项目的数据/日志卷，再迁移空库。
+删除前核验卷的 project 和 logical-volume 标签；不会使用全局 prune 或删除其他
+项目容器。验收会写入专用匿名访客数据；需要完全空库交付时，验收后再停写并重建数据库。
+通过 `LEARN_DA_COMPOSE_PROJECT` 可选择已有项目名，默认 `learn_da`。
+发布脚本回归可运行 `bash deploy/test-release.sh`（隔离模拟，无 Docker/网络调用）。
 
 ### 免密登录（可选，一次性配置）
 

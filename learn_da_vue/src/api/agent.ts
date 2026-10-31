@@ -1,4 +1,4 @@
-import { ApiError, CancelledError, post } from '@/api/index'
+import { ApiError, CancelledError, post, registerRequestController } from '@/api/index'
 import { randomId } from '@/lib/uuid'
 import type {
   AgentChatRequest,
@@ -80,6 +80,12 @@ export async function sendChatMessage(
   let reply = ''
   let finalData: AgentChatBackendData | null = null
   let interrupted = false
+  const controller = new AbortController()
+  const abort = () => controller.abort(signal?.reason)
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, {once:true})
+  const unregister = registerRequestController(controller)
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
   try {
     const response = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
@@ -91,7 +97,7 @@ export async function sendChatMessage(
       },
       credentials: 'include',
       body: JSON.stringify(payload),
-      signal,
+      signal: controller.signal,
     })
 
     if (!response.ok) {
@@ -101,20 +107,20 @@ export async function sendChatMessage(
       throw new ApiError('浏览器不支持流式响应', -1)
     }
 
-    const reader = response.body.getReader()
+    reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
 
     // 逐块读，按 SSE 的空行切分事件；最后一块可能只有半个事件，留在 buffer
     for (;;) {
       const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true })
 
-      let boundary = buffer.indexOf('\n\n')
+      let boundary = buffer.search(/\r?\n\r?\n/)
       while (boundary >= 0) {
         const block = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
+        const separator = buffer.slice(boundary).match(/^\r?\n\r?\n/)![0]
+        buffer = buffer.slice(boundary + separator.length)
         const event = parseEventBlock(block)
         if (event) {
           if (event.type === 'delta') {
@@ -130,11 +136,13 @@ export async function sendChatMessage(
             finalData = event.data
           }
         }
-        boundary = buffer.indexOf('\n\n')
+        boundary = buffer.search(/\r?\n\r?\n/)
       }
+      if (done) break
     }
 
-    const content = finalData?.content ?? reply
+    if (!finalData) throw new ApiError("回答传输中断，上面的内容不完整", -1)
+    const content = interrupted && reply ? reply : (finalData?.content ?? reply)
     if (onDone) {
       onDone(
         content,
@@ -150,15 +158,19 @@ export async function sendChatMessage(
       interactionId: finalData?.interactionId ?? null,
     }
   } catch (error) {
-    if (isAbortError(error)) {
+    if (controller.signal.aborted || isAbortError(error)) {
       const cancelled = new CancelledError('已停止生成')
-      onError?.(cancelled)
+      onError?.(cancelled, Boolean(reply))
       throw cancelled
     }
     const err = error instanceof Error ? error : new Error('请求失败')
     // 流中断时前面已经调过 onError(partial)，这里不重复报
-    if (!interrupted) onError?.(err)
+    if (!interrupted) onError?.(err, Boolean(reply))
     throw err
+  } finally {
+    unregister()
+    signal?.removeEventListener('abort', abort)
+    reader?.releaseLock()
   }
 }
 
@@ -199,6 +211,8 @@ async function buildHttpError(response: Response): Promise<ApiError> {
 
 function errorReasonText(reason: string): string {
   switch (reason) {
+    case 'truncated':
+      return '回答被截断了，上面的内容不完整'
     case 'stream_interrupted':
       return '回答生成到一半中断了，上面的内容不完整'
     case 'no_api_key':

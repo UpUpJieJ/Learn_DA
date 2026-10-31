@@ -10,14 +10,6 @@ tags: [polars, dataframe, 入门, select, filter, with_columns]
 next_lesson:
   slug: duckdb-analytics
   title: DuckDB 查询分析
-practice_objective: >-
-  掌握 Polars 的 DataFrame 创建、列选择、行筛选和列派生，
-  能把 Pandas 中最常用的操作映射到 Polars 对应写法。
-completion_criteria:
-  - 使用 pl.DataFrame 创建包含至少 3 列的 DataFrame
-  - 用 select 选取指定列
-  - 用 filter 按条件筛选行
-  - 用 with_columns 添加一个派生列
 # Phase 3: 建议系统元数据
 track: polars_basics
 prerequisites: []
@@ -71,14 +63,13 @@ workspace:
           title: app_orders 含 order_id / region / amount 三列
           var: app_orders
           columns: [order_id, region, amount]
-        - id: t1-rows
-          type: expr_true
-          title: 行数等于 app 渠道订单数（1272）
-          expr: "app_orders.height == 1272"
-        - id: t1-sum
-          type: expr_true
-          title: 这批订单的 amount 合计与数据集一致
-          expr: "abs(app_orders['amount'].sum() - 1362720.69) < 0.5"
+        - id: t1-frame
+          type: frame_equal
+          title: app 渠道订单的行与列与参考结果一致
+          var: app_orders
+          ref: 01-t1-app-orders.parquet
+          order_matters: false
+          rtol: 1e-6
     - id: t2
       title: 派生订单原价金额 gross
       cell: c3
@@ -91,18 +82,13 @@ workspace:
           title: with_gross 保留原始列并新增 gross
           var: with_gross
           columns: [order_id, channel, unit_price, quantity, amount, gross]
-        - id: t2-rows
-          type: expr_true
-          title: with_columns 不改变行数（5000）
-          expr: "with_gross.height == 5000"
-        - id: t2-sum
-          type: expr_true
-          title: gross 合计等于单价乘数量的总和
-          expr: "abs(with_gross['gross'].sum() - 5717859.02) < 1.0"
-        - id: t2-max
-          type: expr_true
-          title: gross 最大值符合数据集（19236.8）
-          expr: "abs(with_gross['gross'].max() - 19236.8) < 0.01"
+        - id: t2-frame
+          type: frame_equal
+          title: 新增 gross 后的整表与参考结果一致
+          var: with_gross
+          ref: 01-t2-with-gross.parquet
+          order_matters: false
+          rtol: 1e-6
     - id: t3
       title: 取金额最高的 10 单
       cell: c4
@@ -116,15 +102,13 @@ workspace:
           var: top_orders
           columns: [order_id, region, channel, amount]
           exact: true
-        - id: t3-sorted
-          type: expr_true
-          title: amount 从大到小排列
-          expr: "top_orders['amount'].to_list() == sorted(top_orders['amount'].to_list(), reverse=True)"
         - id: t3-exact
           type: frame_equal
           title: 十行订单的行与列与参考结果一致（金额并列时顺序不限）
           var: top_orders
           ref: 01-t3-top-orders.parquet
+          sorted_by: [amount]
+          descending: true
           order_matters: false
           rtol: 1e-6
 ---

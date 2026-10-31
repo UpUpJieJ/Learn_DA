@@ -80,6 +80,7 @@ class AgentLearningEvidence(BaseResponseModel):
     # 此时 prompt 必须提醒模型"编辑器代码可能未保存/未提交"，避免它拿旧代码
     # 解释任务状态（曾出现「已通过」的同时说"你还缺 X 列"的自相矛盾回答）。
     code_matches_editor: bool | None = None
+    requires_recheck: bool = False
 
 
 def derive_workspace_state(
@@ -169,21 +170,11 @@ class AgentEvidenceResolver:
         return await self._resolve_workspace(
             visitor_id=visitor_id,
             lesson_slug=lesson_slug,
-            task_id=task_id or self._guess_task(lesson_slug),
+            task_id=task_id,
             attempt_id=attempt_id,
             spec=spec,
             editor_code=editor_code,
         )
-
-    @staticmethod
-    def _guess_task(lesson_slug: str) -> str | None:
-        """没有明确 task_id 时，取内容里第一个任务作为默认关注点。"""
-        from app.workspace.repository import spec_for
-
-        spec = spec_for(lesson_slug)
-        if spec is None or not spec.tasks:
-            return None
-        return spec.tasks[0].task_id
 
     async def _resolve_workspace(
         self,
@@ -220,19 +211,21 @@ class AgentEvidenceResolver:
                 state="no_evidence",
                 source="workspace",
                 lesson_slug=lesson_slug,
-                task_id=task_id,
+                task_id=task_id or current_task,
                 tasks_passed=len(passed_ids),
                 tasks_total=total,
                 current_task_id=current_task,
                 lesson_completed=lesson_completed,
             )
 
-        task = spec.task(attempt.task_id)
+        task = next((item for item in spec.tasks if item.task_id == attempt.task_id), None)
         matches: bool | None = None
         if editor_code is not None:
             matches = (attempt.code or "").strip() == editor_code.strip()
+        requires_recheck = attempt.status == "passed" and attempt.task_id not in passed_ids
         return AgentLearningEvidence(
-            state=derive_workspace_state(attempt.verdict, attempt.status),
+            state="unverifiable" if requires_recheck else derive_workspace_state(attempt.verdict, attempt.status),
+            requires_recheck=requires_recheck,
             source="workspace",
             lesson_slug=attempt.lesson_slug,
             attempt_id=attempt.id,

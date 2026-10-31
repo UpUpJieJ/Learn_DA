@@ -1,7 +1,7 @@
 <template>
     <div class="border-t border-line pt-3">
         <div class="flex items-center justify-between gap-2">
-            <p class="text-[11px] text-ink-300">
+            <p class="text-[11px] text-ink-500">
                 提示
                 {{
                     task.hintsUsed > 0
@@ -20,7 +20,7 @@
             </AppButton>
         </div>
 
-        <p v-if="task.hintsUsed === 0" class="mt-1 text-[11px] leading-5 text-ink-300">
+        <p v-if="task.hintsUsed === 0" class="mt-1 text-[11px] leading-5 text-ink-500">
             提示按你在这道任务上的失败次数逐层加深，最多 {{ task.hintMaxLevel }} 层；不会直接给整格答案。
         </p>
 
@@ -31,7 +31,7 @@
                 class="rounded-control bg-surface-raised p-3"
                 :data-level="hint.level"
             >
-                <div class="mb-1 flex items-center gap-2 text-[11px] text-ink-300">
+                <div class="mb-1 flex items-center gap-2 text-[11px] text-ink-500">
                     <StatusPill status="passed" size="sm" :label="`L${hint.level}`" />
                     <span>{{ hint.hasNext ? "已给" : "最后一层" }}</span>
                 </div>
@@ -45,7 +45,7 @@
 
         <p
             v-else-if="task.hintsUsed > 0"
-            class="mt-2 text-[11px] leading-5 text-ink-300"
+            class="mt-2 text-[11px] leading-5 text-ink-500"
         >
             之前用过的提示在刷新后不再重复显示；点「再要一层提示」会拿到更深的一层。
         </p>

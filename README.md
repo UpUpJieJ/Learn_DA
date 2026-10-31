@@ -162,7 +162,7 @@ uv sync
 cp .env.example .env                                # 写入 RUNNER_TOKEN（与 learn_da/.env 一致）
 
 # 有 Docker：构建沙箱镜像后按默认 docker provider 启动
-docker build -f ../learn_da/Dockerfile.sandbox -t polars-duckdb-sandbox:latest ../learn_da
+docker build -f ../learn_da/Dockerfile.sandbox -t polars-duckdb-sandbox:pl1.39.3-duck1.5.1-arrow25.0.1 ../learn_da
 uvicorn runner.main:app --host 127.0.0.1 --port 8080
 ```
 
@@ -338,7 +338,7 @@ is_branch_point: false
 ---
 ```
 
-新增课程后，`/api/v1/catalog` 会返回新的主题/路径，`/api/v1/lessons?topic=programming&track=python_basics` 可按主题和路径筛选课程，前端学习中心会优先使用 catalog 动态生成专题入口。
+新增课程后，`/api/v1/catalog` 返回新的主题/路径，`/api/v1/lessons?topic=programming&track=python_basics` 可按主题和路径筛选。前端课程地图使用 `/workspace/progress` 的服务端任务进度。
 
 ### 课程数据集与断言 DSL（改版 M0）
 
@@ -353,7 +353,7 @@ cd learn_da
 **不要手改数据集文件**——它们和 `manifest.json` 里的 sha256 由生成器决定，改动会在 `--check` 和测试里报 drift。单课数据集总量上限是 **2MB**，与 Runner 的 `RUNNER_SESSION_MAX_DATASET_BYTES` 对齐（后端预算更大时会先通过 lint、再在运行时被 Runner 拒掉）。
 
 判定侧新增了 v2 断言 DSL（`learn_da/app/practice/assertion_runtime.py` + `learn_da/app/practice/assertions.py`），
-支持 `expr_true` / `frame_equal` / `schema` / `sql_rows` 四种断言，失败时回传被截断的 `actual` 供诊断。
+工作区支持 `frame_equal` / `schema` / `sql_rows` / `value` / `call` 五种结构化断言；不接受自由表达式 `expr_true`。Runner 只回传有界观察值，参考结果与可信比较留在后端；失败时回传被截断的 `actual` 供诊断。
 
 `frame_equal` / `sql_rows` 需要一份「预期结果」，放在 [`learn_da/content/expected`](learn_da/content/expected)，
 由参考解自动生成（不要手写、也不要手改）：
@@ -368,7 +368,7 @@ cd learn_da
 预期结果缺失或路径越界会被 `scripts/content_lint.py` 直接阻断（lint L7）。
 生成器强制单线程 polars（`POLARS_MAX_THREADS=1`）——多线程下分组聚合的浮点末位不稳定，字节不可复现；
 学员侧仍多线程，所以断言统一用 `rtol: 1e-6` 容差比对。单文件上限 200KB、单课合计 2MB。
-注意执行接口的 `code` 上限是 5000 字符，追加断言时要用按路径加载的紧凑尾巴：
+正式工作区走 `/v1/sessions` 的观察协议，在后端判定，不追加断言尾巴。以下尾巴生成器仅供低层兼容脚本；普通单段执行接口的 `code` 上限是 5000 字符，兼容脚本应使用按路径加载：
 
 ```python
 from app.practice.assertions import render_assertion_source

@@ -1,3 +1,4 @@
+import { effectScope } from "vue";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AgentContext, TeachingFeedback } from "@/types/api";
 
@@ -255,5 +256,41 @@ describe("useAgentConversation", () => {
         expect(assistant.content).toContain("已停止");
         expect(assistant.isStreaming).toBe(false);
         await pending.catch(() => {});
+    });
+    it("does not overwrite partial text when done follows error", async () => {
+        const c = useAgentConversation({ context: () => CONTEXT });
+        mockedStream.mockImplementation(async ({ onDelta, onError, onDone }) => {
+            onDelta?.("保留回答");
+            onError?.(new Error("不完整"), true);
+            onDone?.("AI 助手暂时不可用", null, 9);
+        });
+        await c.sendMessage("hi");
+        expect(c.messages.value[1]?.content).toContain("保留回答");
+        expect(c.messages.value[1]?.content).toContain("不完整");
+        expect(c.messages.value[1]?.interactionId).toBe(9);
+    });
+
+    it("ignores callbacks arriving after stop and a new send", async () => {
+        const c = useAgentConversation({ context: () => CONTEXT });
+        let old: Parameters<typeof sendChatMessage>[0];
+        mockedStream.mockImplementation(async (opts) => { old = opts; opts.onDelta?.("旧回答"); });
+        await c.sendMessage("old");
+        c.stopStreaming();
+        mockedStream.mockImplementation(async ({ onTool }) => { onTool?.(["new_tool"]); });
+        await c.sendMessage("new");
+        old!.onError?.(new Error("late"));
+        old!.onTool?.(["old_tool"]);
+        expect(c.activeTools.value).toEqual(["new_tool"]);
+        expect(c.isLoading.value).toBe(true);
+    });
+    it("aborts the active request when its effect scope is disposed", async () => {
+        const scope = effectScope();
+        const c = scope.run(() => useAgentConversation({context: () => CONTEXT}))!;
+        let signal: AbortSignal | undefined;
+        mockedStream.mockImplementation(async (opts) => { signal = opts.signal; });
+        await c.sendMessage("hi");
+        scope.stop();
+        expect(signal?.aborted).toBe(true);
+        expect(c.isLoading.value).toBe(false);
     });
 });

@@ -33,18 +33,6 @@ class AgentRouter:
             "用户希望理解代码或概念",
         ),
         (
-            "generate_exercise",
-            ("练习", "exercise", "题目", "出题"),
-            0.82,
-            "用户希望生成练习任务",
-        ),
-        (
-            "suggest_next_step",
-            ("下一步", "next step", "继续学", "学什么", "接下来"),
-            0.82,
-            "用户希望获得学习路径建议",
-        ),
-        (
             "generate_example_code",
             (
                 "示例",

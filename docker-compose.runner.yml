@@ -14,10 +14,14 @@ services:
     env_file:
       - ./deploy/runner.env
     environment:
+      RUNNER_ENV: production
       RUNNER_PORT: 8080
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/runner.env}
-      RUNNER_DOCKER_IMAGE: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+      RUNNER_DOCKER_IMAGE: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:pl1.39.3-duck1.5.1-arrow25.0.1}
       RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-5}
+      RUNNER_SESSION_TIMEOUT_SECONDS: ${RUNNER_SESSION_TIMEOUT_SECONDS:-20}
+      RUNNER_SESSION_MAX_DATASET_BYTES: ${RUNNER_SESSION_MAX_DATASET_BYTES:-2000000}
+      RUNNER_SESSION_MAX_RESULT_BYTES: ${RUNNER_SESSION_MAX_RESULT_BYTES:-2000000}
       RUNNER_MEMORY_LIMIT_MB: ${RUNNER_MEMORY_LIMIT_MB:-256}
       RUNNER_CPU_QUOTA: ${RUNNER_CPU_QUOTA:-50000}
       RUNNER_PIDS_LIMIT: ${RUNNER_PIDS_LIMIT:-64}
@@ -44,5 +48,5 @@ services:
         APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
-    image: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:latest}
+    image: ${RUNNER_DOCKER_IMAGE:-polars-duckdb-sandbox:pl1.39.3-duck1.5.1-arrow25.0.1}
     profiles: ["sandbox"]

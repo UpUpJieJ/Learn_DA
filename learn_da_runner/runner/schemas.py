@@ -74,6 +74,7 @@ class RunnerSessionRequest(_CamelModel):
     runtime: str | None = Field(default=None, max_length=200_000)
     refs: dict[str, str] = Field(default_factory=dict)
     assertions: list[dict[str, Any]] = Field(default_factory=list)
+    observation_mode: bool = False
 
 
 class RunnerSessionResult(_CamelModel):
@@ -90,3 +91,4 @@ class RunnerSessionResult(_CamelModel):
     duration_ms: int = Field(default=0, ge=0)
     error_type: str | None = None
     error: str = ""
+    observations: list[dict[str, Any]] = Field(default_factory=list)

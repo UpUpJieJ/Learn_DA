@@ -1,6 +1,6 @@
 # AGENTS.md — Learn DA 项目上下文
 
-> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-10-24。
+> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-10-31。
 
 ## 项目是什么
 
@@ -9,6 +9,13 @@
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
 ## 当前状态（截至 2026-10-24）
+
+- **2026-10-31 高优先级重构收口**：正式判定在 `app/practice/observations.py`（由 `RunnerClient.execute_session` 调用），出站 `observationMode:true`，剥离 refs/runtime/expect；Runner 只回传有界 JSON 表/值/SQL 行，禁止在后端解析学员提供的 Arrow 二进制。工作区仅用 `frame_equal/schema/sql_rows/value/call`，13 课已无 `expr_true`，内容加载会拒绝新自由表达式；35 个 refs 由生成器维护。旧 Runner 父进程判定路径只供内部兼容脚本。
+- **并发与事件修复**：执行幂等按 session/操作/目标分域；hint 可传 requestId，迁移 `c7d31a8e9f02`；短事务与锁保护旧执行回写。工作区复用 AnalyticsService 的幂等业务入口写学习事件，与 `/analytics/track` 共用规则；TaskAttempt 仍为教学证据。run/submit/hint/default/global 限流生效。
+- **SSE 与切课**：跨轮累积文本，partial/取消不覆盖内容；默认 60 秒 idle + `LLM_STREAM_TOTAL_TIMEOUT_SECONDS=180` 单次流调用总期限。前端 generation 隔离响应、串行保存，离开路由等待草稿。AI 助手 FC 只暴露知识检索/学习进度/任务摘要，推荐与出题入口已移除。详情见 `learn_da/docs/refactor-closeout-2026-10-31.md`。以下旧状态条目按各自日期作为历史。
+- **第三批收口**：报告与地图按当前有效任务统计，`tasksAttempted` 与一次通过率统一；UI lint 基线为 0，组件补无障碍及 HTTP 剪贴板；Lab 表预览/耗时/幂等事件完整。旧 Dashboard GET 与旧练习元数据已移除，`catalog`/`categories`/`recommendations` 公开 API 保留。沙箱默认使用版本 tag 并在 Runner 进程内锁定 image ID。
+- **当前验证与乱序保护**：`session_cells.task_verified`（迁移 `d8a42b6f9013`）仅在当前前缀下任务提交通过时置真；编辑或失效清除，普通运行不恢复。snapshot/报告/Agent 同口径；晚到的旧执行不覆盖新状态。新 TaskAttempt/RunEvent 记录执行开始时间，历史不重写。旧活动工作区升级后需逐任务重提一次；进入工作区时通过既有事件入口对齐旧完成投影。
+- **2026-10-31 最终门禁**：后端 604、Runner 59、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。真实 Docker 全课程 76/76、QA 部署验收（含真实 LLM）29/29、原越权 PoC 5/5 符合安全预期、Linux Node 容器生产构建成功。未部署生产，CI 账单外部限制不变。
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **旧练习体系已下线**（2026-10-24）：13 门课 frontmatter 的 `exercise:` 块全部删除，`app/practice/` 的 validator / repository / service / router / schemas 与 `POST /playground/exercises/*`（resume/attempts/stats）、`POST /playground/format`、`GET /analytics/practice-stats`、`GET /analytics/recommended-lessons` 一并移除；`exercise_attempts` 表**冻结只读**（`app/practice/models.py` 仍登记给 Alembic，历史数据留存，不要再写入）。任务判定与教学证据全部走 `task_attempts`。`app/practice/` 现在只剩断言 DSL v2（`assertion_runtime.py` + `assertions.py`）。
@@ -88,7 +95,7 @@ LEARN_DA_BASE_URL=http://<host>:8000 bash deploy/acceptance.sh   # 打远端
 ## 部署与运维
 
 - 生产：**单机双 compose 模式**（`docker-compose.app.yml` + `docker-compose.runner.yml` 一起加载），项目在服务器 `/app/Learn_DA`，数据卷 `learn_da_data`（SQLite），migrate 容器自动跑 Alembic。对外协议由 `PUBLIC_SCHEME` 声明（当前明文 HTTP=http；上 HTTPS 后改 https，cookie 自动加 Secure）。
-- **日常更新一句话**：本地 `bash deploy/push-deploy.sh`（推 GitHub→上传 bundle 兜底→ssh 触发服务器 `deploy/update.sh`）。只更服务器：`ssh root@<ip> /app/Learn_DA/deploy/update.sh`。
+- **日常更新一句话**：本地 `LEARN_DA_SERVER=<已确认的SSH别名> bash deploy/push-deploy.sh`（要求提交完整且工作区干净；上传确切 commit 的 bundle 与新更新脚本）。服务器 `bash /app/Learn_DA/deploy/update.sh` 自动备份、补建沙箱、依次更新 Runner/迁移/应用并验收。只有明确清空历史时用 `--fresh`，仅重建带本项目标签的数据/日志卷。
 - 服务器地址与凭据**不入库**：IP 见本地 `~/.ssh/config` 的 Host 条目（root 免密已配）；密钥在服务器上的 `deploy/app.env` / `runner.env`（未跟踪）。
 - 同机还有用户其他容器（agent-customer 全家桶、redis01/02）——**部署操作不得触碰**，只操作 learn_da compose 项目。
 

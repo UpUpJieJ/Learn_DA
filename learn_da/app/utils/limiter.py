@@ -6,6 +6,7 @@
 """
 
 from slowapi import Limiter
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from starlette.responses import JSONResponse
@@ -27,7 +28,11 @@ def _trusted_key_func(request: Request) -> str:
 
 
 # 创建全局共享的 limiter 实例
-limiter = Limiter(key_func=_trusted_key_func)
+limiter = Limiter(
+    key_func=_trusted_key_func,
+    default_limits=[settings.RATE_LIMIT_DEFAULT],
+    application_limits=[settings.RATE_LIMIT_GLOBAL_IP],
+)
 
 # RATE_LIMIT_ENABLED 必须真正关掉限流：各路由的 @limiter.limit(...) 装饰器在
 # 缺少中间件时依然会独立计数并抛 429（中间件只负责全局默认限流与 429 响应格式）。
@@ -62,6 +67,7 @@ def setup_limiter_middleware(app):
     """
     # 挂载limiter到app.state
     app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
     # 注册自定义异常处理器
     app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
     log.debug("limiter中间件已初始化")

@@ -1,5 +1,5 @@
 <template>
-    <div class="min-h-screen bg-surface-page">
+    <div class="bg-surface-page">
         <div class="mx-auto max-w-[1440px] px-4 py-6 lg:px-6">
             <!-- 顶部说明：这是个不判定的沙盒 -->
             <header class="mb-5">
@@ -58,7 +58,7 @@
                                     <div
                                         v-for="line in lineNumbers"
                                         :key="line"
-                                        class="pr-2 font-mono text-[13px] leading-6 text-ink-300"
+                                        class="pr-2 font-mono text-[13px] leading-6 text-ink-500"
                                     >
                                         {{ line }}
                                     </div>
@@ -99,7 +99,7 @@
                             >
                                 清空输出
                             </AppButton>
-                            <span class="ml-auto text-[11px] text-ink-300">
+                            <span class="ml-auto text-[11px] text-ink-500">
                                 Ctrl/⌘ + Enter 运行
                             </span>
                         </div>
@@ -112,6 +112,14 @@
                                 :status="outputStatus"
                                 min-height-class="min-h-[150px]"
                             />
+                            <p v-if="runState.outputTruncated" class="mt-2 text-xs text-warn-700" role="status">输出已截断。</p>
+                            <div v-if="runState.dataframe" class="mt-3 overflow-x-auto">
+                                <table class="w-full border-collapse text-left text-xs">
+                                    <caption class="mb-2 text-left text-ink-500">数据表 · {{ runState.dataframe.rowCount }} 行<span v-if="runState.dataframe.truncated">（预览已截断）</span></caption>
+                                    <thead><tr><th v-for="column in runState.dataframe.columns" :key="column" scope="col" class="border-b border-line p-2 font-medium text-ink-700">{{ column }}</th></tr></thead>
+                                    <tbody><tr v-for="(row, index) in runState.dataframe.rows" :key="index"><td v-for="column in runState.dataframe.columns" :key="column" class="border-b border-line p-2 font-mono text-ink-900">{{ row[column] === null ? 'null' : row[column] }}</td></tr></tbody>
+                                </table>
+                            </div>
                         </div>
                     </AppCard>
                 </main>
@@ -146,7 +154,7 @@
                                 <p class="mt-1 text-[11px] leading-4 text-ink-500">
                                     {{ dataset.note }}
                                 </p>
-                                <p class="mt-1 font-mono text-[11px] leading-4 text-ink-300">
+                                <p class="mt-1 font-mono text-[11px] leading-4 text-ink-500">
                                     {{ dataset.columns }}
                                 </p>
                             </li>
@@ -163,7 +171,7 @@
                         </AppButton>
                     </AppCard>
 
-                    <p class="px-1 text-[11px] leading-5 text-ink-300">
+                    <p class="px-1 text-[11px] leading-5 text-ink-500">
                         输出只留在本页，刷新就没了；实验室不保存历史。
                     </p>
                 </aside>
@@ -173,12 +181,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onScopeDispose, ref } from "vue";
 import { AppButton, AppCard, CodeOutput } from "@/components/ui";
 import { ApiError } from "@/api/index";
 import { executeCode } from "@/api/playground";
 import { randomId } from "@/lib/uuid";
-import type { ExecuteRequest, ExecuteResponse } from "@/types/api";
+import type { DataFrameResult, ExecuteRequest, ExecuteResponse } from "@/types/api";
 
 // =====================================================
 // 实验室（/lab）：不判定的自由沙盒（设计稿 §15.2）
@@ -206,6 +214,8 @@ interface LabRunState {
      * 与 stderr 分开存，展示时再接在代码报错前面。
      */
     notice: string | null;
+    dataframe?: DataFrameResult | null;
+    outputTruncated?: boolean;
 }
 
 const UNAVAILABLE_MESSAGE = "执行服务不可用，请稍后再试";
@@ -297,6 +307,8 @@ const sourceCode = ref<string>(DEFAULT_SAMPLE);
  */
 const language = ref<LabLanguage>("python");
 const runState = ref<LabRunState>(idleState());
+let runGeneration = 0;
+onScopeDispose(() => { runGeneration++; });
 
 const editorRef = ref<HTMLTextAreaElement | null>(null);
 const gutterRef = ref<HTMLElement | null>(null);
@@ -359,6 +371,7 @@ function describeError(error: unknown): string {
 
 async function run(): Promise<void> {
     if (!canRun.value) return;
+    const generation = ++runGeneration;
     runState.value = {
         phase: "running",
         stdout: "",
@@ -375,6 +388,7 @@ async function run(): Promise<void> {
             source: "playground",
         });
 
+        if (generation !== runGeneration) return;
         // 后端 fail-closed：Runner 不可用或未获准执行，都不是代码问题。
         if (response.status === "unavailable") {
             runState.value = {
@@ -391,10 +405,13 @@ async function run(): Promise<void> {
             phase: response.status === "success" ? "done" : "error",
             stdout: response.stdout ?? "",
             stderr: response.stderr ?? "",
-            durationMs: typeof response.executionTime === "number" ? response.executionTime : null,
+            durationMs: typeof response.durationMs === "number" ? response.durationMs : null,
             notice: failureNotice(response),
+            dataframe: response.resultType === "dataframe" ? response.dataframe : null,
+            outputTruncated: response.outputTruncated,
         };
     } catch (error) {
+        if (generation !== runGeneration) return;
         // 503 走 HTTP 错误分支（StdResp code >= 400 → ApiError），这里兜住。
         runState.value = {
             phase: "error",
@@ -407,6 +424,7 @@ async function run(): Promise<void> {
 }
 
 function clearOutput(): void {
+    runGeneration++;
     runState.value = idleState();
 }
 

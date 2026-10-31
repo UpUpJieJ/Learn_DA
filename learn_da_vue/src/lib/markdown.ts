@@ -1,7 +1,7 @@
 /**
  * 安全 Markdown 渲染（markdown-it + DOMPurify）
  *
- * 三处复用：LessonDetail / Playground / AgentPanel
+ * 工作区正文与 AI 助手共用
  * 通过 MarkdownRenderOptions 控制差异化行为
  */
 
@@ -9,7 +9,7 @@ import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
 
 export interface MarkdownRenderOptions {
-  /** 代码块是否可加载到 Playground（Playground 文档面板用） */
+  /** 显式启用交互式代码块时显示加载按钮 */
   codeLoadable?: boolean;
   /** 代码块是否显示运行按钮（Agent 消息用） */
   codeRunnable?: boolean;

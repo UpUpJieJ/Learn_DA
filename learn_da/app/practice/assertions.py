@@ -41,7 +41,7 @@ from app.practice.assertion_runtime import (
 )
 
 ASSERTION_MARKER = "__LEARN_DA_ASSERTIONS__"
-SUPPORTED_TYPES = ("expr_true", "frame_equal", "schema", "sql_rows")
+SUPPORTED_TYPES = ("expr_true", "frame_equal", "schema", "sql_rows", "value", "call")
 
 _RUNTIME_PATH = Path(assertion_runtime.__file__).resolve()
 
@@ -94,12 +94,47 @@ def validate_assertions(raw: Iterable[Mapping[str, Any]] | None) -> list[dict[st
                     f"断言 {assertion_id} 的表达式不允许访问双下划线名称"
                 )
             normalized["expr"] = expr
+        elif kind in ("value", "call"):
+            if "expect" not in spec:
+                raise AssertionSpecError(f"断言 {assertion_id} 缺少 expect")
+            try:
+                assertion_runtime.strict_value(spec["expect"])
+            except (TypeError, ValueError) as exc:
+                raise AssertionSpecError(f"断言 {assertion_id} 的 expect 必须是 JSON 值") from exc
+            normalized["expect"] = spec["expect"]
+            normalized["rtol"] = float(spec.get("rtol", 1e-6))
+            normalized["atol"] = float(spec.get("atol", 1e-9))
+            comparison = spec.get("comparison", "equal")
+            if comparison not in ("equal", "contains"):
+                raise AssertionSpecError(f"断言 {assertion_id} 的 comparison 不受支持")
+            normalized["comparison"] = comparison
+            if kind == "value":
+                normalized["var"] = _require_var(assertion_id, spec)
+            else:
+                name = spec.get("function")
+                if not isinstance(name, str) or not name.isidentifier() or "__" in name:
+                    raise AssertionSpecError(f"断言 {assertion_id} 的 function 必须是函数名")
+                args, kwargs = spec.get("args", []), spec.get("kwargs", {})
+                if type(args) is not list or type(kwargs) is not dict:
+                    raise AssertionSpecError(f"断言 {assertion_id} 的 args/kwargs 类型错误")
+                try:
+                    assertion_runtime.strict_value(args)
+                    assertion_runtime.strict_value(kwargs)
+                except (TypeError, ValueError) as exc:
+                    raise AssertionSpecError(f"断言 {assertion_id} 的参数必须是 JSON 值") from exc
+                normalized.update(function=name, args=args, kwargs=kwargs)
         elif kind == "frame_equal":
             normalized["var"] = _require_var(assertion_id, spec)
             normalized["ref"] = _require_ref(assertion_id, spec)
             normalized["order_matters"] = bool(spec.get("order_matters", True))
             normalized["rtol"] = float(spec.get("rtol", 1e-6))
-            normalized["atol"] = float(spec.get("atol", 0.0))
+            normalized["atol"] = float(spec.get("atol", 1e-9))
+            if "sorted_by" in spec:
+                columns = spec["sorted_by"]
+                if not isinstance(columns, list) or not columns or not all(isinstance(c, str) for c in columns):
+                    raise AssertionSpecError(f"断言 {assertion_id} 的 sorted_by 必须是非空列名列表")
+                normalized["sorted_by"] = list(columns)
+                normalized["descending"] = bool(spec.get("descending", False))
         elif kind == "schema":
             normalized["var"] = _require_var(assertion_id, spec)
             columns = spec.get("columns")
@@ -132,7 +167,7 @@ def validate_assertions(raw: Iterable[Mapping[str, Any]] | None) -> list[dict[st
             normalized["ref"] = _require_ref(assertion_id, spec)
             normalized["order_matters"] = bool(spec.get("order_matters", False))
             normalized["rtol"] = float(spec.get("rtol", 1e-6))
-            normalized["atol"] = float(spec.get("atol", 0.0))
+            normalized["atol"] = float(spec.get("atol", 1e-9))
             # 可选：用哪条 duckdb 连接；缺省时用 duckdb 的默认连接
             normalized["connection"] = str(spec.get("connection") or "con")
 

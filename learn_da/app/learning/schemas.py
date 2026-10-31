@@ -29,9 +29,6 @@ class LessonDetail(LessonSummary):
     code_example: str  # → codeExample in JSON
     prev_lesson: LessonNav | None = None  # → prevLesson in JSON
     next_lesson: LessonNav | None = None  # → nextLesson in JSON
-    # Phase 2: 练习结构（可选，无则降级为纯内容展示）
-    practice_objective: str = ""  # → practiceObjective in JSON
-    completion_criteria: list[str] = []  # → completionCriteria in JSON
     prerequisites: list[str] = []
     recommended_next: list[str] = []  # → recommendedNext in JSON
     skill_tags: list[str] = []  # → skillTags in JSON

@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import math
 import time
 from typing import Any, Callable, Mapping
 
@@ -110,25 +111,28 @@ def _truncate(value: Any, limit: int = ACTUAL_LIMIT) -> str:
 
 
 def _numeric_equal(left: Any, right: Any, rtol: float, atol: float) -> bool:
+    if type(left) is float and type(right) is float and math.isnan(left) and math.isnan(right):
+        return True
     try:
         if left == right:
             return True
     except Exception:
         pass
     try:
+        if not math.isfinite(float(left)) or not math.isfinite(float(right)):
+            return False
         return abs(float(left) - float(right)) <= max(atol, rtol * abs(float(right)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
 
 
 def _cell_equal(left: Any, right: Any, rtol: float, atol: float) -> bool:
     if left is None or right is None:
         return left is right
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+    if type(left) in (int, float) and type(right) in (int, float):
         return _numeric_equal(left, right, rtol, atol)
-    if isinstance(left, (int, float, str)) and isinstance(right, (int, float, str)):
-        if _numeric_equal(left, right, rtol, atol):
-            return True
+    if type(left) is not type(right):
+        return False
     return left == right
 
 
@@ -198,10 +202,71 @@ def _check_expr_true(
     spec: dict[str, Any], namespace: Mapping[str, Any], refs: Mapping[str, str]
 ) -> tuple[bool, str]:
     expr = spec["expr"]
+    import ast
+    for node in ast.walk(ast.parse(expr, mode="eval")):
+        if isinstance(node, ast.Name) and node.id in namespace:
+            value = namespace[node.id]
+            try:
+                strict_value(value)
+            except (TypeError, ValueError):
+                import polars as pl
+                if type(value) not in (pl.DataFrame, pl.Series):
+                    raise TypeError("自由表达式不接受自定义对象；请使用结构化断言")
     value = eval(expr, {"__builtins__": _SAFE_BUILTINS}, dict(namespace))  # noqa: S307
     if value:
         return True, ""
     return False, f"表达式 {expr!r} 为假（实际值：{value!r}）"
+
+
+def strict_value(value: Any, depth: int = 0) -> Any:
+    """Accept concrete JSON values only; never invoke learner-defined equality."""
+    if depth > 30:
+        raise ValueError("值嵌套过深")
+    kind = type(value)
+    if value is None or kind in (bool, int, str):
+        return value
+    if kind is float and math.isfinite(value):
+        return value
+    if kind is list:
+        return [strict_value(item, depth + 1) for item in value]
+    if kind is dict and all(type(key) is str for key in value):
+        return {key: strict_value(item, depth + 1) for key, item in value.items()}
+    raise TypeError("需要 JSON 原生类型，实际为 " + kind.__name__)
+
+
+def _value_equal(left: Any, right: Any, rtol: float, atol: float) -> bool:
+    if type(left) in (int, float) and type(right) in (int, float):
+        return _numeric_equal(left, right, rtol, atol)
+    if type(left) is not type(right):
+        return False
+    if type(left) is list:
+        return len(left) == len(right) and all(_value_equal(a, b, rtol, atol) for a, b in zip(left, right))
+    if type(left) is dict:
+        return left.keys() == right.keys() and all(_value_equal(left[k], right[k], rtol, atol) for k in left)
+    return left == right
+
+
+def _check_value(spec, namespace, refs):
+    if spec["var"] not in namespace:
+        raise KeyError(spec["var"])
+    got = strict_value(namespace[spec["var"]])
+    want = strict_value(spec["expect"])
+    if spec.get("comparison") == "contains":
+        passed = type(got) is str and type(want) is str and want in got
+    else:
+        passed = _value_equal(got, want, float(spec.get("rtol", 1e-6)), float(spec.get("atol", 1e-9)))
+    return passed, f"实际值：{got!r}；预期：{want!r}"
+
+
+def _check_call(spec, namespace, refs):
+    import copy
+    from types import FunctionType
+
+    function = namespace.get(spec["function"])
+    if type(function) is not FunctionType:
+        raise TypeError("需要使用 def 定义函数 " + spec["function"])
+    result = function(*copy.deepcopy(spec.get("args", [])), **copy.deepcopy(spec.get("kwargs", {})))
+    return _check_value(dict(spec, var="result"), {"result": result}, refs)
 
 
 def _check_frame_equal(
@@ -215,6 +280,14 @@ def _check_frame_equal(
         got_columns = list(range(len(got_rows[0]) if got_rows else 0))
     if ref_columns is None:
         ref_columns = list(range(len(ref_rows[0]) if ref_rows else 0))
+    if spec.get("sorted_by"):
+        missing = [name for name in spec["sorted_by"] if name not in got_columns]
+        if missing:
+            return False, f"缺少排序列：{missing!r}"
+        indices = [got_columns.index(name) for name in spec["sorted_by"]]
+        keys = [tuple(row[index] for index in indices) for row in got_rows]
+        if keys != sorted(keys, reverse=bool(spec.get("descending"))):
+            return False, f"结果未按 {spec['sorted_by']!r} {'降序' if spec.get('descending') else '升序'}排列"
     if len(got_columns) != len(ref_columns):
         return False, f"列数不一致：{list(got_columns)!r} vs {list(ref_columns)!r}"
 
@@ -286,10 +359,16 @@ def _check_sql_rows(
         import duckdb
 
         con = duckdb
-    got_rows = [list(row) for row in con.execute(spec["query"]).fetchall()]
+    cursor = con.execute(spec["query"])
+    got_rows = [list(row) for row in cursor.fetchall()]
     loaded = _load_ref(spec["ref"], refs)
     if isinstance(loaded, _RefTable):
         ref_rows = loaded.rows()
+        description = getattr(cursor, "description", None)
+        if description is not None and len(description) != len(loaded.columns):
+            return False, f"列数不一致：{len(description)} vs {len(loaded.columns)}"
+        if description is not None and [str(item[0]) for item in description] != loaded.columns:
+            return False, f"列名不一致：{[str(item[0]) for item in description]!r} vs {loaded.columns!r}"
     elif isinstance(loaded, (list, tuple)):
         ref_rows = [list(row) if isinstance(row, (list, tuple)) else [row] for row in loaded]
     else:  # polars / pandas
@@ -301,6 +380,8 @@ def _check_sql_rows(
     if len(got_rows) != len(ref_rows):
         return False, f"行数不一致：{len(got_rows)} vs {len(ref_rows)}"
     for row_index, (row, want) in enumerate(zip(got_rows, ref_rows)):
+        if len(row) != len(want):
+            return False, f"第 {row_index} 行列数不一致：{len(row)} vs {len(want)}"
         for column_index, (cell, want_cell) in enumerate(zip(row, want)):
             if not _cell_equal(cell, want_cell, rtol, atol):
                 return False, (
@@ -314,4 +395,6 @@ _CHECKS: dict[str, Callable[[dict[str, Any], Mapping[str, Any], Mapping[str, str
     "frame_equal": _check_frame_equal,
     "schema": _check_schema,
     "sql_rows": _check_sql_rows,
+    "value": _check_value,
+    "call": _check_call,
 }

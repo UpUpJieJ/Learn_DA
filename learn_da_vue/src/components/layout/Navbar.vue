@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useLocalStateStore } from '@/stores/localState'
 import { useLearnerStateStore } from '@/stores/learnerState'
-import { platformCopy } from '@/lib/learningTracks'
+import { useWorkspaceStore } from '@/stores/workspace'
 
 const router = useRouter()
 const route = useRoute()
-const localStateStore = useLocalStateStore()
+const workspaceStore = useWorkspaceStore()
 const learnerStateStore = useLearnerStateStore()
 
 // =====================================================
@@ -69,6 +68,9 @@ const progressText = computed(() => {
   const count = learnerStateStore.totalCompleted
   return count > 0 ? `已完成 ${count} 课` : null
 })
+watch([() => route.path, () => workspaceStore.tasks.map((task) => task.status).join(',')], () => {
+  void learnerStateStore.syncFromServer()
+})
 </script>
 
 <template>
@@ -81,13 +83,14 @@ const progressText = computed(() => {
         <!-- ============================================
              左侧：Logo + 品牌名
         ============================================= -->
-        <div
-          class="flex items-center gap-3 cursor-pointer group shrink-0"
-          @click="router.push('/')"
+        <RouterLink
+          class="flex items-center gap-3 group shrink-0 focus-visible:outline-2 focus-visible:outline-brand-600"
+          to="/"
+          aria-label="Learn DA 首页"
         >
           <!-- Logo 图标 -->
           <div
-            class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-card group-hover:shadow-pop transition-shadow"
+            class="w-8 h-8 rounded-control bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-card group-hover:shadow-pop transition-shadow"
           >
             <span class="text-base leading-none select-none">🦆</span>
           </div>
@@ -95,13 +98,13 @@ const progressText = computed(() => {
           <!-- 品牌文字 -->
           <div class="hidden sm:block">
             <span class="text-sm font-bold text-ink-900 leading-none">
-              {{ platformCopy.name }}
+              Learn DA
             </span>
-            <span class="hidden md:block text-xs text-ink-300 leading-none mt-0.5">
-              {{ platformCopy.title }}
+            <span class="hidden md:block text-xs text-ink-500 leading-none mt-0.5">
+              交互式数据分析学习平台
             </span>
           </div>
-        </div>
+        </RouterLink>
 
         <!-- ============================================
              中间：导航链接
@@ -110,7 +113,9 @@ const progressText = computed(() => {
           <button
             v-for="item in navItems"
             :key="item.path"
-            class="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+            :aria-label="item.name"
+            :aria-current="isActive(item) ? 'page' : undefined"
+            class="flex items-center gap-1.5 px-3.5 py-2 rounded-control text-sm font-medium transition-all duration-150"
             :class="
               isActive(item)
                 ? 'bg-brand-50 text-brand-700'
@@ -132,20 +137,20 @@ const progressText = computed(() => {
             <!-- 活跃指示点 -->
             <span
               v-if="isActive(item)"
-              class="hidden sm:inline-block w-1 h-1 rounded-full bg-brand-500"
+              class="hidden sm:inline-block w-1 h-1 rounded-pill bg-brand-500"
             />
           </button>
         </div>
 
         <!-- ============================================
-             右侧：进度 + 主题
+             右侧：学习进度
         ============================================= -->
         <div class="flex items-center gap-2 shrink-0">
 
           <!-- 学习进度 badge -->
           <div
             v-if="progressText"
-            class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ok-50 border border-ok-600/30 text-ok-700 text-xs font-medium cursor-default"
+            class="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-ok-50 border border-ok-600/30 text-ok-700 text-xs font-medium cursor-default"
           >
             <svg class="w-3.5 h-3.5 text-ok-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -156,55 +161,6 @@ const progressText = computed(() => {
           <!-- 分隔线 -->
           <div class="hidden md:block w-px h-5 bg-line" />
 
-          <!-- 主题切换按钮 -->
-          <button
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-ink-500 hover:text-ink-700 hover:bg-surface-raised transition-colors"
-            :title="localStateStore.editorTheme === 'vs-dark' ? '切换到亮色主题' : '切换到暗色主题'"
-            @click="localStateStore.toggleEditorTheme()"
-          >
-            <!-- 暗色模式图标 -->
-            <svg
-              v-if="localStateStore.editorTheme === 'vs-dark'"
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
-              />
-            </svg>
-            <!-- 亮色模式图标 -->
-            <svg
-              v-else
-              class="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-              />
-            </svg>
-          </button>
-
-          <!-- 侧边栏切换（学习详情页时展示） -->
-          <button
-            v-if="route.path.startsWith('/lesson/')"
-            class="w-8 h-8 rounded-lg flex items-center justify-center text-ink-500 hover:text-ink-700 hover:bg-surface-raised transition-colors"
-            :title="localStateStore.isSidebarOpen ? '收起侧边栏' : '展开侧边栏'"
-            @click="localStateStore.toggleSidebar()"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7" />
-            </svg>
-          </button>
 
         </div>
       </div>
@@ -214,7 +170,7 @@ const progressText = computed(() => {
          移动端底部导航提示条（仅在 md 以下显示）
     ============================================= -->
     <div
-      v-if="route.path.startsWith('/lesson/') && learnerStateStore.lastVisitedSlug"
+      v-if="route.path.startsWith('/lesson/')"
       class="sm:hidden border-t border-line px-4 py-2 bg-surface-page flex items-center justify-between text-xs text-ink-500"
     >
       <span class="flex items-center gap-1">

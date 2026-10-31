@@ -1,6 +1,6 @@
 """学习进度与学习报告（改版 P1/P3）。
 
-数据源只有一张表：``task_attempts``（任务提交记录）。进度按「每门课任务数 vs 已通过任务数」
+历史证据来自 ``task_attempts``；当前有效进度同时读取会话单元格状态。进度按「每门课任务数 vs 已通过任务数」
 计算，报告里额外给出 track 维度能力、失败断言模式与最近提交。
 
 设计约束（设计稿 §15.2）：
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.content_catalog import get_content_index
 
 from .content import WorkspaceSpec, load_workspace
-from .models import TaskAttempt
+from .models import LessonSession, SessionCell, TaskAttempt
 
 RECENT_LIMIT = 12
 ERROR_PATTERN_LIMIT = 8
@@ -64,6 +64,36 @@ def _latest(attempts: list[TaskAttempt]) -> dict[tuple[str, str], TaskAttempt]:
     for attempt in attempts:
         latest[(attempt.lesson_slug, attempt.task_id)] = attempt
     return latest
+
+
+async def _current_latest(db, visitor_id, attempts, specs):
+    """Keep historical attempts intact, but exclude passes invalidated by edits.
+
+    Historical imports without a live session retain their recorded status;
+    once a live workspace exists its current cells are authoritative.
+    """
+    latest = _latest(attempts)
+    rows = (await db.execute(select(LessonSession.id, LessonSession.lesson_slug,
+                                   SessionCell.cell_id, SessionCell.status, SessionCell.task_verified)
+                            .join(SessionCell, SessionCell.session_id == LessonSession.id)
+                            .where(LessonSession.visitor_id == visitor_id))).all()
+    states = {(session, cell): (status, verified) for session, slug, cell, status, verified in rows}
+    live_sessions = {session for session, slug, cell, status, verified in rows}
+    for key, attempt in list(latest.items()):
+        if attempt.status != "passed" or attempt.session_id not in live_sessions:
+            continue
+        spec = specs.get(attempt.lesson_slug)
+        task = next((task for task in spec.tasks if task.task_id == attempt.task_id), None) if spec else None
+        if task is None or states.get((attempt.session_id, task.cell_id)) != ("ok", True):
+            del latest[key]
+    return latest
+
+
+def _first_try(attempts):
+    first = {}
+    for attempt in attempts:
+        first.setdefault((attempt.lesson_slug, attempt.task_id), attempt)
+    return sum(item.status == "passed" for item in first.values())
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -192,7 +222,7 @@ async def lesson_progress(db: AsyncSession, visitor_id: str) -> dict[str, Any]:
     specs = _specs()
     lessons = _lessons()
     attempts = await _attempts(db, visitor_id)
-    latest = _latest(attempts)
+    latest = await _current_latest(db, visitor_id, attempts, specs)
 
     counts: dict[str, int] = defaultdict(int)
     last_seen: dict[str, datetime] = {}
@@ -236,6 +266,8 @@ async def lesson_progress(db: AsyncSession, visitor_id: str) -> dict[str, Any]:
             "tasksTotal": sum(row["totalTasks"] for row in rows),
             "tasksPassed": sum(row["passedTasks"] for row in rows),
             "attemptsTotal": len(attempts),
+            "tasksAttempted": len({(a.lesson_slug, a.task_id) for a in attempts}),
+            "tasksFirstTry": _first_try(attempts),
         },
     }
 
@@ -245,7 +277,7 @@ async def learning_report(db: AsyncSession, visitor_id: str) -> dict[str, Any]:
     specs = _specs()
     lessons = _lessons()
     attempts = await _attempts(db, visitor_id)
-    latest = _latest(attempts)
+    latest = await _current_latest(db, visitor_id, attempts, specs)
 
     counts: dict[str, int] = defaultdict(int)
     last_seen: dict[str, datetime] = {}
@@ -332,6 +364,7 @@ async def learning_report(db: AsyncSession, visitor_id: str) -> dict[str, Any]:
             "tasksTotal": sum(row["totalTasks"] for row in rows),
             "tasksPassed": sum(row["passedTasks"] for row in rows),
             "attemptsTotal": len(attempts),
+            "tasksAttempted": len({(a.lesson_slug, a.task_id) for a in attempts}),
             "tasksFirstTry": first_try,
             "activeDays": len(set(days)),
             "streakDays": _streak(days),

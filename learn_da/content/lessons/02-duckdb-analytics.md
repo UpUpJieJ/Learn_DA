@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: polars-groupby
   title: Polars 分组聚合
-practice_objective: >-
-  掌握 DuckDB 的基本使用流程：建表、查询、聚合、排序，
-  能用 SQL 从明细数据中提取汇总指标。
-completion_criteria:
-  - 用 con = duckdb.connect() 创建内存连接
-  - 用 CREATE TABLE AS VALUES 构造测试数据
-  - 用 SELECT + GROUP BY 做分组聚合
-  - 用 ORDER BY 对结果排序
 # Phase 3: 建议系统元数据
 track: duckdb_basics
 prerequisites: []
@@ -83,14 +75,13 @@ workspace:
           title: 明细包含订单的关键列
           var: orders_df
           columns: [order_id, customer_id, product_id, region, channel, amount, refunded]
-        - id: t1-rows
-          type: expr_true
-          title: order_count 等于订单总行数 5000
-          expr: "order_count == 5000"
-        - id: t1-unique
-          type: expr_true
-          title: order_id 有 5000 个不重复值（没读丢、也没读重）
-          expr: "orders_df['order_id'].n_unique() == 5000"
+        - id: t1-frame
+          type: frame_equal
+          title: 完整订单明细与参考结果一致（不读丢、不读重）
+          var: orders_df
+          ref: 02-t1-orders.parquet
+          order_matters: false
+          rtol: 1e-6
     - id: t2
       title: 按区域汇总 revenue 与订单数
       cell: c3
@@ -128,6 +119,8 @@ workspace:
           title: 五行订单与参考结果一致（金额并列时顺序不限）
           var: top_orders
           ref: 02-t3-top-orders.parquet
+          sorted_by: [amount]
+          descending: true
           order_matters: false
           rtol: 1e-6
 ---

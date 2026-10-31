@@ -9,13 +9,6 @@ description: 学会用函数封装重复逻辑，理解参数、返回值和调�
 estimated_minutes: 18
 order: 12
 tags: [python, function, 参数, 返回值]
-practice_objective: >-
-  能定义一个接收参数的 Python 函数，并通过 return 返回计算结果。
-completion_criteria:
-  - 使用 def 定义函数
-  - 至少传入一个参数
-  - 使用 return 返回结果
-  - 调用函数并打印输出
 track: python_basics
 prerequisites: []
 recommended_next: [python-collections]
@@ -74,59 +67,108 @@ workspace:
       objective: 定义 add_bonus(score) 返回 score + 5，用 95 调用并存进 bonus_result 后打印。
       assertions:
         - id: t1-return
-          type: expr_true
-          title: add_bonus(95) 返回 100
-          expr: "add_bonus(95) == 100"
+          type: call
+          title: "add_bonus(95) 返回 100"
+          function: add_bonus
+          args: [95]
+          expect: 100
         - id: t1-param
-          type: expr_true
-          title: 换个数也对：add_bonus(0) == 5、add_bonus(72) == 77
-          expr: "add_bonus(0) == 5 and add_bonus(72) == 77"
+          type: call
+          title: "换个数也对：add_bonus(0) == 5、add_bonus(72) == 77"
+          function: add_bonus
+          args: [0]
+          expect: 5
+        - id: t1-param-2
+          type: call
+          title: "换个数也对：add_bonus(0) == 5、add_bonus(72) == 77"
+          function: add_bonus
+          args: [72]
+          expect: 77
         - id: t1-variable
-          type: expr_true
-          title: bonus_result 接到了返回值 100
-          expr: "bonus_result == 100"
+          type: value
+          title: "bonus_result 接到了返回值 100"
+          var: bonus_result
+          expect: 100
     - id: t2
       title: 函数里用 for 循环处理列表
       cell: c3
       objective: 定义 total_scores(scores)，函数内用 for 循环累加并 return 总分，空列表返回 0。
       assertions:
         - id: t2-sum
-          type: expr_true
-          title: total_scores([80, 92, 76]) == 248
-          expr: "total_scores([80, 92, 76]) == 248"
+          type: call
+          title: "total_scores([80, 92, 76]) == 248"
+          function: total_scores
+          args: [[80, 92, 76]]
+          expect: 248
         - id: t2-other
-          type: expr_true
-          title: 换个列表也对：total_scores([1, 2, 3, 4]) == 10
-          expr: "total_scores([1, 2, 3, 4]) == 10"
+          type: call
+          title: "换个列表也对：total_scores([1, 2, 3, 4]) == 10"
+          function: total_scores
+          args: [[1, 2, 3, 4]]
+          expect: 10
         - id: t2-empty
-          type: expr_true
-          title: 空列表返回 0（累加变量要先初始化）
-          expr: "total_scores([]) == 0"
+          type: call
+          title: "空列表返回 0（累加变量要先初始化）"
+          function: total_scores
+          args: [[]]
+          expect: 0
         - id: t2-variable
-          type: expr_true
-          title: total_result 接到了 248
-          expr: "total_result == 248"
+          type: value
+          title: "total_result 接到了 248"
+          var: total_result
+          expect: 248
     - id: t3
       title: 把两个函数组合成一个小计算
       cell: c4
       objective: average_of 借用 total_scores 求平均（空列表 0.0），grade_of 按 90/75 分档，再把两者串起来打印。
       assertions:
         - id: t3-average
-          type: expr_true
-          title: average_of([80, 92, 76]) ≈ 82.667
-          expr: "abs(average_of([80, 92, 76]) - 82.66666666666667) < 1e-3"
+          type: call
+          title: "average_of([80, 92, 76]) ≈ 82.667"
+          function: average_of
+          args: [[80, 92, 76]]
+          expect: 82.66666666666667
         - id: t3-empty
-          type: expr_true
-          title: average_of([]) 返回 0.0，没有除零报错
-          expr: "average_of([]) == 0.0"
+          type: call
+          title: "average_of([]) 返回 0.0，没有除零报错"
+          function: average_of
+          args: [[]]
+          expect: 0.0
         - id: t3-grade
-          type: expr_true
-          title: 等级边界：91→A、76→B、60→C
-          expr: "grade_of(91) == 'A' and grade_of(76) == 'B' and grade_of(60) == 'C'"
+          type: call
+          title: "等级边界：91→A、76→B、60→C"
+          function: grade_of
+          args: [91]
+          expect: "A"
+        - id: t3-grade-2
+          type: call
+          title: "等级边界：91→A、76→B、60→C"
+          function: grade_of
+          args: [76]
+          expect: "B"
+        - id: t3-grade-3
+          type: call
+          title: "等级边界：91→A、76→B、60→C"
+          function: grade_of
+          args: [60]
+          expect: "C"
+        - id: t3-grade-4
+          type: call
+          title: "等级边界：91→A、76→B、60→C"
+          function: grade_of
+          args: [90]
+          expect: "A"
+        - id: t3-grade-5
+          type: call
+          title: "等级边界：91→A、76→B、60→C"
+          function: grade_of
+          args: [75]
+          expect: "B"
         - id: t3-print
-          type: expr_true
-          title: grade_result 是 'B'
-          expr: "grade_result == 'B'"
+          type: value
+          title: "grade_result 是 'B'"
+          var: grade_result
+          expect: "B"
 ---
 
 # Python 函数入门

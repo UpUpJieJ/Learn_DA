@@ -10,7 +10,7 @@
 import { computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { fetchProgress, type LessonProgress, type ProgressPayload } from "@/api/workspace";
-import { AppButton, AppCard, EmptyState, StatusPill } from "@/components/ui";
+import { AppButton, AppCard, EmptyState, StatusPill, type TaskStatusKind } from "@/components/ui";
 import { useAsyncState } from "@/composables/useAsyncState";
 
 const router = useRouter();
@@ -30,7 +30,7 @@ const continueTarget = computed<LessonProgress | null>(() => {
         .sort((left, right) => String(right.lastActivityAt).localeCompare(String(left.lastActivityAt)));
     if (started.length > 0) return started[0] ?? null;
     if (summary.value && summary.value.attemptsTotal === 0) return lessons.value[0] ?? null;
-    return lessons.value.find((item) => item.status !== "completed") ?? null;
+    return lessons.value.find((item) => item.status !== "completed") ?? lessons.value[0] ?? null;
 });
 
 interface TrackGroup {
@@ -59,7 +59,7 @@ function ratio(passed: number, total: number): number {
     return Math.round((passed / total) * 100);
 }
 
-function pillStatus(lesson: LessonProgress): string {
+function pillStatus(lesson: LessonProgress): TaskStatusKind {
     if (lesson.status === "completed") return "passed";
     if (lesson.status === "in_progress") return "in_progress";
     return "todo";
@@ -141,13 +141,13 @@ onMounted(() => {
                 <AppCard dense>
                     <p class="text-xs font-medium text-ink-500">已通过任务</p>
                     <p class="mt-1 text-xl font-bold text-ink-900">
-                        {{ summary.tasksPassed }}<span class="text-sm font-medium text-ink-300"> / {{ summary.tasksTotal }}</span>
+                        {{ summary.tasksPassed }}<span class="text-sm font-medium text-ink-500"> / {{ summary.tasksTotal }}</span>
                     </p>
                 </AppCard>
                 <AppCard dense>
                     <p class="text-xs font-medium text-ink-500">完成课程</p>
                     <p class="mt-1 text-xl font-bold text-ink-900">
-                        {{ summary.lessonsCompleted }}<span class="text-sm font-medium text-ink-300"> / {{ summary.lessonsTotal }}</span>
+                        {{ summary.lessonsCompleted }}<span class="text-sm font-medium text-ink-500"> / {{ summary.lessonsTotal }}</span>
                     </p>
                 </AppCard>
                 <AppCard dense>
@@ -168,7 +168,7 @@ onMounted(() => {
                         </p>
                         <p class="mt-0.5 text-xs text-ink-500">
                             {{ continueTarget.passedTasks }}/{{ continueTarget.totalTasks }} 任务
-                            · 最近学习 {{ lastSeen(continueTarget) }}
+                           <span v-if="continueTarget.lastActivityAt"> · 最近学习 {{ lastSeen(continueTarget) }}</span>
                         </p>
                     </div>
                     <AppButton variant="primary" @click="open(continueTarget)">
@@ -192,9 +192,9 @@ onMounted(() => {
                                     <StatusPill :status="pillStatus(lesson)" :label="pillLabel(lesson)" size="sm" />
                                 </div>
                                 <div class="mt-2 flex items-center gap-3">
-                                    <div class="h-1.5 w-40 overflow-hidden rounded-full bg-surface-raised">
+                                    <div class="h-1.5 w-40 overflow-hidden rounded-pill bg-surface-raised">
                                         <div
-                                            class="h-full rounded-full"
+                                            class="h-full rounded-pill"
                                             :class="lesson.status === 'completed' ? 'bg-ok-500' : 'bg-brand-500'"
                                             :style="{ width: `${ratio(lesson.passedTasks, lesson.totalTasks)}%` }"
                                         />

@@ -101,9 +101,6 @@ def load_lesson_from_file(file_path: Path) -> dict[str, Any]:
             "code_example": code_example or "",
             "prev_lesson": frontmatter.get("prev_lesson"),
             "next_lesson": frontmatter.get("next_lesson"),
-            # Phase 2: 练习结构字段（可选）
-            "practice_objective": frontmatter.get("practice_objective", ""),
-            "completion_criteria": frontmatter.get("completion_criteria", []),
             # 改版 M1：多 cell 工作区定义（可选，结构由 app/workspace/content.py 校验）
             "workspace": frontmatter.get("workspace"),
             # Phase 3: 建议系统元数据（可选）
@@ -223,7 +220,7 @@ def lint_content(content_dir: Path | None = None) -> list[str]:
     # 工作区校验（L7）：断言 DSL、数据集与预期结果文件必须真实可用。
     # 只在默认 content 目录上做——工作区加载器把数据集/预期结果目录固定在包内，
     # 传自定义目录时会拿到不一致的相对路径，反而误报。
-    if content_dir == Path(__file__).parent.parent.parent / "content":
+    if content_dir.resolve() == (Path(__file__).parent.parent.parent / "content").resolve():
         errors.extend(_lint_workspaces(content_dir))
     return errors
 
@@ -234,9 +231,10 @@ def _lint_workspaces(content_dir: Path) -> list[str]:
     预期结果（``ref``）缺失属于发布阻断问题：课程能通过字段校验，但学员提交时
     断言会以 ``error`` 结束，看起来像"代码写错了"，实际是内容没生成。
     """
-    from app.workspace.content import WorkspaceContentError, load_workspace
+    from app.workspace.content import WorkspaceContentError, load_workspace, orphan_references
 
     errors: list[str] = []
+    referenced: set[str] = set()
     for md_file in sorted((content_dir / "lessons").glob("*.md")):
         try:
             lesson = load_lesson_from_file(md_file)
@@ -245,9 +243,12 @@ def _lint_workspaces(content_dir: Path) -> list[str]:
         if not lesson.get("workspace"):
             continue
         try:
-            load_workspace(lesson)
+            spec = load_workspace(lesson)
+            if spec is not None:
+                referenced.update(spec.ref_names())
         except WorkspaceContentError as e:
             errors.append(f"[{md_file.name}:workspace] {e}")
+    errors.extend(f"[expected] 孤儿参考结果：{name}" for name in orphan_references(referenced))
     return errors
 
 

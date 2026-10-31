@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { taskStatusMeta, type TaskStatusMeta } from "./status";
+import { taskStatusMeta, type TaskStatusKind, type TaskStatusMeta } from "./status";
 
 // =====================================================
-// StatusPill：任务/练习状态药丸（四态 + 需复核 + 已跳过）
+// StatusPill：任务/练习状态药丸（服务端状态 + 已跳过）
 // 状态映射集中在 ./status.ts，页面不要自己拼颜色。
 // =====================================================
 
 const props = withDefaults(
     defineProps<{
-        status: string;
+        status: TaskStatusKind;
         /** 覆盖默认文案（如"3/3 已通过"） */
         label?: string;
         size?: "sm" | "md";

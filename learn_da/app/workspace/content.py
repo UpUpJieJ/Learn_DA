@@ -26,9 +26,10 @@
             ...
           assertions:
             - id: a1
-              type: expr_true
+              type: schema
               title: 结果包含 revenue 列
-              expr: "'revenue' in region_stats.columns"
+              var: region_stats
+              columns: [revenue]
 
 内容侧的校验在这里做（fail-closed）：单元格 id 唯一、任务必须指向存在的
 单元格、断言必须通过 DSL 校验、数据集路径必须位于 ``content/datasets`` 下。
@@ -247,6 +248,8 @@ def load_workspace(
             raise WorkspaceContentError(f"任务 {task_id} 的断言不合法：{exc}") from exc
         if not assertions:
             raise WorkspaceContentError(f"任务 {task_id} 至少需要一条断言")
+        if any(item["type"] == "expr_true" for item in assertions):
+            raise WorkspaceContentError(f"任务 {task_id} 不再支持 expr_true，请使用结构化断言")
         tasks.append(
             WorkspaceTask(
                 task_id=task_id,
@@ -301,6 +304,13 @@ def load_workspace(
 _dataset_cache: dict[str, tuple[int, int, str]] = {}
 _expected_cache: dict[str, tuple[int, int, str]] = {}
 _runtime_cache: str | None = None
+
+
+def orphan_references(referenced: set[str], directory: Path = EXPECTED_DIR) -> list[str]:
+    """Find generated result files that are no longer referenced by any course."""
+    return sorted(path.relative_to(directory).as_posix() for path in directory.rglob("*")
+                  if path.is_file() and path.suffix in {".parquet", ".json"}
+                  and path.relative_to(directory).as_posix() not in referenced)
 
 
 def _cached_payload(

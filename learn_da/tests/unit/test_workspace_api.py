@@ -140,7 +140,7 @@ async def test_submit_task_passes_and_records_attempt(client):
 
     sent = runner.execute_session.await_args.args[0]
     assert [cell["cellId"] for cell in sent["cells"]] == ["c1", "c2"]
-    assert len(sent["assertions"]) == 3
+    assert len(sent["assertions"]) == 2
 
     snapshot = (await client.get(f"/api/v1/workspace/sessions/{data['sessionId']}")).json()[
         "data"

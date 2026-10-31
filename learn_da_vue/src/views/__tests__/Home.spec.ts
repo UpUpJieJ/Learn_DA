@@ -47,6 +47,7 @@ function summary(overrides: Partial<ReportPayload["summary"]> = {}): ReportPaylo
         tasksPassed: 2,
         attemptsTotal: 5,
         tasksFirstTry: 1,
+        tasksAttempted: 3,
         activeDays: 2,
         streakDays: 1,
         lastActiveAt: "2026-10-22T10:00:00+00:00",
@@ -173,7 +174,7 @@ describe("Home（今日）", () => {
         expect(text).toContain("/ 4");
         expect(text).toContain("完成课程");
         expect(text).toContain("一次通过率");
-        expect(text).toContain("50%"); // tasksFirstTry 1 / tasksPassed 2
+        expect(text).toContain("33%"); // tasksFirstTry 1 / tasksAttempted 3
         expect(text).toContain("连续学习");
     });
 

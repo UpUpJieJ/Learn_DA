@@ -35,8 +35,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     const hints = ref<Record<string, HintResponse[]>>({});
     const saveState = ref<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
 
+    let generation = 0;
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     let pendingCode = new Map<string, string>();
+    const saves = new Map<string, Promise<boolean>>();
+    const savingCode = new Map<string, string>();
+    const localEdits = new Map<string, string>();
 
     const tasks = computed(() => snapshot.value?.tasks ?? []);
     const cells = computed(() => snapshot.value?.cells ?? []);
@@ -53,21 +57,35 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     }
 
     async function load(lessonSlug: string) {
+        reset();
+        const epoch = generation;
         loading.value = true;
         error.value = null;
         runs.value = {};
         try {
-            snapshot.value = await createSession(lessonSlug);
+            const result = await createSession(lessonSlug);
+            if (epoch === generation) snapshot.value = result;
         } catch (err) {
+            if (epoch !== generation) return;
             error.value = err instanceof Error ? err.message : "加载工作区失败";
             snapshot.value = null;
         } finally {
-            loading.value = false;
+            if (epoch === generation) loading.value = false;
         }
     }
 
+    function applySnapshot(result: SessionSnapshot) {
+        for (const cell of result.cells) {
+            const pending = localEdits.get(cell.cellId) ?? pendingCode.get(cell.cellId) ?? savingCode.get(cell.cellId);
+            if (pending !== undefined) cell.code = pending;
+        }
+        snapshot.value = result;
+    }
+
     async function refresh(sessionId: number) {
-        snapshot.value = await fetchSession(sessionId);
+        const epoch = generation;
+        const result = await fetchSession(sessionId);
+        if (epoch === generation && snapshot.value?.sessionId === sessionId) applySnapshot(result);
     }
 
     /** 本地立即生效，网络去抖；返回是否真的改了内容。 */
@@ -75,6 +93,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         const cell = snapshot.value?.cells.find((item) => item.cellId === cellId);
         if (!cell || cell.code === code) return false;
         cell.code = code;
+        localEdits.set(cellId, code);
         pendingCode.set(cellId, code);
         saveState.value = "dirty";
 
@@ -90,20 +109,45 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         return true;
     }
 
-    async function flush(cellId: string) {
+    async function flush(cellId: string): Promise<boolean> {
+        const epoch = generation;
+        const active = saves.get(cellId);
+        if (active) {
+            if (!(await active) || epoch !== generation) return false;
+            return flush(cellId);
+        }
         const sessionId = snapshot.value?.sessionId;
         const code = pendingCode.get(cellId);
-        if (!sessionId || code === undefined) return;
+        if (!sessionId || code === undefined) return true;
+        const timer = timers.get(cellId);
+        if (timer) clearTimeout(timer);
+        timers.delete(cellId);
         pendingCode.delete(cellId);
+        savingCode.set(cellId, code);
         saveState.value = "saving";
-        try {
-            snapshot.value = await updateCellApi(sessionId, cellId, code);
-            saveState.value = pendingCode.size ? "dirty" : "saved";
-        } catch (err) {
-            pendingCode.set(cellId, code);
-            saveState.value = "error";
-            error.value = err instanceof Error ? err.message : "保存失败";
-        }
+        const operation = (async () => {
+            try {
+                const result = await updateCellApi(sessionId, cellId, code);
+                if (epoch !== generation) return false;
+                // Preserve other pending/in-flight edits while merging server statuses.
+                applySnapshot(result);
+                saveState.value = pendingCode.size ? "dirty" : "saved";
+                return true;
+            } catch (err) {
+                if (epoch !== generation) return false;
+                if (!pendingCode.has(cellId)) pendingCode.set(cellId, code);
+                saveState.value = "error";
+                error.value = err instanceof Error ? err.message : "保存失败";
+                return false;
+            } finally {
+                if (epoch === generation) {
+                    saves.delete(cellId);
+                    savingCode.delete(cellId);
+                }
+            }
+        })();
+        saves.set(cellId, operation);
+        return operation;
     }
 
     /** 切走页面前把没发出去的编辑立刻提交。 */
@@ -112,30 +156,37 @@ export const useWorkspaceStore = defineStore("workspace", () => {
             clearTimeout(timer);
             timers.delete(cellId);
         }
-        await Promise.all([...pendingCode.keys()].map((cellId) => flush(cellId)));
+        const ids = new Set([...pendingCode.keys(), ...saves.keys()]);
+        const results = await Promise.all([...ids].map((cellId) => flush(cellId)));
+        return results.every(Boolean);
     }
 
     async function runCell(cellId: string) {
+        const epoch = generation;
         const sessionId = snapshot.value?.sessionId;
         if (!sessionId || runningCellId.value) return null;
         // 先占位再 flush：flush 也是异步，占位晚了连点两下会并发跑两次。
         runningCellId.value = cellId;
         error.value = null;
         try {
-            await flush(cellId);
+            if (!(await flushAll())) return null;
+            if (epoch !== generation) return null;
             const result = await runCellApi(sessionId, cellId, randomId());
+            if (epoch !== generation) return null;
             runs.value = { ...runs.value, [cellId]: { ...result, cellId } };
             if (snapshot.value) await refresh(sessionId);
             return result;
         } catch (err) {
+            if (epoch !== generation) return null;
             error.value = err instanceof Error ? err.message : "执行失败";
             return null;
         } finally {
-            runningCellId.value = null;
+            if (epoch === generation) runningCellId.value = null;
         }
     }
 
     async function submitTask(taskId: string) {
+        const epoch = generation;
         const sessionId = snapshot.value?.sessionId;
         if (!sessionId || submittingTaskId.value) return null;
         const task = tasks.value.find((item) => item.taskId === taskId);
@@ -143,16 +194,19 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         submittingTaskId.value = taskId;
         error.value = null;
         try {
-            await flush(task.cellId);
+            if (!(await flushAll())) return null;
+            if (epoch !== generation) return null;
             const result = await submitTaskApi(sessionId, taskId, randomId());
+            if (epoch !== generation) return null;
             runs.value = { ...runs.value, [task.cellId]: { ...result, cellId: task.cellId } };
             if (snapshot.value) await refresh(sessionId);
             return result;
         } catch (err) {
+            if (epoch !== generation) return null;
             error.value = err instanceof Error ? err.message : "提交失败";
             return null;
         } finally {
-            submittingTaskId.value = null;
+            if (epoch === generation) submittingTaskId.value = null;
         }
     }
 
@@ -171,12 +225,14 @@ export const useWorkspaceStore = defineStore("workspace", () => {
      * 所以越层请求天然无效；拿到后把该任务的任务状态刷新（hintsUsed 会变）。
      */
     async function requestHint(taskId: string) {
+        const epoch = generation;
         const sessionId = snapshot.value?.sessionId;
         if (!sessionId || hintingTaskId.value) return null;
         hintingTaskId.value = taskId;
         error.value = null;
         try {
             const hint = await requestHintApi(sessionId, taskId);
+            if (epoch !== generation) return null;
             hints.value = {
                 ...hints.value,
                 [taskId]: [...(hints.value[taskId] ?? []), hint],
@@ -184,17 +240,38 @@ export const useWorkspaceStore = defineStore("workspace", () => {
             if (snapshot.value) await refresh(sessionId);
             return hint;
         } catch (err) {
+            if (epoch !== generation) return null;
             error.value = err instanceof Error ? err.message : "获取提示失败";
             return null;
         } finally {
-            hintingTaskId.value = null;
+            if (epoch === generation) hintingTaskId.value = null;
+        }
+    }
+
+    async function destroy(): Promise<boolean> {
+        const sessionId = snapshot.value?.sessionId;
+        const drafts = new Map([...savingCode, ...pendingCode]);
+        const active = [...saves.values()];
+        reset();
+        await Promise.all(active);
+        if (!sessionId) return true;
+        try {
+            await Promise.all([...drafts].map(([cellId, code]) => updateCellApi(sessionId, cellId, code)));
+            return true;
+        } catch {
+            return false;
         }
     }
 
     function reset() {
+        generation++;
+        loading.value = false;
         for (const timer of timers.values()) clearTimeout(timer);
         timers.clear();
         pendingCode = new Map();
+        saves.clear();
+        savingCode.clear();
+        localEdits.clear();
         snapshot.value = null;
         runs.value = {};
         hints.value = {};
@@ -228,6 +305,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
         editCell,
         flush,
         flushAll,
+        destroy,
         runCell,
         submitTask,
         requestHint,

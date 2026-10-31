@@ -7,18 +7,21 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.database import get_db
 from app.core.session import get_anonymous_visitor_id
 from app.sandbox.client import RunnerUnavailableError
 from app.utils.base_response import StdResp
+from app.utils.limiter import limiter
+from config.settings import settings
 
 from .content import WorkspaceContentError
 from .progress import learning_report, lesson_progress
 from .schemas import (
     CreateSessionRequest,
+    HintRequest,
     RunCellRequest,
     SubmitTaskRequest,
     UpdateCellRequest,
@@ -107,7 +110,9 @@ async def update_cell(
 
 
 @router.post("/sessions/{session_id}/cells/{cell_id}/run")
+@limiter.limit(settings.RATE_LIMIT_PLAYGROUND_EXECUTE)
 async def run_cell(
+    request: Request,
     session_id: int,
     cell_id: str,
     payload: RunCellRequest,
@@ -129,7 +134,9 @@ async def run_cell(
 
 
 @router.post("/sessions/{session_id}/tasks/{task_id}/submit")
+@limiter.limit(settings.RATE_LIMIT_PLAYGROUND_EXECUTE)
 async def submit_task(
+    request: Request,
     session_id: int,
     task_id: str,
     payload: SubmitTaskRequest,
@@ -151,19 +158,23 @@ async def submit_task(
 
 
 @router.post("/sessions/{session_id}/tasks/{task_id}/hint")
+@limiter.limit(settings.RATE_LIMIT_PLAYGROUND_EXECUTE)
 async def request_hint(
+    request: Request,
     session_id: int,
     task_id: str,
+    hint_request: HintRequest | None = Body(default=None),
     visitor_id: str = Depends(get_anonymous_visitor_id),
     service: WorkspaceService = Depends(get_service),
 ):
     """发放一层阶梯提示（ladder）。
 
-    请求体为空、也没有「要第几层」的参数：层级每次都由服务端按
+    请求体只接受幂等 requestId，没有「要第几层」的参数：层级每次都由服务端按
     「距上次提示的失败次数 + 已用层数」重算，所以客户端越层请求天然无效。
     """
     try:
-        payload = await service.request_hint(visitor_id, session_id, task_id)
+        payload = await service.request_hint(visitor_id, session_id, task_id,
+                                             hint_request.request_id if hint_request else None)
     except WorkspaceNotFound as exc:
         return StdResp.not_found(msg=str(exc))
     except WorkspaceContentError as exc:

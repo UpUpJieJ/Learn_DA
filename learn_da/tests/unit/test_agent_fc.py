@@ -84,30 +84,6 @@ class FakeLearnerState:
         return "polars-groupby"
 
 
-class FakeRecommendation:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-
-    async def get_recommendation(
-        self, visitor_id, completed_lessons=None, current_lesson_slug=None
-    ):
-        self.calls.append({"visitor_id": visitor_id})
-
-        class _Response:
-            class _Primary:
-                def model_dump(self, mode="json"):
-                    return {
-                        "type": "next_lesson",
-                        "target_slug": "polars-groupby",
-                        "target_title": "Polars 分组聚合",
-                        "reason": "已完成前置课程",
-                    }
-
-            primary = _Primary()
-
-        return _Response()
-
-
 def build_service(completer, **kwargs) -> AgentService:
     service = AgentService(knowledge_retriever=FakeRetriever(), **kwargs)
     service._complete = completer
@@ -259,19 +235,26 @@ async def test_llm_error_falls_back_with_reason():
     assert data.fallback_reason == "rate_limited"
 
 
-async def test_recommendation_tool_maps_intent():
-    completer = ScriptedCompleter(
-        [
-            tool_call_result("get_recommendation", "{}"),
-            final_result("建议你学习 Polars 分组聚合。"),
-        ]
-    )
-    recommendation = FakeRecommendation()
-    service = build_service(completer, recommendation_service=recommendation)
+async def test_recommendation_tool_is_not_advertised_or_executable():
+    names = {tool["function"]["name"] for tool in FC_TOOLS}
+    assert "get_recommendation" not in names
+    executor = FCToolExecutor(knowledge_retriever=FakeRetriever(), visitor_id=VISITOR_ID)
+    rejected = await executor.execute("get_recommendation", "{}")
+    assert rejected.ok is False
+    assert json.loads(rejected.output)["error"] == "unknown_tool"
+    assert executor.called_tools == []
 
+
+async def test_tool_round_queries_progress_without_planning_a_learning_route():
+    completer = ScriptedCompleter([
+        tool_call_result("get_learner_progress", "{}"),
+        final_result("已完成基础课；当前任务请查看课程任务列表。"),
+    ])
+    service = build_service(completer, learner_state_service=FakeLearnerState())
     data = await service.chat_with_tools(chat_request(), visitor_id=VISITOR_ID)
-
-    assert recommendation.calls[0]["visitor_id"] == VISITOR_ID
+    assert data.used_fallback is False
+    tool_message = next(item for item in completer.calls[1]["messages"] if item["role"] == "tool")
+    assert json.loads(tool_message["content"])["completed_lessons"] == ["polars-basics"]
 
 
 # ---- FCToolExecutor ----
@@ -327,10 +310,10 @@ def test_fc_settings_defaults():
 
 
 def test_fc_tools_are_read_only():
-    # 红线：只允许四个只读工具，不得出现执行/写入类工具
+    # 红线：只允许三个只读工具，不提供学习路线规划工具
     names = {tool["function"]["name"] for tool in FC_TOOLS}
     assert names == {"search_knowledge",
-                     "get_learner_progress", "get_recommendation",
+                     "get_learner_progress",
                      "get_task_summary"}
 
 

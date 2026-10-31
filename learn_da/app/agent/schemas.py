@@ -13,7 +13,6 @@ from app.utils.base_response import BaseResponseModel
 MessageRole = Literal["user", "assistant", "system"]
 ToolName = Literal[
     "generate_example_code",
-    "generate_exercise",
     "fix_code",
     "explain_code",
     "suggest_next_step",

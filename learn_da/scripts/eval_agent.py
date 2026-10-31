@@ -141,10 +141,8 @@ def evaluate_retrieval(verbose: bool, with_embedding: bool) -> None:
 
 _INTENT_LABELS = (
     "generate_example_code",
-    "generate_exercise",
     "fix_code",
     "explain_code",
-    "suggest_next_step",
     "general_chat",
 )
 
@@ -164,11 +162,11 @@ _CLASSIFY_TOOL = {
 }
 
 _CLASSIFY_SYSTEM = (
-    "你是数据分析学习平台（Polars/DuckDB/Python 课程 + 代码 Playground）的意图分类器。"
+    "你是数据分析学习平台（Polars/DuckDB/Python 课程 + 学习工作区）的意图分类器。"
     "把用户消息归类到唯一最符合的意图："
-    "generate_example_code=想要示例代码；generate_exercise=想要练习题；"
+    "generate_example_code=想要示例代码；"
     "fix_code=代码报错/结果不对求修复；explain_code=解释代码/报错/概念含义；"
-    "suggest_next_step=问学什么/学习路径建议；general_chat=闲聊或其他。"
+    "general_chat=任务说明、练习请求、学习顺序问题、闲聊或其他。"
     "必须调用 classify_intent 工具给出结果。"
 )
 

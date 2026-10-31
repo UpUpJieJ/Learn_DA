@@ -15,33 +15,6 @@ export interface ApiResponse<T = unknown> {
 export type LessonDifficulty = "beginner" | "intermediate" | "advanced";
 export type LessonCategory = string;
 
-export interface PlatformCatalog {
-    platform: {
-        name?: string;
-        title?: string;
-        subtitle?: string;
-    };
-    topics: CatalogTopic[];
-    tracks: CatalogTrack[];
-}
-
-export interface CatalogTopic {
-    key: string;
-    label: string;
-    description?: string;
-    color?: string;
-}
-
-export interface CatalogTrack {
-    key: string;
-    topic: string;
-    label: string;
-    description?: string;
-    startLesson?: string;
-    category?: string;
-    color?: string;
-}
-
 export interface LessonSummary {
     id: number;
     slug: string;
@@ -63,10 +36,6 @@ export interface LessonDetail extends LessonSummary {
     codeExample: string;
     prevLesson: LessonNav | null;
     nextLesson: LessonNav | null;
-    /** Phase 2: 训练目标（可选，无则降级为纯内容展示） */
-    practiceObjective?: string;
-    /** Phase 2: 完成标准（可选） */
-    completionCriteria?: string[];
     prerequisites?: string[];
     recommendedNext?: string[];
     skillTags?: string[];
@@ -108,7 +77,7 @@ export interface ExecuteResponse {
     status: ExecuteStatus;
     stdout: string;
     stderr: string;
-    executionTime: number;
+    durationMs: number;
     usedSandbox?: string;
     resultType: ExecuteResultType;
     dataframe: DataFrameResult | null;
@@ -229,91 +198,4 @@ export interface AgentFeedbackResponse {
     recorded: boolean;
     interactionId: number;
 }
-
-// =====================================================
-// 本地状态
-// =====================================================
-
-export interface LocalPreferences {
-    editorTheme: "vs-dark" | "light";
-    editorFontSize: number;
-    language: "zh" | "en";
-}
-
-// =====================================================
-// 学习模块 - 示例代码相关
-// =====================================================
-
-// =====================================================
-// Analytics 模块
-// =====================================================
-
-/** 行为事件类型 */
-export type EventType =
-    | "code_run"
-    | "code_save"
-    | "lesson_complete"
-    | "lesson_uncomplete"
-    | "ai_help"
-    | "lesson_start";
-
-/**
- * 代码执行结果状态（仅 code_run 事件）。
- * 与 ExecuteStatus 保持同一组取值：上报时原样透传，不做归并，
- * 否则错误类型在服务端无法聚合。
- */
-export type CodeRunStatus = ExecuteStatus;
-
-/** 事件上报请求 */
-export interface EventTrackRequest {
-    eventType: EventType;
-    lessonSlug?: string;
-    durationSeconds?: number;
-    /** 幂等键（前端生成 UUID），相同 eventId 重放不重复写入 */
-    eventId?: string;
-    /** 执行结果（仅 code_run）：success / error / timeout / rejected / unavailable */
-    status?: CodeRunStatus;
-}
-
-/** 事件上报响应 */
-export interface EventTrackResponse {
-    recorded: boolean;
-}
-
-/** 代码快照请求 */
-/** 代码快照响应 */
-/** 代码快照列表项 */
-/** 代码快照分页响应 */
-
-// =====================================================
-// 阶段 1：统一学习事实 - Learner State
-// =====================================================
-
-/** 单课进度详情 */
-export interface LessonProgressDetail {
-    lessonSlug: string;
-    status: string; // started / completed / uncompleted
-    completedAt: string | null;
-    lastActivityAt: string | null;
-    attemptCount: number;
-    successCount: number;
-    errorCount: number;
-}
-
-/** 学习者完整进度投影 */
-export interface LearnerProgressSummary {
-    completedLessons: string[];
-    lastVisitedSlug: string | null;
-    lessonDetails: LessonProgressDetail[];
-    totalCompleted: number;
-    totalStarted: number;
-}
-
-// 状态变更没有专用响应体：完成 / 撤销 / 开始统一走 EventTrackRequest
-// 上报到 /analytics/track，由后端同事务联动 LearnerState 投影。
-//
-// 说明：Phase 3 的「学习建议」类型（RecommendationType / LearningRecommendation /
-// RecommendationResponse）已随前端 `api/recommendation.ts` 一起删除 ——
-// `/api/v1/recommendations` 后端仍在，但改版 P4 后前端改为读
-// `/workspace/progress` 与 `/workspace/report`，没有任何页面消费建议接口。
 

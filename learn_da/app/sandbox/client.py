@@ -13,6 +13,7 @@ from app.sandbox.schemas import (
     SandboxExecutionResult,
 )
 from config.settings import settings
+from app.practice.observations import judge_observations, observation_request
 
 log = logging.getLogger(__name__)
 
@@ -77,13 +78,16 @@ class RunnerClient:
             response = await self._http.post(
                 f"{self._base_url}/v1/sessions",
                 headers={"X-Runner-Token": self._token},
-                json=payload,
+                json=observation_request(payload),
                 timeout=timeout,
             )
             if response.status_code == 503:
                 raise RunnerUnavailableError("runner unavailable")
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            if payload.get("assertions") or "observations" in result:
+                return judge_observations(payload, result)
+            return result
         except RunnerUnavailableError:
             raise
         except Exception as exc:

@@ -1,6 +1,11 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database.database import get_db
+from app.analytics.schemas import EventTrackRequest, EventType
+from app.analytics.service import AnalyticsService
 
 from app.core.session import get_anonymous_visitor_id
 from app.sandbox import RunnerUnavailableError, SandboxService
@@ -30,11 +35,17 @@ async def execute_code(
     request: Request,
     payload: ExecuteCodeRequest,
     visitor_id: str = Depends(get_anonymous_visitor_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """执行代码（自由沙盒；练习判定走 ``/workspace`` 任务提交）。"""
     try:
         service = get_playground_service(request)
         result = await service.execute(payload)
+        await AnalyticsService(db).track_event(EventTrackRequest(
+            eventType=EventType.CODE_RUN,
+            eventId=str(uuid.uuid5(uuid.NAMESPACE_URL, f"lab:{visitor_id}:{payload.request_id}")),
+            status=result.status,
+        ), visitor_id, commit=not bool(db.info.get("external_transaction")))
         return StdResp.success(data=result.model_dump(by_alias=True))
     except RunnerUnavailableError:
         return _runner_unavailable_response(payload)

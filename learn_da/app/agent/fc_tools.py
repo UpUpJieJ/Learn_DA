@@ -1,9 +1,9 @@
 """受限 Function Calling 工具集（阶段 ④ Task 4.1）。
 
 红线（见计划设计决策表）：
-- 只提供四个只读工具，不存在任何执行/写入类工具；
+- 只提供三个只读工具，不存在任何执行/写入类工具；
 - visitor_id 由服务端注入，不作为模型可控参数；
-- get_recommendation 只读规则引擎结果，模型不得改排序。
+- 不提供学习路线或下一步练习推荐工具；顺序以课程任务列表为准。
 
 改版 M4 起工具读的是工作区 ``task_attempts``（任务提交 + 断言实际值），
 不再是冻结的 ``exercise_attempts``；``get_exercise_summary`` 随之更名为
@@ -24,7 +24,6 @@ from app.utils import log
 
 if TYPE_CHECKING:
     from app.learner_state.service import LearnerStateService
-    from app.learning.recommendation import RecommendationService
     from app.workspace.repository import WorkspaceReadRepository
 
     from .knowledge import KnowledgeRetriever
@@ -58,17 +57,6 @@ FC_TOOLS: list[dict[str, Any]] = [
             "description": (
                 "查询当前学习者的学习进度（已完成课程与最近访问课程）。"
                 "当回答需要了解用户学到哪里时调用。"
-            ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_recommendation",
-            "description": (
-                "获取规则引擎给出的下一步学习建议。当用户询问接下来学什么、"
-                "求推荐课程或学习路径时调用；结果排序不可更改。"
             ),
             "parameters": {"type": "object", "properties": {}},
         },
@@ -117,7 +105,6 @@ class EmptyParams(BaseModel):
 _PARAM_MODELS: dict[str, type[BaseModel]] = {
     "search_knowledge": SearchKnowledgeParams,
     "get_learner_progress": EmptyParams,
-    "get_recommendation": EmptyParams,
     "get_task_summary": GetTaskSummaryParams,
 }
 
@@ -143,14 +130,12 @@ class FCToolExecutor:
         knowledge_retriever: "KnowledgeRetriever",
         visitor_id: str,
         learner_state_service: "LearnerStateService | None" = None,
-        recommendation_service: "RecommendationService | None" = None,
         workspace_repo: "WorkspaceReadRepository | None" = None,
         current_lesson: str | None = None,
     ) -> None:
         self.knowledge_retriever = knowledge_retriever
         self.visitor_id = visitor_id
         self.learner_state_service = learner_state_service
-        self.recommendation_service = recommendation_service
         self.workspace_repo = workspace_repo
         self.current_lesson = current_lesson
         # 编排循环用：本次会话内已成功执行过的工具名（意图标签来源）
@@ -201,7 +186,7 @@ class FCToolExecutor:
                 return await self._get_learner_progress()
             if name == "get_task_summary":
                 return await self._get_task_summary(params)
-            return await self._get_recommendation()
+            raise ValueError("registered tool has no handler")
         except Exception as exc:  # 工具内部故障也不能中断编排循环
             return ToolExecution(
                 ok=False,
@@ -270,25 +255,6 @@ class FCToolExecutor:
                     ensure_ascii=False,
                 ),
             )
-        return ToolExecution(ok=True, output=json.dumps(payload, ensure_ascii=False))
-
-    async def _get_recommendation(self) -> ToolExecution:
-        if self.recommendation_service is None:
-            return ToolExecution(
-                ok=False,
-                output=json.dumps(
-                    {"error": "unavailable", "message": "推荐服务不可用"},
-                    ensure_ascii=False,
-                ),
-            )
-        response = await self.recommendation_service.get_recommendation(
-            visitor_id=self.visitor_id,
-            current_lesson_slug=self.current_lesson,
-        )
-        primary = getattr(response, "primary", None)
-        payload = {
-            "recommendation": primary.model_dump(mode="json") if primary else None
-        }
         return ToolExecution(ok=True, output=json.dumps(payload, ensure_ascii=False))
 
     async def _get_task_summary(

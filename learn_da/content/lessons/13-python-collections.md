@@ -9,13 +9,6 @@ description: 学会用 list 保存多项数据，并用 for 循环逐个处理�
 estimated_minutes: 20
 order: 13
 tags: [python, list, for, collection]
-practice_objective: >-
-  能创建一个列表，并使用 for 循环处理列表中的每个元素。
-completion_criteria:
-  - 创建至少包含 3 个元素的 list
-  - 使用 for 循环遍历列表
-  - 在循环中调用函数或完成一次计算
-  - 打印每次处理后的结果
 track: python_basics
 prerequisites: [python-functions]
 recommended_next: []
@@ -35,7 +28,7 @@ workspace:
       kind: task
       task_id: t1
       code: |
-        # TODO: 建一个至少 3 个元素的 regions 列表，for 循环逐个打印，
+        # TODO: 建一个按顺序为华东、华北、华南、西南四个元素的 regions 列表，for 循环逐个打印，
         #       每打印一个就让 region_lines 加 1
         regions = []
         region_lines = 0
@@ -61,58 +54,43 @@ workspace:
     - id: t1
       title: 创建列表并用 for 逐个打印
       cell: c2
-      objective: 建一个至少 3 个字符串元素的 regions 列表，用 for 循环逐个打印，并把打印次数累加进 region_lines。
+      objective: 建一个按顺序为华东、华北、华南、西南四个字符串元素的 regions 列表，用 for 循环逐个打印，并把打印次数累加进 region_lines。
       assertions:
-        - id: t1-size
-          type: expr_true
-          title: regions 至少有 3 个元素
-          expr: "len(regions) >= 3"
+        - id: t1-regions
+          type: value
+          title: regions 按顺序包含华东、华北、华南、西南
+          var: regions
+          expect: [华东, 华北, 华南, 西南]
         - id: t1-count
-          type: expr_true
-          title: region_lines 等于列表长度（每个元素都进过循环）
-          expr: "region_lines == len(regions)"
-        - id: t1-strings
-          type: expr_true
-          title: 列表里都是字符串，打印出来才是区域名
-          expr: "all(str(r) == r for r in regions)"
+          type: value
+          title: region_lines 为 4（每个区域都进过循环）
+          var: region_lines
+          expect: 4
     - id: t2
       title: 在循环里累加与筛选
       cell: c3
       objective: 用 for 循环把 amounts 累加进 total_amount（应为 2118），并把大于 200 的金额收进 big_amounts。
       assertions:
         - id: t2-sum
-          type: expr_true
+          type: value
           title: total_amount == 2118
-          expr: "total_amount == 2118"
-        - id: t2-sum-check
-          type: expr_true
-          title: 累加结果等于所有金额之和
-          expr: "abs(total_amount - sum(amounts)) < 1e-6"
+          var: total_amount
+          expect: 2118
         - id: t2-big
-          type: expr_true
-          title: big_amounts 只收 > 200 的三笔，且保持原顺序
-          expr: "big_amounts == [899, 240, 620]"
+          type: value
+          title: big_amounts 保持原顺序筛出大于 200 的三笔
+          var: big_amounts
+          expect: [899, 240, 620]
     - id: t3
       title: 用 dict 做分组计数
       cell: c4
       objective: 用 dict 统计 region_log 里每个区域出现的次数：华东 3 次、华南 2 次、华北 1 次、西南 1 次，结果存进 region_counts。
       assertions:
-        - id: t3-size
-          type: expr_true
-          title: region_counts 只有 4 个键
-          expr: "len(region_counts) == 4"
-        - id: t3-keys
-          type: expr_true
-          title: 键就是出现过的区域
-          expr: "sorted(region_counts.keys()) == ['华东', '华北', '华南', '西南']"
-        - id: t3-values
-          type: expr_true
-          title: 计数正确：华东 3、华南 2、华北 1、西南 1
-          expr: "region_counts['华东'] == 3 and region_counts['华南'] == 2 and region_counts['华北'] == 1 and region_counts['西南'] == 1"
-        - id: t3-total
-          type: expr_true
-          title: 所有计数加起来等于 7（没有漏数或重复数）
-          expr: "sum(region_counts.values()) == 7"
+        - id: t3-counts
+          type: value
+          title: 四个区域计数完整正确
+          var: region_counts
+          expect: {华东: 3, 华南: 2, 华北: 1, 西南: 1}
 ---
 
 # Python 集合与循环

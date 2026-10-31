@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import { formatFirstTryRate } from "@/lib/metrics";
 import { useRouter } from "vue-router";
 import { fetchReport } from "@/api/workspace";
 import type {
@@ -35,6 +36,7 @@ const {
     error: loadError,
     run,
     retry,
+    isLoading,
 } = useAsyncState<ReportPayload>(() => fetchReport(), {
     // 一次都没提交过的访客：不是"渲染一张全 0 的表"，而是给一条明确的下一步
     isEmpty: (value) => !value || value.summary.attemptsTotal === 0,
@@ -55,29 +57,8 @@ const recent = computed<RecentAttempt[]>(() => data.value?.recent ?? []);
 const windowDays = computed(() => data.value?.windowDays ?? 0);
 
 // =====================================================
-// 指标口径
-//
-// 一次通过率 = 一次通过任务数 / 已尝试任务数。
-// 后端 summary 只给了 tasksFirstTry，没有单独给"已尝试任务数"，
-// 所以分母取「已通过任务数 + 卡点记录里出现过的失败任务数」（按 课程+任务 去重）：
-// 只失败过、还没通过的任务也算进分母，避免"失败一堆但通过率 100%"的假象。
-// =====================================================
-
-const attemptedTasks = computed(() => {
-    const base = summary.value?.tasksPassed ?? 0;
-    const failedTasks = new Set<string>();
-    for (const pattern of data.value?.errorPatterns ?? []) {
-        failedTasks.add(`${pattern.lessonSlug}::${pattern.taskId}`);
-    }
-    return base + failedTasks.size;
-});
-
-const firstTryRate = computed(() => {
-    const value = summary.value;
-    if (!value || value.attemptsTotal === 0 || attemptedTasks.value === 0) return "—";
-    const rate = (value.tasksFirstTry / attemptedTasks.value) * 100;
-    return `${Math.round(Math.min(100, Math.max(0, rate)))}%`;
-});
+// 一次通过率使用后端全历史已尝试任务数，和首页保持一致。
+const firstTryRate = computed(() => formatFirstTryRate(summary.value));
 
 interface Metric {
     key: string;
@@ -133,6 +114,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: "UTC",
 });
 
 /** createdAt / generatedAt 可能为 null 或不可解析，一律降级为 —— */
@@ -158,8 +140,8 @@ function trackBarClass(percent: number): string {
 // 出口
 // =====================================================
 
-function goLesson(slug: string): void {
-    void router.push(`/lesson/${slug}`);
+function goLesson(slug: string, taskId: string): void {
+    void router.push({ path: `/lesson/${slug}`, query: { task: taskId } });
 }
 
 function goLearn(): void {
@@ -175,8 +157,8 @@ function goLearn(): void {
                 只用你在工作区真实提交过的任务记录计算；没有记录的地方一律显示 0，不编造数据。
             </p>
             <p v-if="status === 'ready' && windowDays > 0" class="text-xs text-ink-500">
-                统计窗口：最近 {{ windowDays }} 天 · 生成于
-                {{ formatDateTime(data?.generatedAt) }}
+                累计记录跨度 {{ windowDays }} 天（UTC，全部历史） · 生成于
+                {{ formatDateTime(data?.generatedAt) }} UTC
             </p>
         </header>
 
@@ -207,7 +189,7 @@ function goLearn(): void {
             <p class="mx-auto mt-1 max-w-md text-sm text-ink-500">
                 {{ loadError ?? "网络异常，请稍后重试" }}
             </p>
-            <AppButton class="mt-4" variant="secondary" size="sm" @click="retry">
+            <AppButton class="mt-4" variant="secondary" size="sm" :loading="isLoading" @click="retry">
                 重试
             </AppButton>
         </section>
@@ -255,7 +237,7 @@ function goLearn(): void {
                         </div>
                         <div class="mt-1.5 flex items-center gap-3">
                             <div
-                                class="h-2 flex-1 overflow-hidden rounded-full bg-surface-raised"
+                                class="h-2 flex-1 overflow-hidden rounded-pill bg-surface-raised"
                                 role="progressbar"
                                 :aria-valuenow="trackPercent(track)"
                                 aria-valuemin="0"
@@ -263,7 +245,7 @@ function goLearn(): void {
                                 :aria-label="`${track.label} 任务通过进度`"
                             >
                                 <div
-                                    class="h-full rounded-full transition-all"
+                                    class="h-full rounded-pill transition-all"
                                     :class="trackBarClass(trackPercent(track))"
                                     :style="{ width: `${trackPercent(track)}%` }"
                                 />
@@ -280,7 +262,7 @@ function goLearn(): void {
             <!-- 常见卡点 -->
             <AppCard
                 title="常见卡点"
-                :meta="errorPatterns.length ? `最多 ${ERROR_PATTERN_LIMIT} 条` : undefined"
+                :meta="errorPatterns.length ? `按失败次数排序，仅显示前 ${ERROR_PATTERN_LIMIT} 条` : undefined"
             >
                 <p v-if="errorPatterns.length === 0" class="py-1 text-sm text-ink-500">
                     还没有失败记录 —— 做完一两个任务再回来
@@ -293,12 +275,12 @@ function goLearn(): void {
                         <button
                             type="button"
                             class="flex w-full flex-col gap-1 py-3 text-left transition-colors hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-                            @click="goLesson(pattern.lessonSlug)"
+                            @click="goLesson(pattern.lessonSlug, pattern.taskId)"
                         >
                             <span class="flex items-center justify-between gap-3">
                                 <span class="text-sm font-medium text-ink-900">
                                     {{ pattern.lessonTitle }}
-                                    <span class="text-ink-300" aria-hidden="true">›</span>
+                                    <span class="text-ink-500" aria-hidden="true">›</span>
                                     {{ pattern.taskTitle }}
                                 </span>
                                 <StatusPill
@@ -330,10 +312,10 @@ function goLearn(): void {
                 <table v-else class="w-full border-collapse text-sm">
                     <thead>
                         <tr class="border-b border-line text-left text-xs font-medium text-ink-500">
-                            <th class="px-5 py-2 font-medium">时间</th>
-                            <th class="px-2 py-2 font-medium">课程 › 任务</th>
-                            <th class="px-2 py-2 font-medium">次序</th>
-                            <th class="px-5 py-2 font-medium">状态</th>
+                            <th scope="col" class="px-5 py-2 font-medium">时间（UTC）</th>
+                            <th scope="col" class="px-2 py-2 font-medium">课程 › 任务</th>
+                            <th scope="col" class="px-2 py-2 font-medium">次序</th>
+                            <th scope="col" class="px-5 py-2 font-medium">状态</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -349,10 +331,10 @@ function goLearn(): void {
                                 <button
                                     type="button"
                                     class="text-left text-ink-900 transition-colors hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-                                    @click="goLesson(item.lessonSlug)"
+                                    @click="goLesson(item.lessonSlug, item.taskId)"
                                 >
                                     {{ item.lessonTitle }}
-                                    <span class="text-ink-300" aria-hidden="true">›</span>
+                                    <span class="text-ink-500" aria-hidden="true">›</span>
                                     {{ item.taskTitle }}
                                 </button>
                             </td>

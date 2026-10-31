@@ -15,6 +15,7 @@ when ``RUNNER_ENV=production`` (or ``APP_ENV=production``).
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,7 @@ from runner.session import (
     DRIVER_FILENAME,
     SessionWorkspaceError,
     build_result,
+    frame_driver_input,
     parse_driver_output,
     prepare_workspace,
 )
@@ -189,16 +191,26 @@ class LocalSubprocessProvider:
 
             out_path = work / "_stdout"
             err_path = work / "_stderr"
+            # 判定材料（refs / runtime / assertions）经 stdin 进 driver，
+            # 不落盘；nonce 让伪造的 marker 行过不了解析。帧协议（长度
+            # 前缀）与 Docker 后端共用——attach stdin 送不达 EOF。
+            nonce = secrets.token_hex(16)
+            driver_input = frame_driver_input(request, nonce)
             try:
                 with out_path.open("wb") as out_file, err_path.open("wb") as err_file:
                     proc = subprocess.Popen(
                         [self._python, "-I", "-X", "utf8", "-B", DRIVER_FILENAME],
                         cwd=workdir,
-                        stdin=subprocess.DEVNULL,
+                        stdin=subprocess.PIPE,
                         stdout=out_file,
                         stderr=err_file,
                         env=self._child_env(),
                     )
+                    try:
+                        proc.stdin.write(driver_input)
+                        proc.stdin.close()
+                    except (BrokenPipeError, OSError):
+                        pass  # driver 早夭：wait() 以非零退出码暴露
                     exit_code = proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 if proc is not None:
@@ -219,6 +231,10 @@ class LocalSubprocessProvider:
             except Exception as exc:  # pragma: no cover - defensive
                 if proc is not None and proc.poll() is None:
                     proc.kill()
+                    try:
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
                 return build_result(
                     request_id=str(request.request_id),
                     execution_id=str(execution_id),
@@ -230,9 +246,11 @@ class LocalSubprocessProvider:
                 )
 
             duration_ms = int((time.monotonic() - start) * 1000)
-            stdout_text, _ = self._read_capped(out_path)
+            stdout_text, _ = self._read_capped(
+                out_path, 3 * runner_settings.RUNNER_SESSION_MAX_RESULT_BYTES + 512_000
+            )
             stderr_text, _ = self._read_capped(err_path)
-            payload = parse_driver_output(stdout_text, MARKER)
+            payload = parse_driver_output(stdout_text, MARKER, nonce)
 
             if payload is None:
                 return build_result(
@@ -273,12 +291,12 @@ class LocalSubprocessProvider:
         return env
 
     @staticmethod
-    def _read_capped(path: Path) -> tuple[str, bool]:
+    def _read_capped(path: Path, limit: int | None = None) -> tuple[str, bool]:
         try:
             raw = path.read_bytes()
         except OSError:
             return "", False
-        text, clipped = _clip_bytes(raw, runner_settings.RUNNER_MAX_OUTPUT_BYTES)
+        text, clipped = _clip_bytes(raw, limit or runner_settings.RUNNER_MAX_OUTPUT_BYTES)
         # Windows text streams emit CRLF; the Docker sandbox is Linux and emits
         # LF. Normalise so exercise expectations behave the same in both.
         return text.replace("\r\n", "\n"), clipped

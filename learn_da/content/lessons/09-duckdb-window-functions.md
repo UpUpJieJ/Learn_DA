@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: polars-lazy-pipeline
   title: Polars 惰性流水线
-practice_objective: >-
-  掌握 SQL 窗口函数的核心写法，能用 ROW_NUMBER、RANK、SUM OVER
-  在保留明细行的同时计算分组指标。
-completion_criteria:
-  - 用 RANK() OVER (PARTITION BY ... ORDER BY ...) 做组内排名
-  - 用 SUM() OVER (...) 计算累计值
-  - 用 ROW_NUMBER() 生成连续编号
-  - 理解窗口函数和 GROUP BY 的区别
 # Phase 3: 建议系统元数据
 track: duckdb_advanced
 prerequisites: ['duckdb-joins-cte']
@@ -50,7 +42,7 @@ workspace:
       code: |
         # TODO: 用 RANK() OVER (PARTITION BY region ORDER BY amount DESC)
         # 给每个区域内的订单按金额排名，查出 order_id / region / amount / amount_rank，
-        # 按 region、amount_rank 排序
+        # 用 .pl() 得到 DataFrame，按 region、amount_rank、order_id 排序
         region_rank = []
         print(region_rank)
     - id: c3
@@ -59,6 +51,7 @@ workspace:
       code: |
         # TODO: 用 SUM(amount) OVER (PARTITION BY region ORDER BY order_date)
         # 算每个区域截至当日的累计销售额，查出 region / order_date / amount / running_amount
+        # 用 .pl() 得到 DataFrame，输出按 region、order_date、order_id 排序
         region_running = []
         print(region_running)
     - id: c4
@@ -67,7 +60,8 @@ workspace:
       code: |
         # TODO: group_rows 用 GROUP BY region 汇总 revenue 与订单数；
         # window_rows 用 SUM(amount) OVER (PARTITION BY region) 保留全部明细行，
-        # 两边的区域销售额要对得上
+        # 两边用 .pl() 得到 DataFrame；group_rows 按 region 排序，
+        # window_rows 按 region、order_id 排序，两边的区域销售额要对得上
         group_rows = []
         window_rows = []
         print(group_rows, len(window_rows))
@@ -77,61 +71,54 @@ workspace:
       cell: c2
       objective: |
         用 RANK() OVER (PARTITION BY region ORDER BY amount DESC) 计算每个区域内的金额排名，
-        查出 order_id、region、amount、amount_rank 四列并按 region、amount_rank 排序，
-        结果变量叫 region_rank。
+        查出 order_id、region、amount、amount_rank 四列并按 region、amount_rank、order_id 排序，
+        用 .pl() 得到 Polars DataFrame，结果变量叫 region_rank。
       assertions:
-        - id: t1-rows
-          type: expr_true
-          title: 窗口函数不折叠行，结果仍是 5000 行
-          expr: "len(region_rank) == 5000"
-        - id: t1-ties
-          type: expr_true
-          title: 每个区域最高金额并列时 RANK 给相同名次（第 1 名共 5 行）
-          expr: "sorted(round(r[2], 2) for r in region_rank if r[3] == 1) == [15389.44, 15389.44, 18298.95, 18298.95, 19236.8]"
-        - id: t1-partition
-          type: expr_true
-          title: 4 个区域各自都有第 1 名（说明是分区排名而不是全表排名）
-          expr: "sorted({r[1] for r in region_rank if r[3] == 1}) == sorted({r[1] for r in region_rank})"
+        - id: t1-region-rank
+          type: frame_equal
+          title: 每笔订单的区域内 RANK 与参考结果一致
+          var: region_rank
+          ref: 09-t1-region-rank.parquet
+          order_matters: true
+          rtol: 1.0e-06
     - id: t2
       title: 区域累计销售额
       cell: c3
       objective: |
         用 SUM(amount) OVER (PARTITION BY region ORDER BY order_date) 计算区域累计销售额，
-        查出 region、order_date、amount、running_amount 四列并按 region、order_date 排序，
-        结果变量叫 region_running。
+        查出 region、order_date、amount、running_amount 四列并按 region、order_date、order_id 排序，
+        用 .pl() 得到 Polars DataFrame，结果变量叫 region_running。
       assertions:
-        - id: t2-rows
-          type: expr_true
-          title: 累计查询仍保留 5000 行明细
-          expr: "len(region_running) == 5000"
-        - id: t2-final
-          type: expr_true
-          title: 每个区域的最大累计值等于该区域全年销售额
-          expr: "abs(max(r[3] for r in region_running if r[0] == '华东') - 1220641.6) < 0.05 and abs(max(r[3] for r in region_running if r[0] == '华北') - 1395335.55) < 0.05 and abs(max(r[3] for r in region_running if r[0] == '华南') - 1368599.41) < 0.05 and abs(max(r[3] for r in region_running if r[0] == '西南') - 1303267.3) < 0.05"
-        - id: t2-start
-          type: expr_true
-          title: 累计值从小开始（是按日期累加，不是整组总额）
-          expr: "min(r[3] for r in region_running) < 2000"
+        - id: t2-region-running
+          type: frame_equal
+          title: 按区域与日期累计的每笔金额与参考一致
+          var: region_running
+          ref: 09-t2-region-running.parquet
+          order_matters: true
+          rtol: 1.0e-06
     - id: t3
       title: 窗口函数与 GROUP BY 的行数对比
       cell: c4
       objective: |
         用 GROUP BY region 汇总出 group_rows（region、revenue、订单数），
         再用 SUM(amount) OVER (PARTITION BY region) 得到 window_rows（order_id、region、amount、region_revenue）；
-        两边区域销售额必须一致，但行数是 4 与 5000。
+        两边用 .pl() 得到 Polars DataFrame；group_rows 按 region 排序，window_rows 按 region、order_id 排序。
+        区域销售额必须一致，但行数是 4 与 5000。
       assertions:
-        - id: t3-rows
-          type: expr_true
-          title: GROUP BY 折叠成 4 行，窗口查询保留 5000 行
-          expr: "len(group_rows) == 4 and len(window_rows) == 5000"
-        - id: t3-match
-          type: expr_true
-          title: 窗口算出的区域销售额与 GROUP BY 结果一致
-          expr: "sorted(round(r[1], 2) for r in group_rows) == sorted({round(r[3], 2) for r in window_rows})"
-        - id: t3-regions
-          type: expr_true
-          title: 两张结果的区域集合相同
-          expr: "sorted(r[0] for r in group_rows) == sorted({r[1] for r in window_rows})"
+        - id: t3-group-rows
+          type: frame_equal
+          title: GROUP BY 的四行汇总与参考一致
+          var: group_rows
+          ref: 09-t3-group-rows.parquet
+          order_matters: true
+          rtol: 1.0e-06
+        - id: t3-window-rows
+          type: frame_equal
+          title: 窗口查询保留全部订单且区域总额逐行一致
+          var: window_rows
+          ref: 09-t3-window-rows.parquet
+          order_matters: true
+          rtol: 1.0e-06
 ---
 
 # DuckDB 窗口函数

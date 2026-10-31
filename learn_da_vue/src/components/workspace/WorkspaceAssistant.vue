@@ -4,7 +4,7 @@
              不经过模型，因此永远与判定一致、零请求零成本。 -->
         <AppCard v-if="failedAssertions.length" dense>
             <div class="flex items-start justify-between gap-2">
-                <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-300">
+                <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-500">
                     我看到了什么
                 </h2>
                 <StatusPill status="failed" size="sm" />
@@ -45,13 +45,13 @@
         <!-- chat：自由问答 -->
         <AppCard dense>
             <div class="flex items-center justify-between gap-2">
-                <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-300">
+                <h2 class="text-xs font-semibold uppercase tracking-wide text-ink-500">
                     AI 助手
                 </h2>
                 <button
                     v-if="messages.length"
                     type="button"
-                    class="text-[11px] text-ink-300 hover:text-ink-700"
+                    class="text-[11px] text-ink-500 hover:text-ink-700"
                     @click="clearMessages"
                 >
                     清空
@@ -78,7 +78,7 @@
                     >
                         <p
                             v-if="msg.role === 'assistant' && msg.isStreaming && !msg.content"
-                            class="text-ink-300"
+                            class="text-ink-500"
                         >
                             {{ activeTools.length ? toolLine : "正在思考…" }}
                         </p>
@@ -89,14 +89,14 @@
                         ></div>
                         <p
                             v-if="msg.role === 'assistant' && msg.isStreaming && msg.content"
-                            class="mt-1 text-[11px] text-ink-300"
+                            class="mt-1 text-[11px] text-ink-500"
                         >
                             正在生成…（可点「停止」）
                         </p>
                     </div>
                     <p
                         v-if="msg.role === 'assistant' && msg.teachingFeedback"
-                        class="mt-1 text-[11px] text-ink-300"
+                        class="mt-1 text-[11px] text-ink-500"
                     >
                         提示层级 L{{ msg.teachingFeedback.hintLevel }} ·
                         {{ stateLabel(msg.teachingFeedback.state) }}
@@ -246,7 +246,6 @@ const toolLine = computed(() => {
     if (names.includes("search_knowledge")) return "正在查课程资料…";
     if (names.includes("get_task_summary")) return "正在读你的任务记录…";
     if (names.includes("get_learner_progress")) return "正在读你的学习进度…";
-    if (names.includes("get_recommendation")) return "正在算推荐…";
     return "正在调用工具…";
 });
 

@@ -10,13 +10,6 @@ tags: [polars, group_by, agg, 聚合, window_functions]
 prev_lesson:
   slug: duckdb-analytics
   title: DuckDB 查询分析
-practice_objective: >-
-  掌握 Polars 的 group_by + agg 分组聚合模式，
-  能把 Pandas 的 groupby().agg() 迁移到 Polars 表达式写法。
-completion_criteria:
-  - 用 group_by 按单列分组并执行至少两种聚合
-  - 用 over() 实现窗口函数（组内排名或组内占比）
-  - 结果按聚合值排序
 # Phase 3: 建议系统元数据
 track: polars_basics
 prerequisites: [polars-basics]
@@ -64,14 +57,15 @@ workspace:
           title: 结果包含 region / revenue / orders 三列
           var: region_stats
           columns: [region, revenue, orders]
-        - id: t1-rows
-          type: expr_true
-          title: 华东/华北/华南/西南四个区域各一行
-          expr: "region_stats.height == 4"
-        - id: t1-sorted
-          type: expr_true
-          title: 结果按 revenue 降序
-          expr: "region_stats['revenue'].to_list() == sorted(region_stats['revenue'].to_list(), reverse=True)"
+        - id: t1-frame
+          type: frame_equal
+          title: 四个区域的收入与订单数与参考结果一致
+          var: region_stats
+          ref: 03-t1-region-stats.parquet
+          sorted_by: [revenue]
+          descending: true
+          order_matters: false
+          rtol: 1e-6
     - id: t2
       title: 计算区域销售额占比
       cell: c3

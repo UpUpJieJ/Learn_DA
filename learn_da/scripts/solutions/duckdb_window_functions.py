@@ -12,7 +12,7 @@ region_rank = con.sql(
     FROM orders
     ORDER BY region, amount_rank, order_id
     '''
-).fetchall()
+).pl()
 print(region_rank[:5])
 print(len(region_rank))
 """,
@@ -30,7 +30,7 @@ region_running = con.sql(
     FROM orders
     ORDER BY region, order_date, order_id
     '''
-).fetchall()
+).pl()
 print(region_running[:5])
 print(len(region_running))
 """,
@@ -45,7 +45,7 @@ group_rows = con.sql(
     GROUP BY region
     ORDER BY region
     '''
-).fetchall()
+).pl()
 
 window_rows = con.sql(
     '''
@@ -57,7 +57,7 @@ window_rows = con.sql(
     FROM orders
     ORDER BY region, order_id
     '''
-).fetchall()
+).pl()
 
 print(group_rows)
 print(len(window_rows))

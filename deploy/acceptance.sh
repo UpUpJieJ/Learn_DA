@@ -234,7 +234,15 @@ try:
     print(len([i for i in (d.get('assertions') or []) if i.get('status')=='passed']))
 except Exception:
     print(0)" "$WORK/t1_pass.json")
-if [ "$code" = "200" ] && [ "$v_pass" = "passed" ] && [ "$s_pass" = "passed" ] && [ "${passed_n:-0}" -ge 3 ] 2>/dev/null; then
+assertions_ok=$("$PY" -c "
+import json,sys
+try:
+    items=(json.load(open(sys.argv[1],encoding='utf-8')).get('data') or {}).get('assertions') or []
+    ids=[i.get('id') for i in items]
+    print(int({'t1-schema','t1-frame'} <= set(ids) and len(ids)==len(set(ids)) and all(i.get('status')=='passed' for i in items)))
+except Exception:
+    print(0)" "$WORK/t1_pass.json")
+if [ "$code" = "200" ] && [ "$v_pass" = "passed" ] && [ "$s_pass" = "passed" ] && [ "$assertions_ok" = "1" ]; then
   ok "t1 参考解通过（$passed_n 条断言全过，taskStatus=$s_pass）"
 else
   bad "t1 参考解应通过" "http=$code verdict=$v_pass taskStatus=$s_pass passed=$passed_n body=$(head -c 400 "$WORK/t1_pass.json")"

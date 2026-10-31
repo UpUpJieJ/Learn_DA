@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: duckdb-sql-foundations
   title: DuckDB SQL 分析基础
-practice_objective: >-
-  掌握 Polars 的 join 操作，能用 left join 补充维度字段、
-  用 anti join 做数据质量检查。
-completion_criteria:
-  - 用 join + on + how="left" 连接两张表
-  - 连接后用 with_columns 计算派生字段
-  - 用 how="anti" 找出未匹配的记录
-  - 理解 left / inner / outer / semi / anti 的区别
 # Phase 3: 建议系统元数据
 track: polars_basics
 prerequisites: ['polars-basics', 'polars-cleaning']
@@ -78,19 +70,17 @@ workspace:
           type: schema
           title: 结果包含 order_id / customer_id / segment 三列
           var: orders_customers
-          columns: [order_id, customer_id, segment]
-        - id: t1-rows
-          type: expr_true
-          title: 5000 行订单一行都没丢（用的是 left 而不是 inner）
-          expr: "orders_customers.height == 5000"
-        - id: t1-segment
-          type: expr_true
-          title: 订单 O000001 的客户分层是 高价值
-          expr: "orders_customers.filter(pl.col('order_id') == 'O000001')['segment'].to_list() == ['高价值']"
-        - id: t1-null
-          type: expr_true
-          title: segment 没有空值（说明连接键对得上）
-          expr: "orders_customers['segment'].null_count() == 0"
+          columns:
+          - order_id
+          - customer_id
+          - segment
+        - id: t1-orders-customers
+          type: frame_equal
+          title: 订单与客户分层左连接结果逐行一致
+          var: orders_customers
+          ref: 06-t1-orders-customers.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t2
       title: 派生净额并按客户分层聚合
       cell: c3
@@ -123,15 +113,16 @@ workspace:
           type: schema
           title: 结果保留 orders 的订单号与客户号
           var: orphan_orders
-          columns: [order_id, customer_id]
-        - id: t3-empty
-          type: expr_true
-          title: 孤儿订单数量为 0
-          expr: "orphan_orders.height == 0"
-        - id: t3-columns
-          type: expr_true
-          title: 列与 orders 一致（anti 只保留左表列）
-          expr: "orphan_orders.columns == orders.columns"
+          columns:
+          - order_id
+          - customer_id
+        - id: t3-orphan-orders
+          type: frame_equal
+          title: 反连接结果为空且保留左表全部列
+          var: orphan_orders
+          ref: 06-t3-orphan-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
 ---
 
 # Polars 连接与合并

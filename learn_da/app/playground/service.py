@@ -72,7 +72,9 @@ class PlaygroundService:
             if line.startswith(DATAFRAME_MARKER):
                 payload = line[len(DATAFRAME_MARKER) :].strip()
                 try:
-                    dataframe = DataFrameResult.model_validate(json.loads(payload))
+                    dataframe = DataFrameResult.model_validate(json.loads(
+                        payload, parse_constant=lambda value: None if value == "NaN" else value
+                    ))
                 except (json.JSONDecodeError, ValueError, TypeError):
                     cleaned_lines.append(line)
                 continue

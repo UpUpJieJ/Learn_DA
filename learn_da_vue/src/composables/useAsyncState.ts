@@ -2,7 +2,7 @@
 // useAsyncState：网络页面的三态（loading / empty / error）唯一承载
 //
 // 动机：改造前全站 56 处 isLoading 各写一套，加载骨架、空态、
-// 错误重试的覆盖参差不齐（Playground / LessonDetail 一个 skeleton 都没有）。
+// 统一加载、失败重试和过期响应隔离。
 // 页面统一改成：
 //   const lesson = useAsyncState(() => fetchLessonBySlug(slug), { isEmpty: (v) => !v.lesson });
 //   onMounted(lesson.run);

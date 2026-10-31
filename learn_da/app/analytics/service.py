@@ -42,6 +42,8 @@ class AnalyticsService:
         try:
             return await self._track_event(req, visitor_id, commit=commit)
         except IntegrityError:
+            if not commit:
+                raise
             await self.db.rollback()
             return EventTrackResponse(recorded=True)
 

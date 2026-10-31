@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: polars-duckdb-workflow
   title: Polars 与 DuckDB 组合工作流
-practice_objective: >-
-  理解 Polars 的 eager 和 lazy 两种执行模式，
-  能用 lazy() + collect() 构建可优化的分析流水线。
-completion_criteria:
-  - 用 .lazy() 将 DataFrame 转为惰性模式
-  - 在惰性模式下链式调用 filter、with_columns、group_by
-  - 用 .collect() 触发实际计算
-  - 理解惰性模式为什么更适合复杂分析
 # Phase 3: 建议系统元数据
 track: polars_advanced
 prerequisites: [polars-basics, polars-groupby, polars-expressions]
@@ -79,19 +71,17 @@ workspace:
           type: schema
           title: 结果包含 order_id / amount / list_amount 三列
           var: filtered
-          columns: [order_id, amount, list_amount]
-        - id: t1-rows
-          type: expr_true
-          title: 过滤后剩 3722 行（已退款与小额订单一笔不留）
-          expr: "filtered.height == 3722"
-        - id: t1-min
-          type: expr_true
-          title: 最小金额仍在 100 元以上
-          expr: "filtered['amount'].min() >= 100"
-        - id: t1-list
-          type: expr_true
-          title: list_amount 合计 5,373,637.19 元（优惠前金额算对了）
-          expr: "abs(filtered['list_amount'].sum() - 5373637.19) < 0.05"
+          columns:
+          - order_id
+          - amount
+          - list_amount
+        - id: t1-filtered
+          type: frame_equal
+          title: 过滤与优惠前金额逐行正确
+          var: filtered
+          ref: 10-t1-filtered.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t2
       title: 惰性分组聚合
       cell: c3
@@ -120,21 +110,38 @@ workspace:
         最后 collect() 得到 lazy_result。
       assertions:
         - id: t3-filter
-          type: expr_true
-          title: 执行计划里出现 FILTER 算子
-          expr: "'FILTER' in plan_text.upper()"
+          type: value
+          title: 执行计划包含 FILTER 算子
+          var: plan_text
+          expect: FILTER
+          comparison: contains
         - id: t3-aggregate
-          type: expr_true
-          title: 执行计划里出现 AGGREGATE 算子
-          expr: "'AGGREGATE' in plan_text.upper()"
+          type: value
+          title: 执行计划包含 AGGREGATE 算子
+          var: plan_text
+          expect: AGGREGATE
+          comparison: contains
         - id: t3-sort
-          type: expr_true
-          title: 执行计划里出现 SORT 算子
-          expr: "'SORT' in plan_text.upper()"
-        - id: t3-collect
-          type: expr_true
-          title: collect() 后得到 4 行、region 与 revenue 两列的 DataFrame
-          expr: "lazy_result.height == 4 and lazy_result.columns == ['region', 'revenue']"
+          type: value
+          title: 执行计划包含 SORT 算子
+          var: plan_text
+          expect: SORT
+          comparison: contains
+        - id: t3-schema
+          type: schema
+          title: collect 结果仅含 region 与 revenue
+          var: lazy_result
+          columns:
+          - region
+          - revenue
+          exact: true
+        - id: t3-lazy-result
+          type: frame_equal
+          title: 惰性流水线汇总结果与参考一致
+          var: lazy_result
+          ref: 10-t3-lazy-result.parquet
+          order_matters: true
+          rtol: 1.0e-06
 ---
 
 # Polars 惰性流水线

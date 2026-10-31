@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_ENABLE_THINKING: bool = False
     LLM_TIMEOUT_SECONDS: float = 60
+    # Streaming idle timeout uses LLM_TIMEOUT_SECONDS; this caps total time across retries.
+    LLM_STREAM_TOTAL_TIMEOUT_SECONDS: float = 180
     LLM_MAX_RETRIES: int = 1
     # 阶段 ④：受限 Function Calling（只读工具 + 硬步数上限）。
     # 2026-07-28 FC 评测 90.2% ≥ 关键词基线 43.9%，默认开启；无 key 时仍确定性降级

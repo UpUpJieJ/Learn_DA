@@ -114,8 +114,7 @@ router.afterEach((_to, _from, failure) => {
     console.error('[Router] 导航失败:', failure)
   }
 
-  // 阶段 1：lesson_start 由 LessonDetail / Playground 在课程加载成功后单点上报，
-  // 这里不再重复触发，避免同一次访问产生多条事件和多次往返。
+  // 学习事件由服务端工作区与实验室执行入口写入同一幂等服务，不在路由重复上报。
 })
 
 export default router

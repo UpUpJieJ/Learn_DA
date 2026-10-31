@@ -1,3 +1,4 @@
+import { randomId } from '@/lib/uuid';
 import { get, post, put } from "./index";
 
 /** 单元格状态：stale=需要（重新）执行，ok=上次执行成功，failed=上次执行失败 */
@@ -104,7 +105,7 @@ export function submitTask(sessionId: number, taskId: string, requestId: string)
     );
 }
 
-/** 分层提示（ladder）：请求体为空，层级由服务端每次重算，客户端无法指定。 */
+/** 分层提示（ladder）：请求体仅含幂等键，层级由服务端每次重算，客户端无法指定。 */
 export interface HintResponse {
     taskId: string;
     level: number;
@@ -114,10 +115,10 @@ export interface HintResponse {
     hasNext: boolean;
 }
 
-export function requestHint(sessionId: number, taskId: string) {
+export function requestHint(sessionId: number, taskId: string, requestId = randomId()) {
     return post<HintResponse>(
         `${BASE}/${sessionId}/tasks/${taskId}/hint`,
-        {},
+        { requestId },
         { timeout: 30000 },
     );
 }
@@ -198,6 +199,7 @@ export interface ReportPayload {
         tasksPassed: number;
         attemptsTotal: number;
         tasksFirstTry: number;
+        tasksAttempted: number;
         activeDays: number;
         streakDays: number;
         lastActiveAt: string | null;
@@ -209,8 +211,16 @@ export interface ReportPayload {
     generatedAt: string;
 }
 
-export function fetchProgress() {
-    return get<ProgressPayload>("/workspace/progress");
+let pendingProgress: Promise<ProgressPayload> | null = null;
+
+/** Navigation and the course map share one concurrent read, not cached state. */
+export function fetchProgress(): Promise<ProgressPayload> {
+    if (!pendingProgress) {
+        pendingProgress = get<ProgressPayload>("/workspace/progress").finally(() => {
+            pendingProgress = null;
+        });
+    }
+    return pendingProgress;
 }
 
 export function fetchReport() {

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+import socket
 import tempfile
 import time
 from pathlib import Path
@@ -20,6 +22,7 @@ from runner.session import (
     DRIVER_FILENAME,
     SessionWorkspaceError,
     build_result,
+    frame_driver_input,
     parse_driver_output,
     prepare_workspace,
 )
@@ -70,12 +73,18 @@ class DockerExecutionProvider:
         self._image = image or runner_settings.RUNNER_DOCKER_IMAGE
         self._docker_host = docker_host or runner_settings.RUNNER_DOCKER_HOST
         self._client: docker.DockerClient | None = None
+        self._resolved_image: str | None = None
 
     def _get_client(self) -> docker.DockerClient:
         """Lazily create the Docker client on first use."""
         if self._client is None:
             self._client = docker.DockerClient(base_url=self._docker_host)
         return self._client
+
+    def _image_id(self, client) -> str:
+        if self._resolved_image is None:
+            self._resolved_image = client.images.get(self._image).id
+        return self._resolved_image
 
     # ------------------------------------------------------------------
     # Protocol
@@ -95,7 +104,7 @@ class DockerExecutionProvider:
         try:
             client = self._get_client()
             container = client.containers.run(
-                image=self._image,
+                image=self._image_id(client),
                 command=["python", "-c", request.code],
                 detach=True,
                 # Security constraints (Spec §3.2)
@@ -119,8 +128,7 @@ class DockerExecutionProvider:
             exit_code: int = wait_result.get("StatusCode", -1)
 
             # Collect logs.
-            raw_logs = container.logs(stdout=True, stderr=True)
-            stdout_text, stderr_text = self._split_logs(raw_logs)
+            stdout_text, stderr_text = self._read_logs(container)
 
             duration_ms = int((time.monotonic() - start) * 1000)
 
@@ -210,14 +218,21 @@ class DockerExecutionProvider:
             # The sandbox user (65532) must be able to read the mount.
             _relax_permissions(work)
 
+            # 判定材料（refs / runtime / assertions）经 stdin 进 driver，不落
+            # 盘；nonce 让伪造的 marker 行过不了解析。帧协议（长度前缀）：
+            # attach 的 stdin 送不达 EOF，driver 按帧头长度精确读取。
+            nonce = secrets.token_hex(16)
+            driver_input = frame_driver_input(request, nonce)
+
             try:
                 client = self._get_client()
                 container = client.containers.run(
-                    image=self._image,
+                    image=self._image_id(client),
                     command=["python", "-X", "utf8", "-B", DRIVER_FILENAME],
                     working_dir=_SESSION_MOUNT,
                     volumes={str(work): {"bind": _SESSION_MOUNT, "mode": "ro"}},
                     detach=True,
+                    stdin_open=True,
                     network_mode="none",
                     read_only=True,
                     user="65532:65532",
@@ -229,13 +244,41 @@ class DockerExecutionProvider:
                     tmpfs={"/tmp": f"size={runner_settings.RUNNER_TMPFS_SIZE_MB}m"},
                     auto_remove=False,
                 )
+                try:
+                    sock = client.api.attach_socket(
+                        container.id, params={"stdin": 1, "stream": 1}
+                    )
+                    try:
+                        raw = getattr(sock, "_sock", sock)
+                        raw.sendall(driver_input)
+                        # shutdown 送不达容器 stdin（daemon 不转发 EOF），
+                        # 但可以释放本端写侧；driver 按帧长读取，不依赖 EOF。
+                        raw.shutdown(socket.SHUT_WR)
+                    finally:
+                        sock.close()
+                except Exception as exc:  # noqa: BLE001 - stdin 通道失败
+                    # 判定材料送不进容器：driver 会一直等帧，与其等会话超时，
+                    # 不如立刻杀掉并明确报错。
+                    try:
+                        container.kill()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    duration_ms = int((time.monotonic() - start) * 1000)
+                    return build_result(
+                        request_id=str(request.request_id),
+                        execution_id=str(execution_id),
+                        status=ExecutionStatus.ERROR,
+                        payload=None,
+                        duration_ms=duration_ms,
+                        error_type="driver_input_failed",
+                        error_message=f"无法把判定材料送进容器: {exc}",
+                    )
                 wait_result = container.wait(timeout=timeout)
                 exit_code: int = wait_result.get("StatusCode", -1)
-                raw_logs = container.logs(stdout=True, stderr=True)
-                stdout_text, stderr_text = self._split_logs(raw_logs)
+                stdout_text, stderr_text = self._read_logs(container)
                 duration_ms = int((time.monotonic() - start) * 1000)
 
-                payload = parse_driver_output(stdout_text, MARKER)
+                payload = parse_driver_output(stdout_text, MARKER, nonce)
                 if payload is None:
                     return build_result(
                         request_id=str(request.request_id),
@@ -288,17 +331,9 @@ class DockerExecutionProvider:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _split_logs(raw: bytes) -> tuple[str, str]:
-        """Best-effort split of combined stdout+stderr from Docker logs.
-
-        Docker multiplexed log format uses 8-byte headers when using
-        ``stdout=True, stderr=True`` together.  For simplicity and test
-        predictability the provider requests a single combined stream and
-        treats the entire payload as stdout.  A future iteration can
-        demultiplex using the 8-byte header protocol.
-        """
-        if isinstance(raw, bytes):
-            text = raw.decode("utf-8", errors="replace")
-        else:
-            text = str(raw)
-        return text, ""
+    def _read_logs(container) -> tuple[str, str]:
+        """Request each stream independently; SDK combined logs discard stream identity."""
+        stdout = container.logs(stdout=True, stderr=False)
+        stderr = container.logs(stdout=False, stderr=True)
+        return (stdout.decode("utf-8", errors="replace"),
+                stderr.decode("utf-8", errors="replace"))

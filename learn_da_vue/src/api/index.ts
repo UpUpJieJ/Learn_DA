@@ -126,6 +126,12 @@ function httpErrorMessage(status?: number): string | null {
 // =====================================================
 
 const pendingRequests = new Map<string, AbortController>();
+const externalRequests = new Set<AbortController>();
+
+export function registerRequestController(controller: AbortController): () => void {
+    externalRequests.add(controller);
+    return () => { externalRequests.delete(controller); };
+}
 
 function buildRequestKey(config: AxiosRequestConfig): string {
     const params = config.params
@@ -149,6 +155,8 @@ export function cancelRequest(key: string, reason = "主动取消") {
 export function cancelAllRequests(reason = "路由切换，取消所有请求") {
     pendingRequests.forEach((controller) => controller.abort(reason));
     pendingRequests.clear();
+    externalRequests.forEach((controller) => controller.abort(reason));
+    externalRequests.clear();
 }
 
 // =====================================================

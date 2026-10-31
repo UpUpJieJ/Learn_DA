@@ -10,14 +10,6 @@ tags: [polars, duckdb, workflow, 实战, integration]
 prev_lesson:
   slug: polars-lazy-pipeline
   title: Polars 惰性流水线
-practice_objective: >-
-  掌握 Polars 清洗 + DuckDB SQL 分析的组合工作流，
-  能独立完成"数据清洗 → 注册到 DuckDB → SQL 汇总分析"的完整链路。
-completion_criteria:
-  - 用 Polars 完成缺失值填充和条件派生列
-  - 用 to_arrow() + con.register() 将 Polars DataFrame 注册到 DuckDB
-  - 用 DuckDB SQL 对清洗后的数据做分组聚合
-  - 整个流程可在一个脚本中顺序执行
 # Phase 3: 建议系统元数据
 track: combined_workflow
 prerequisites: [polars-basics, duckdb-analytics, polars-lazy-pipeline]
@@ -82,19 +74,19 @@ workspace:
           type: schema
           title: 结果包含 order_id / product_id / region / category / net_amount
           var: orders_clean
-          columns: [order_id, product_id, region, category, net_amount]
-        - id: t1-rows
-          type: expr_true
-          title: 连接不丢行，仍是 5000 行
-          expr: "orders_clean.height == orders.height"
-        - id: t1-category
-          type: expr_true
-          title: category 由 products 补全，无空值且恰好 5 个品类
-          expr: "orders_clean['category'].null_count() == 0 and len(orders_clean['category'].unique()) == 5"
-        - id: t1-refund
-          type: expr_true
-          title: 已退款订单的 net_amount 合计为 0
-          expr: "orders_clean.filter(pl.col('refunded'))['net_amount'].sum() == 0"
+          columns:
+          - order_id
+          - product_id
+          - region
+          - category
+          - net_amount
+        - id: t1-orders-clean
+          type: frame_equal
+          title: 补全品类与退款净额后的每笔订单一致
+          var: orders_clean
+          ref: 11-t1-orders-clean.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t2
       title: 把清洗结果注册进 DuckDB
       cell: c3
@@ -103,18 +95,19 @@ workspace:
         用 con.register('orders_clean', arrow_table) 注册，表名必须是 orders_clean；
         registered_rows 存放 SQL 查到的行数，应等于 5000。
       assertions:
-        - id: t2-arrow
-          type: expr_true
-          title: arrow_table 里有 net_amount 列
-          expr: "arrow_table is not None and 'net_amount' in arrow_table.column_names"
-        - id: t2-arrow-rows
-          type: expr_true
-          title: arrow_table 行数与 orders_clean 一致
-          expr: "arrow_table is not None and arrow_table.num_rows == orders_clean.height"
         - id: t2-register
-          type: expr_true
-          title: registered_rows 来自 DuckDB 的行数查询，等于 5000
-          expr: "registered_rows == orders_clean.height"
+          type: value
+          title: SQL 查询注册表得到 5000 行
+          var: registered_rows
+          expect: 5000
+        - id: t2-registered-content
+          type: sql_rows
+          title: 注册表的订单号、品类与净额逐行正确
+          query: SELECT order_id, category, net_amount FROM orders_clean ORDER BY order_id
+          ref: 11-t2-registered-content.json
+          connection: con
+          order_matters: true
+          rtol: 1.0e-06
     - id: t3
       title: 用 DuckDB SQL 按品类汇总
       cell: c4

@@ -5,8 +5,6 @@ from uuid import uuid4
 
 from openai import AsyncOpenAI
 
-from app.learning.repository import LearningRepository
-from app.learning.recommendation import RecommendationService
 from app.utils import log
 from app.utils.logger import request_id_var
 from config.settings import settings
@@ -57,7 +55,6 @@ class AgentService:
         self,
         knowledge_retriever: KnowledgeRetriever | None = None,
         router: AgentRouter | None = None,
-        recommendation_service: RecommendationService | None = None,
         learner_state_service: "LearnerStateService | None" = None,
         analytics_service: "AnalyticsService | None" = None,
         workspace_repo: "WorkspaceReadRepository | None" = None,
@@ -69,7 +66,6 @@ class AgentService:
         # 默认自建仅供单测直接构造 AgentService 时使用。
         self.knowledge_retriever = knowledge_retriever or KnowledgeRetriever()
         self.router = router or AgentRouter()
-        self.recommendation_service = recommendation_service
         self.learner_state_service = learner_state_service
         self.analytics_service = analytics_service
         # 改版 M4：任务提交记录（task_attempts）是当前唯一的教学证据来源
@@ -186,16 +182,10 @@ class AgentService:
         current_lesson = (
             payload.context.current_lesson if payload.context else None
         )
-        if self.recommendation_service is None:
-            self.recommendation_service = RecommendationService(
-                repository=LearningRepository(),
-                learner_state_service=self.learner_state_service,
-            )
         executor = FCToolExecutor(
             knowledge_retriever=self.knowledge_retriever,
             visitor_id=visitor_id,
             learner_state_service=self.learner_state_service,
-            recommendation_service=self.recommendation_service,
             workspace_repo=self.workspace_repo,
             current_lesson=current_lesson,
         )
@@ -254,7 +244,7 @@ class AgentService:
                     break
                 continue
             if result.content:
-                tool_name = self._derive_fc_tool_name(executor.called_tools)
+                tool_name = "general_chat"
                 log.info(
                     "[agent] fc_chat llm_calls={} tools_called={} "
                     "tool_name={} used_fallback=False",
@@ -286,7 +276,7 @@ class AgentService:
             # 强制直答轮仍返回 tool_calls / 无有效内容：不再给机会
             break
 
-        tool_name = self._derive_fc_tool_name(executor.called_tools)
+        tool_name = "general_chat"
         fallback_content = self._fallback_chat_content(tool_name)
         log.info(
             "[agent] fc_chat llm_calls={} tools_called={} tool_name={} "
@@ -316,7 +306,36 @@ class AgentService:
             teaching_feedback=self._maybe_feedback(evidence, hint_level),
         )
 
-    async def chat_stream(
+    async def chat_stream(self, payload: AgentChatRequest, visitor_id: str) -> AsyncIterator[dict]:
+        text = []
+        try:
+            async for event in self._chat_stream(payload, visitor_id):
+                if event.get("type") == "delta":
+                    text.append(event.get("text") or "")
+                yield event
+        except Exception:
+            log.exception("[agent] unexpected stream failure")
+            data = await self.stream_error_data(visitor_id, "".join(text))
+            yield {"type": "error", "reason": "upstream_error", "partial": bool(text)}
+            yield {"type": "done", "data": data.model_dump(by_alias=True)}
+
+    async def stream_error_data(self, visitor_id: str, partial: str) -> AgentChatData:
+        """Finalize unexpected failures with the same audit and terminal contract."""
+        evidence = getattr(self, "_stream_evidence", None)
+        hint_level = getattr(self, "_stream_hint_level", None)
+        interaction_id = None
+        try:
+            interaction_id = await self._persist_interaction(
+                visitor_id=visitor_id, evidence=evidence,
+                fallback_reason="upstream_error", hint_level=hint_level)
+        except Exception:
+            log.exception("[agent] unexpected stream audit failure")
+        return AgentChatData(content=partial.strip() or FALLBACK_UNAVAILABLE_CONTENT,
+            model=self.model, used_fallback=True, fallback_reason="upstream_error",
+            interaction_id=interaction_id,
+            teaching_feedback=self._maybe_feedback(evidence, hint_level))
+
+    async def _chat_stream(
         self,
         payload: AgentChatRequest,
         visitor_id: str,
@@ -334,16 +353,10 @@ class AgentService:
         current_lesson = (
             payload.context.current_lesson if payload.context else None
         )
-        if self.recommendation_service is None:
-            self.recommendation_service = RecommendationService(
-                repository=LearningRepository(),
-                learner_state_service=self.learner_state_service,
-            )
         executor = FCToolExecutor(
             knowledge_retriever=self.knowledge_retriever,
             visitor_id=visitor_id,
             learner_state_service=self.learner_state_service,
-            recommendation_service=self.recommendation_service,
             workspace_repo=self.workspace_repo,
             current_lesson=current_lesson,
         )
@@ -356,12 +369,14 @@ class AgentService:
         messages, evidence = await self._inject_evidence(
             messages, payload, visitor_id
         )
+        self._stream_evidence = evidence
         interaction_id, created = await self._reserve_interaction(
             visitor_id=visitor_id, evidence=evidence
         )
         hint_level = await self._resolve_hint_level(
             payload, visitor_id, evidence
         )
+        self._stream_hint_level = hint_level
         feedback = self._maybe_feedback(evidence, hint_level)
 
         if not created:
@@ -378,24 +393,26 @@ class AgentService:
         invalid_params_seen = False
         llm_calls = 0
         streamed_chars = 0
+        streamed_text: list[str] = []
 
-        for round_index in range(max_rounds + 1):
-            force_answer = round_index >= max_rounds
-            tool_choice = "none" if force_answer else "auto"
-            round_text: list[str] = []
-            tool_calls: tuple[LLMToolCall, ...] = ()
-            error_reason: str | None = None
-            interrupted = False
-            latency_ms = 0
-            prompt_tokens = None
-            completion_tokens = None
+        async with self._llm() as llm:
+            for round_index in range(max_rounds + 1):
+                force_answer = round_index >= max_rounds
+                tool_choice = "none" if force_answer else "auto"
+                round_text: list[str] = []
+                tool_calls: tuple[LLMToolCall, ...] = ()
+                error_reason: str | None = None
+                interrupted = False
+                latency_ms = 0
+                prompt_tokens = None
+                completion_tokens = None
 
-            async with self._llm() as llm:
                 async for event in llm.stream(
                     messages, tools=FC_TOOLS, tool_choice=tool_choice
                 ):
                     if event.delta:
                         round_text.append(event.delta)
+                        streamed_text.append(event.delta)
                         streamed_chars += len(event.delta)
                         yield {"type": "delta", "text": event.delta}
                     if event.done:
@@ -405,118 +422,118 @@ class AgentService:
                         latency_ms = event.latency_ms
                         prompt_tokens = event.prompt_tokens
                         completion_tokens = event.completion_tokens
-            llm_calls += 1
+                llm_calls += 1
 
-            text = "".join(round_text).strip()
-            if interrupted and text:
-                # 已吐字后中断：内容是学习者已经看到的那部分，保留它并明说
-                # 不完整；绝不拿降级文案盖上去（那等于把他看到的字吞掉）。
-                tool_name = self._derive_fc_tool_name(executor.called_tools)
-                interaction_id = await self._persist_interaction(
-                    visitor_id=visitor_id,
-                    evidence=evidence,
-                    route=tool_name,
-                    retrieval_mode=getattr(
-                        self.knowledge_retriever, "last_retrieval_mode", None
-                    ),
-                    tool_names=executor.called_tools,
-                    llm_latency_ms=latency_ms,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    fallback_reason="stream_interrupted",
-                    hint_level=hint_level,
-                )
-                yield {
-                    "type": "error",
-                    "reason": "stream_interrupted",
-                    "partial": True,
-                }
-                data = AgentChatData(
-                    content=text,
-                    model=self.model,
-                    used_fallback=True,
-                    fallback_reason="stream_interrupted",
-                    interaction_id=interaction_id,
-                    teaching_feedback=feedback,
-                )
-                yield {"type": "done", "data": data.model_dump(by_alias=True)}
-                return
-            if error_reason:
-                fallback_reason = error_reason
-                break
-            if tool_calls and not force_answer:
-                # 工具轮：告诉前端正在查什么，避免长时间无反馈
-                yield {
-                    "type": "tool",
-                    "names": [call.name for call in tool_calls],
-                }
-                assistant_message = self._assistant_tool_call_message(
-                    LLMResult(
-                        content=text or None,
-                        error_reason=None,
-                        latency_ms=latency_ms,
-                        tool_calls=tool_calls,
+                text = "".join(round_text).strip()
+                if interrupted and text:
+                    # 已吐字后中断：内容是学习者已经看到的那部分，保留它并明说
+                    # 不完整；绝不拿降级文案盖上去（那等于把他看到的字吞掉）。
+                    tool_name = "general_chat"
+                    interaction_id = await self._persist_interaction(
+                        visitor_id=visitor_id,
+                        evidence=evidence,
+                        route=tool_name,
+                        retrieval_mode=getattr(
+                            self.knowledge_retriever, "last_retrieval_mode", None
+                        ),
+                        tool_names=executor.called_tools,
+                        llm_latency_ms=latency_ms,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                        fallback_reason="stream_interrupted",
+                        hint_level=hint_level,
                     )
-                )
-                messages.append(assistant_message)
-                aborted = False
-                for tool_call in tool_calls:
-                    execution = await executor.execute(
-                        tool_call.name, tool_call.arguments
+                    yield {
+                        "type": "error",
+                        "reason": "stream_interrupted",
+                        "partial": True,
+                    }
+                    data = AgentChatData(
+                        content="".join(streamed_text).strip(),
+                        model=self.model,
+                        used_fallback=True,
+                        fallback_reason="stream_interrupted",
+                        interaction_id=interaction_id,
+                        teaching_feedback=feedback,
                     )
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": execution.output,
-                        }
-                    )
-                    if execution.invalid_params:
-                        if invalid_params_seen:
-                            fallback_reason = "invalid_tool_params"
-                            aborted = True
-                        invalid_params_seen = True
-                if aborted:
+                    yield {"type": "done", "data": data.model_dump(by_alias=True)}
+                    return
+                if error_reason:
+                    fallback_reason = error_reason
                     break
-                continue
-            if text:
-                tool_name = self._derive_fc_tool_name(executor.called_tools)
-                log.info(
-                    "[agent] fc_chat_stream llm_calls={} tools_called={} "
-                    "tool_name={} chars={} interrupted={}",
-                    llm_calls,
-                    executor.called_tools,
-                    tool_name,
-                    len(text),
-                    interrupted,
-                )
-                interaction_id = await self._persist_interaction(
-                    visitor_id=visitor_id,
-                    evidence=evidence,
-                    route=tool_name,
-                    retrieval_mode=getattr(
-                        self.knowledge_retriever, "last_retrieval_mode", None
-                    ),
-                    tool_names=executor.called_tools,
-                    llm_latency_ms=latency_ms,
-                    input_tokens=prompt_tokens,
-                    output_tokens=completion_tokens,
-                    fallback_reason=None,
-                    hint_level=hint_level,
-                )
-                data = AgentChatData(
-                    content=text,
-                    model=self.model,
-                    used_fallback=False,
-                    interaction_id=interaction_id,
-                    teaching_feedback=feedback,
-                )
-                yield {"type": "done", "data": data.model_dump(by_alias=True)}
-                return
-            # 强制直答轮仍无有效内容：不再给机会
-            break
+                if tool_calls and not force_answer:
+                    # 工具轮：告诉前端正在查什么，避免长时间无反馈
+                    yield {
+                        "type": "tool",
+                        "names": [call.name for call in tool_calls],
+                    }
+                    assistant_message = self._assistant_tool_call_message(
+                        LLMResult(
+                            content=text or None,
+                            error_reason=None,
+                            latency_ms=latency_ms,
+                            tool_calls=tool_calls,
+                        )
+                    )
+                    messages.append(assistant_message)
+                    aborted = False
+                    for tool_call in tool_calls:
+                        execution = await executor.execute(
+                            tool_call.name, tool_call.arguments
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": execution.output,
+                            }
+                        )
+                        if execution.invalid_params:
+                            if invalid_params_seen:
+                                fallback_reason = "invalid_tool_params"
+                                aborted = True
+                            invalid_params_seen = True
+                    if aborted:
+                        break
+                    continue
+                if text:
+                    tool_name = "general_chat"
+                    log.info(
+                        "[agent] fc_chat_stream llm_calls={} tools_called={} "
+                        "tool_name={} chars={} interrupted={}",
+                        llm_calls,
+                        executor.called_tools,
+                        tool_name,
+                        len(text),
+                        interrupted,
+                    )
+                    interaction_id = await self._persist_interaction(
+                        visitor_id=visitor_id,
+                        evidence=evidence,
+                        route=tool_name,
+                        retrieval_mode=getattr(
+                            self.knowledge_retriever, "last_retrieval_mode", None
+                        ),
+                        tool_names=executor.called_tools,
+                        llm_latency_ms=latency_ms,
+                        input_tokens=prompt_tokens,
+                        output_tokens=completion_tokens,
+                        fallback_reason=None,
+                        hint_level=hint_level,
+                    )
+                    data = AgentChatData(
+                        content="".join(streamed_text).strip(),
+                        model=self.model,
+                        used_fallback=False,
+                        interaction_id=interaction_id,
+                        teaching_feedback=feedback,
+                    )
+                    yield {"type": "done", "data": data.model_dump(by_alias=True)}
+                    return
+                # 强制直答轮仍无有效内容：不再给机会
+                break
 
-        tool_name = self._derive_fc_tool_name(executor.called_tools)
+        tool_name = "general_chat"
         fallback_content = self._fallback_chat_content(tool_name)
         log.info(
             "[agent] fc_chat_stream llm_calls={} tools_called={} tool_name={} "
@@ -546,7 +563,7 @@ class AgentService:
                 "partial": True,
             }
             data = AgentChatData(
-                content=fallback_content,
+                content="".join(streamed_text).strip(),
                 model=self.model,
                 used_fallback=True,
                 fallback_reason=fallback_reason,
@@ -583,13 +600,6 @@ class AgentService:
                 for tool_call in result.tool_calls
             ],
         }
-
-    @staticmethod
-    def _derive_fc_tool_name(called_tools: list[str]) -> ToolName:
-        """意图标签取自模型调用过的工具，不再从正文抠标签。"""
-        if "get_recommendation" in called_tools:
-            return "suggest_next_step"
-        return "general_chat"
 
     async def _complete(
         self,
@@ -704,7 +714,7 @@ class AgentService:
             return messages
         return [
             messages[0],
-            {"role": "system", "content": block},
+            {"role": "user", "content": block},
             *messages[1:],
         ]
 

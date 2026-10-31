@@ -31,6 +31,10 @@ class SubmitTaskRequest(_CamelModel):
     request_id: str = Field(min_length=1, max_length=64)
 
 
+class HintRequest(_CamelModel):
+    request_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 class CellPayload(_CamelModel):
     cell_id: str
     position: int

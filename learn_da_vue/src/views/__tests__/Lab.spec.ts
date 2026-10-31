@@ -16,7 +16,7 @@ function successResponse(overrides: Partial<ExecuteResponse> = {}): ExecuteRespo
         status: "success",
         stdout: "shape: (4, 3)\n",
         stderr: "",
-        executionTime: 42,
+        durationMs: 42,
         resultType: "text",
         dataframe: null,
         ...overrides,
@@ -94,7 +94,7 @@ describe("Lab 实验室页面", () => {
                 status: "unavailable",
                 stdout: "",
                 stderr: "",
-                executionTime: 0,
+                durationMs: 0,
                 resultType: "error",
             }),
         );
@@ -174,7 +174,7 @@ describe("Lab 实验室页面", () => {
                 status: "error",
                 stdout: "",
                 stderr: "ZeroDivisionError: division by zero",
-                executionTime: 5,
+                durationMs: 5,
                 resultType: "error",
             }),
         );
@@ -210,4 +210,32 @@ describe("Lab 实验室页面", () => {
         expect(textarea.element.value).toContain("group_by");
         expect(textarea.element.value).not.toContain("data/ecommerce");
     });
+});
+
+it("ignores a run response after output is cleared and a new run starts", async () => {
+    executeCode.mockReset();
+    let resolveOld!: (value: ExecuteResponse) => void;
+    executeCode.mockImplementationOnce(() => new Promise<ExecuteResponse>((resolve) => { resolveOld = resolve; }));
+    executeCode.mockResolvedValueOnce(successResponse({stdout: "new result"}));
+    const wrapper = mountLab();
+    await buttonByText(wrapper, "运行").trigger("click");
+    await buttonByText(wrapper, "清空输出").trigger("click");
+    await buttonByText(wrapper, "运行").trigger("click");
+    await flushPromises();
+    resolveOld(successResponse({stdout: "old result"}));
+    await flushPromises();
+    expect(wrapper.text()).toContain("new result");
+    expect(wrapper.text()).not.toContain("old result");
+    wrapper.unmount();
+});
+
+it("renders a structured dataframe preview and truncation notices", async () => {
+    executeCode.mockReset();
+    executeCode.mockResolvedValue(successResponse({resultType: "dataframe", outputTruncated: true,
+        dataframe: {columns: ["region"], rows: [{region: "华东"}], rowCount: 100, truncated: true}}));
+    const wrapper = mountLab();
+    await buttonByText(wrapper, "运行").trigger("click"); await flushPromises();
+    expect(wrapper.get("table").text()).toContain("华东");
+    expect(wrapper.text()).toContain("已截断");
+    wrapper.unmount();
 });

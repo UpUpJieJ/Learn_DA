@@ -13,14 +13,6 @@ prev_lesson:
 next_lesson:
   slug: duckdb-window-functions
   title: DuckDB 窗口函数
-practice_objective: >-
-  掌握用 JOIN 合并多表数据、用 CTE 拆分复杂查询的写法，
-  能独立构建"连接 → 计算 → 汇总"的分析 SQL。
-completion_criteria:
-  - 用 LEFT JOIN 连接两张表
-  - 用 CTE (WITH ... AS) 拆分查询步骤
-  - 在 CTE 中计算派生字段后做分组聚合
-  - 对比 LEFT JOIN 和 INNER JOIN 的结果差异
 # Phase 3: 建议系统元数据
 track: duckdb_advanced
 prerequisites: ['duckdb-sql-foundations']
@@ -88,19 +80,18 @@ workspace:
           type: schema
           title: order_detail 含四列
           var: order_detail
-          columns: [order_id, product_id, category, amount]
-        - id: t1-rows
-          type: expr_true
-          title: 行数不变，仍是 5000 行
-          expr: "order_detail.height == 5000"
-        - id: t1-total
-          type: expr_true
-          title: 金额合计 5287843.86
-          expr: "abs(order_detail['amount'].sum() - 5287843.86) < 0.05"
-        - id: t1-category
-          type: expr_true
-          title: category 没有空值
-          expr: "order_detail['category'].null_count() == 0"
+          columns:
+          - order_id
+          - product_id
+          - category
+          - amount
+        - id: t1-order-detail
+          type: frame_equal
+          title: 订单明细与品类左连接结果逐行一致
+          var: order_detail
+          ref: 08-t1-order-detail.parquet
+          order_matters: false
+          rtol: 1.0e-06
     - id: t2
       title: 用 CTE 先算派生指标再分组
       cell: c3
@@ -133,19 +124,23 @@ workspace:
           type: schema
           title: join_compare 含 join_type / row_count
           var: join_compare
-          columns: [join_type, row_count]
-        - id: t3-left
-          type: expr_true
-          title: LEFT JOIN 是 5001 行
-          expr: "join_compare['row_count'][join_compare['join_type'].to_list().index('left')] == 5001"
-        - id: t3-inner
-          type: expr_true
-          title: INNER JOIN 是 5000 行
-          expr: "join_compare['row_count'][join_compare['join_type'].to_list().index('inner')] == 5000"
-        - id: t3-unmatched
-          type: expr_true
-          title: 恰好一条未匹配订单 P9999
-          expr: "unmatched_orders.height == 1 and unmatched_orders['product_id'][0] == 'P9999'"
+          columns:
+          - join_type
+          - row_count
+        - id: t3-join-compare
+          type: frame_equal
+          title: LEFT 与 INNER 的订单行数与参考一致
+          var: join_compare
+          ref: 08-t3-join-compare.parquet
+          order_matters: false
+          rtol: 1.0e-06
+        - id: t3-unmatched-orders
+          type: frame_equal
+          title: 未匹配订单逐行一致
+          var: unmatched_orders
+          ref: 08-t3-unmatched-orders.parquet
+          order_matters: false
+          rtol: 1.0e-06
 ---
 
 # DuckDB JOIN 与 CTE

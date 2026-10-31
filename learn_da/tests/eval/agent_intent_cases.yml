@@ -66,39 +66,39 @@ cases:
 
   # ---- generate_exercise ----
   - message: "给我出几道关于分组聚合的练习题"
-    expected_intent: generate_exercise
+    expected_intent: general_chat
     tags: [natural_zh]
   - message: "出一道关于常见报错排查的练习题"
-    expected_intent: generate_exercise
+    expected_intent: general_chat
     tags: [natural_zh, conflict]
   - message: "Give me an exercise about window functions"
-    expected_intent: generate_exercise
+    expected_intent: general_chat
     tags: [english]
   - message: "有没有 quiz 可以练一练"
-    expected_intent: generate_exercise
+    expected_intent: general_chat
     tags: [mixed]
   - message: "根据本课内容出三道选择题"
-    expected_intent: generate_exercise
+    expected_intent: general_chat
     tags: [natural_zh]
 
   # ---- suggest_next_step ----
   - message: "我学完了 Polars 基础，接下来应该学什么"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [natural_zh]
   - message: "下一步的练习应该做什么"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [natural_zh, conflict]
   - message: "What should I learn next after finishing DuckDB basics?"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [english, broad_keyword]
   - message: "我现在应该复习哪一课"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [natural_zh]
   - message: "给我推荐下一课"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [natural_zh]
   - message: "Let's continue with the next lesson"
-    expected_intent: suggest_next_step
+    expected_intent: general_chat
     tags: [english]
 
   # ---- generate_example_code ----

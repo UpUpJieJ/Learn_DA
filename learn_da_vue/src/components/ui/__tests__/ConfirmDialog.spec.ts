@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, enableAutoUnmount } from "@vue/test-utils";
 import ConfirmDialog from "../ConfirmDialog.vue";
 import EmptyState from "../EmptyState.vue";
+
+enableAutoUnmount(afterEach);
 
 afterEach(() => {
     document.body.innerHTML = "";
@@ -58,6 +60,8 @@ describe("ConfirmDialog", () => {
         await wrapper.vm.$nextTick();
         expect(wrapper.emitted("cancel")).toHaveLength(1);
 
+        await wrapper.setProps({ open: false });
+        await wrapper.setProps({ open: true });
         const confirmButton = Array.from(document.body.querySelectorAll("button")).find((btn) =>
             btn.textContent?.includes("确定"),
         ) as HTMLButtonElement;

@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 
 from app.core.database.base import BaseModel
@@ -61,6 +62,9 @@ class SessionCell(BaseModel):
     code = Column(Text, default="", nullable=False)
     status = Column(String(16), default="stale", nullable=False)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
+    # Execution success alone is not a current task validation. Only an unchanged
+    # successful task submission may set this; edits invalidate the suffix.
+    task_verified = Column(Boolean, nullable=False, default=False, server_default=false())
 
     __table_args__ = (
         UniqueConstraint("session_id", "cell_id", name="uq_cell_session_cell"),
@@ -151,6 +155,10 @@ class HintUsage(BaseModel):
     # 发出去的提示正文（确定性生成，不含模型输出）
     content = Column(Text, default="", nullable=False)
 
+    request_id = Column(String(64), nullable=True)
+    response = Column(Text, nullable=True)
+
     __table_args__ = (
+        UniqueConstraint("visitor_id", "request_id", name="uq_hint_visitor_request"),
         Index("ix_hint_session_task", "session_id", "task_id"),
     )

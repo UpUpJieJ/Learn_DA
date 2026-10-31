@@ -2,35 +2,29 @@
 
 /* ===== 设计系统变量（语义 token） =====
    规则：页面与组件只使用语义 token（brand / ok / warn / err / ink / surface / line），
-   不要在 src/** 里直接写 raw palette（blue-500、emerald-100 等）。
+   不要在 src/** 里直接写 raw palette（原始色板类 等）。
    由 scripts/ui_lint.mjs 把关（npm run lint:ui），规范见
    learn_da/docs/learning-workspace-redesign-2026-10-21.md §15.4。 */
 @theme {
   /* 品牌色 */
   --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
   --color-brand-200: #bfdbfe;
   --color-brand-300: #93c5fd;
-  --color-brand-400: #60a5fa;
   --color-brand-500: #3b82f6;
   --color-brand-600: #2563eb;
   --color-brand-700: #1d4ed8;
 
   /* 状态色：通过 / 警示 / 失败 */
   --color-ok-50: #ecfdf5;
-  --color-ok-100: #d1fae5;
   --color-ok-500: #22c55e;
   --color-ok-600: #16a34a;
   --color-ok-700: #15803d;
 
   --color-warn-50: #fff7ed;
-  --color-warn-100: #ffedd5;
   --color-warn-500: #f97316;
-  --color-warn-600: #ea580c;
   --color-warn-700: #c2410c;
 
   --color-err-50: #fef2f2;
-  --color-err-100: #fee2e2;
   --color-err-500: #ef4444;
   --color-err-600: #dc2626;
   --color-err-700: #b91c1c;
@@ -46,6 +40,8 @@
   --color-line: #e2e8f0;
 
   /* 代码输出面板（深色，仅 CodeOutput 使用） */
+  --color-on-accent: #ffffff;
+  --color-editor-ink: #ffffff;
   --color-editor-bg: #1e1e1e;
   --color-editor-line: #2d2d2d;
 

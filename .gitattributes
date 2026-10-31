@@ -1,6 +1,9 @@
 # 先行默认：文本文件 LF 入库，按 core.autocrlf 检出。
 * text=auto
 
+# Shell entry points must also work when uploaded directly from Windows.
+deploy/*.sh text eol=lf
+
 # 课程数据集是"字节可复现"的：sha256 被写进 manifest.json，并由
 # scripts/build_datasets.py --check 与测试校验。任何行尾转换都会让校验失效
 # （仓库开了 core.autocrlf=true，Windows 检出默认会转成 CRLF）。

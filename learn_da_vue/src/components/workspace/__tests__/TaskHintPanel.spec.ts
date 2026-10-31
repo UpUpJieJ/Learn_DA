@@ -52,11 +52,14 @@ describe("TaskHintPanel", () => {
         expect(wrapper.emitted("request")).toEqual([["t1"]]);
     });
 
-    it("loading 时按钮禁用，避免连点要出两层", () => {
+    it("loading 时保留焦点并阻止连点要出两层", async () => {
         const wrapper = mountPanel({ loading: true });
         const button = wrapper.find("button");
 
-        expect(button.attributes("disabled")).toBeDefined();
+        expect(button.attributes("disabled")).toBeUndefined();
+        expect(button.attributes("aria-disabled")).toBe("true");
+        await button.trigger("click");
+        expect(wrapper.emitted("request")).toBeUndefined();
         expect(button.attributes("aria-busy")).toBe("true");
     });
 

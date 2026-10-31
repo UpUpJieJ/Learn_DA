@@ -22,6 +22,7 @@ export interface ToastItem {
 }
 
 const DEFAULT_DURATION_MS = 2600;
+const MAX_TOASTS = 5;
 
 const items = ref<ToastItem[]>([]);
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
@@ -46,6 +47,7 @@ function show(message: string, options: ShowToastOptions = {}): number {
     const kind = options.kind ?? "info";
     const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
     const id = ++seq;
+    for (const old of items.value.slice(0, Math.max(0, items.value.length - MAX_TOASTS + 1))) dismiss(old.id);
     items.value = [...items.value, { id, kind, message: message.trim(), durationMs }];
     if (durationMs > 0) {
         timers.set(

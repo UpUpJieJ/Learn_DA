@@ -50,12 +50,14 @@ services:
       ENABLED_APP_MODULES: learning,playground,agent,analytics,learner_state,workspace
       RUNNER_URL: ${RUNNER_URL:?Set the private Runner URL in deploy/app.env}
       RUNNER_TOKEN: ${RUNNER_TOKEN:?Set the shared Runner token in deploy/app.env}
-      RUNNER_TIMEOUT_SECONDS: ${RUNNER_TIMEOUT_SECONDS:-7}
+      RUNNER_TIMEOUT_SECONDS: ${BACKEND_RUNNER_TIMEOUT_SECONDS:-7}
       # 工作区整段重放比单格慢，单独给超时；必须大于 Runner 侧同名配置（默认 20）。
-      RUNNER_SESSION_TIMEOUT_SECONDS: ${RUNNER_SESSION_TIMEOUT_SECONDS:-30}
+      RUNNER_SESSION_TIMEOUT_SECONDS: ${BACKEND_RUNNER_SESSION_TIMEOUT_SECONDS:-30}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
+      LLM_STREAM_TOTAL_TIMEOUT_SECONDS: ${LLM_STREAM_TOTAL_TIMEOUT_SECONDS:-180}
       SESSION_SECRET: ${SESSION_SECRET:?Set a 32+ character session secret in deploy/app.env}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
     volumes:

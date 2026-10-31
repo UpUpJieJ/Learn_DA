@@ -313,3 +313,17 @@ async def test_duplicate_request_id_does_not_call_the_model_again():
     data = done_event(events)
     assert data["fallbackReason"] == "duplicate_request"
     assert data["interactionId"] == 42
+
+
+async def test_done_preserves_tool_preamble_when_following_round_fails():
+    first = [LLMStreamEvent(delta="我先查资料。"), *tool_round("search_knowledge", {"query": "分组"})]
+    for ending in (error_round("timeout"), [LLMStreamEvent(delta="找到一半"), *error_round("timeout", interrupted=True)]):
+        events = await collect(build_service(ScriptedStreamLLM([first, ending])))
+        assert done_event(events)["content"] == deltas(events)
+        assert done_event(events)["usedFallback"] is True
+
+
+async def test_successful_done_includes_text_from_all_tool_rounds():
+    first = [LLMStreamEvent(delta="先查询。"), *tool_round("search_knowledge", {"query": "分组"})]
+    events = await collect(build_service(ScriptedStreamLLM([first, text_round("答案。") ])))
+    assert done_event(events)["content"] == deltas(events)

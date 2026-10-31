@@ -41,8 +41,6 @@ class LessonFrontmatter(BaseModel):
     next_lesson: dict[str, Any] | None = None
     is_review_friendly: bool = False
     is_branch_point: bool = False
-    practice_objective: str = ""
-    completion_criteria: list[str] = Field(default_factory=list)
 
 
 class CatalogTopic(BaseModel):

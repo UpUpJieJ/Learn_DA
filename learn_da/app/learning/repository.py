@@ -52,9 +52,6 @@ class LearningRepository:
                     code_example=raw.get("code_example", ""),
                     prev_lesson=prev_lesson,
                     next_lesson=next_lesson,
-                    # Phase 2: 练习结构（可选）
-                    practice_objective=raw.get("practice_objective", ""),
-                    completion_criteria=raw.get("completion_criteria", []),
                     prerequisites=raw.get("prerequisites", []),
                     recommended_next=raw.get("recommended_next", []),
                     skill_tags=raw.get("skill_tags", []),

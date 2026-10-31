@@ -1,5 +1,6 @@
-import { computed, ref } from "vue";
+import { computed, ref, getCurrentScope, onScopeDispose } from "vue";
 import { sendChatMessage, buildChatHistory, recordAgentFeedback } from "@/api/agent";
+import { randomId } from "@/lib/uuid";
 import type {
     AgentContext,
     AgentFeedbackValue,
@@ -37,12 +38,14 @@ export function useAgentConversation(options: AgentConversationOptions) {
     const activeTools = ref<string[]>([]);
 
     let abortController: AbortController | null = null;
+    let generation = 0;
+    if (getCurrentScope()) onScopeDispose(stopStreaming);
 
     const messageCount = computed(() => messages.value.length);
 
     function formatAgentErrorMessage(message?: string) {
         if (!message?.trim()) {
-            return "这次请求没有成功发出。\n\n建议你先重试一次，或者把问题缩小成“解释这段代码 / 为什么报错 / 下一步练什么”这样的单一步骤。";
+            return "这次请求没有成功发出。\n\n建议你先重试一次，或者把问题缩小成“解释这段代码 / 为什么报错”这样的单一步骤。";
         }
         return `这次请求失败了：${message}\n\n你可以重试一次，或者让我先围绕当前课程给一个更小的提示。`;
     }
@@ -51,11 +54,13 @@ export function useAgentConversation(options: AgentConversationOptions) {
         const content = (text ?? inputText.value).trim();
         if (!content || isLoading.value) return;
 
+        const epoch = ++generation;
+        let incomplete = false;
         inputText.value = "";
 
         // id 必须唯一：同毫秒内连续发送时 Date.now() 相同，会导致
         // buildChatHistory 误过滤历史、assistant 消息互相覆盖。
-        const token = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const token = randomId();
 
         const userMsg: ChatMessage = {
             id: `user-${token}`,
@@ -78,6 +83,7 @@ export function useAgentConversation(options: AgentConversationOptions) {
 
         isLoading.value = true;
         await options.scrollToBottom?.();
+        if (epoch !== generation) return;
 
         const history = buildChatHistory(
             messages.value.filter((m) => !m.isStreaming),
@@ -87,25 +93,29 @@ export function useAgentConversation(options: AgentConversationOptions) {
 
         try {
             await sendChatMessage({
+                requestId: token,
                 payload: {
                     message: content,
                     history,
                     context: options.context(),
                 },
                 onDelta: (text) => {
+                    if (epoch !== generation) return;
                     const msg = messages.value.find((m) => m.id === assistantId);
                     if (msg) msg.content += text;
                     activeTools.value = [];
                     void options.scrollToBottom?.();
                 },
                 onTool: (names) => {
+                    if (epoch !== generation) return;
                     activeTools.value = names;
                 },
                 onDone: (fullReply, feedback, interactionId) => {
+                    if (epoch !== generation) return;
                     const msg = messages.value.find((m) => m.id === assistantId);
                     if (msg) {
                         // 以服务端最终 content 为准（增量拼接可能丢尾字）
-                        msg.content = fullReply || msg.content;
+                        if (!incomplete) msg.content = fullReply || msg.content;
                         msg.isStreaming = false;
                         msg.teachingFeedback = feedback ?? null;
                         msg.interactionId = interactionId ?? null;
@@ -116,6 +126,8 @@ export function useAgentConversation(options: AgentConversationOptions) {
                     void options.scrollToBottom?.();
                 },
                 onError: (error, partial) => {
+                    if (epoch !== generation) return;
+                    incomplete = true;
                     const msg = messages.value.find((m) => m.id === assistantId);
                     if (msg) {
                         if (partial && msg.content) {
@@ -134,6 +146,7 @@ export function useAgentConversation(options: AgentConversationOptions) {
                 signal: abortController.signal,
             });
         } catch {
+            if (epoch !== generation) return;
             const msg = messages.value.find((m) => m.id === assistantId);
             if (msg && msg.isStreaming) {
                 msg.content = msg.content || formatAgentErrorMessage();
@@ -146,6 +159,7 @@ export function useAgentConversation(options: AgentConversationOptions) {
     }
 
     function stopStreaming() {
+        generation++;
         abortController?.abort();
         abortController = null;
 
@@ -161,6 +175,7 @@ export function useAgentConversation(options: AgentConversationOptions) {
     }
 
     function clearMessages() {
+        stopStreaming();
         messages.value = [];
         activeTools.value = [];
     }

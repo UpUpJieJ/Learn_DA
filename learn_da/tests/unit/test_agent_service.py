@@ -6,7 +6,6 @@ from app.agent.prompts import (
     build_context_block,
 )
 from app.agent.routing import AgentRoute, AgentRouter
-from app.agent.tools import AGENT_TOOLS, get_agent_tool
 from app.agent.knowledge import (
     EmbeddingConfig,
     KnowledgeChunk,
@@ -73,8 +72,8 @@ def test_context_block_includes_lesson_output_and_error():
 def test_agent_resolves_exercise_and_next_step_tools():
     service = AgentService()
 
-    assert service.resolve_tool_name("根据本课生成一个练习") == "generate_exercise"
-    assert service.resolve_tool_name("我下一步应该学什么") == "suggest_next_step"
+    assert service.resolve_tool_name("根据本课生成一个练习") == "general_chat"
+    assert service.resolve_tool_name("我下一步应该学什么") == "general_chat"
 
 
 def test_router_returns_structured_decision_with_reason():
@@ -99,23 +98,6 @@ def test_router_recognizes_general_python_example_requests():
     assert route.reason == "用户希望获得课程相关示例或代码"
 
 
-def test_tool_registry_contains_fallback_for_each_tool():
-    expected_tools = {
-        "generate_example_code",
-        "generate_exercise",
-        "fix_code",
-        "explain_code",
-        "suggest_next_step",
-        "general_chat",
-    }
-
-    assert set(AGENT_TOOLS) == expected_tools
-    for tool_name in expected_tools:
-        tool = get_agent_tool(tool_name)
-        assert tool.name == tool_name
-        assert tool.fallback_content
-
-
 def test_system_prompt_emphasizes_assistant_role_and_no_direct_answer_bias():
     assert "通用学习助手" in SYSTEM_PROMPT
     assert "专门帮助有 Pandas 或 SQL 基础" not in SYSTEM_PROMPT
@@ -128,17 +110,6 @@ def test_system_prompt_emphasizes_assistant_role_and_no_direct_answer_bias():
     assert "任务顺序、完成状态与下一步该做哪个任务由服务端的任务列表权威给出" in SYSTEM_PROMPT
     assert "不要自行规划学习路线" in SYSTEM_PROMPT
     assert "1 到 3 个" not in SYSTEM_PROMPT
-
-
-def test_agent_fallbacks_are_general_learning_friendly():
-    example_tool = get_agent_tool("generate_example_code")
-    explain_tool = get_agent_tool("explain_code")
-    next_tool = get_agent_tool("suggest_next_step")
-
-    assert "DuckDB 在 Python 中查询内存数据" not in example_tool.fallback_content
-    assert "Polars 或 DuckDB 的核心 API" not in explain_tool.fallback_content
-    assert "数据分析代码" not in next_tool.fallback_content
-    assert "当前课程" in explain_tool.fallback_content
 
 
 @pytest.mark.unit

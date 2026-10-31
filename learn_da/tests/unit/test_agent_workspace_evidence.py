@@ -230,7 +230,8 @@ async def test_evidence_block_lists_failed_assertions(db_session):
     assert "任务进度：0/2 已通过" in block
     assert "当前未通过的任务：t1" in block
     assert "t1-rows" in block
-    assert "实际值：表达式 'region_stats.height == 4' 为假" in block
+    assert "assertion_actual" in block
+    assert "表达式 'region_stats.height == 4' 为假" in block
 
 
 async def test_evidence_block_hides_long_stdout(db_session):

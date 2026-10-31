@@ -20,7 +20,7 @@
                 <span
                     v-if="saveState !== 'idle'"
                     class="ml-auto text-xs"
-                    :class="saveState === 'error' ? 'text-err-600' : 'text-ink-300'"
+                    :class="saveState === 'error' ? 'text-err-600' : 'text-ink-500'"
                 >
                     {{
                         saveState === "saving"
@@ -36,7 +36,7 @@
 
             <!-- 加载 / 失败 / 无工作区 -->
             <div v-if="loading" class="flex items-center gap-2 text-sm text-ink-500">
-                <span class="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-brand-600"></span>
+                <span class="h-4 w-4 animate-spin rounded-pill border-2 border-line border-t-brand-600"></span>
                 正在准备工作区…
             </div>
             <EmptyState
@@ -61,7 +61,7 @@
                 <!-- 左栏：任务清单 + 数据集 -->
                 <aside class="space-y-4 lg:sticky lg:top-6">
                     <AppCard>
-                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
+                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
                             任务
                         </h2>
                         <ol class="space-y-1">
@@ -76,14 +76,14 @@
                                     "
                                     @click="focusCell(task.cellId)"
                                 >
-                                    <span class="mt-0.5 font-mono text-xs text-ink-300">
+                                    <span class="mt-0.5 font-mono text-xs text-ink-500">
                                         {{ index + 1 }}
                                     </span>
                                     <span class="min-w-0 flex-1">
                                         <span class="block text-sm text-ink-700">
                                             {{ task.title }}
                                         </span>
-                                        <span class="mt-0.5 block text-[11px] text-ink-300">
+                                        <span class="mt-0.5 block text-[11px] text-ink-500">
                                             {{ taskStatusMeta(task.status).label }}
                                         </span>
                                     </span>
@@ -94,7 +94,7 @@
                     </AppCard>
 
                     <AppCard v-if="snapshot.datasets.length">
-                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
+                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
                             数据集
                         </h2>
                         <ul class="space-y-1 text-xs text-ink-500">
@@ -106,7 +106,7 @@
                                 data/{{ dataset }}
                             </li>
                         </ul>
-                        <p class="mt-2 text-[11px] text-ink-300">
+                        <p class="mt-2 text-[11px] text-ink-500">
                             只读挂载；用 pl.read_csv 读入。
                         </p>
                     </AppCard>
@@ -142,7 +142,7 @@
                         >
                             <button
                                 type="button"
-                                class="font-mono text-xs text-ink-300 hover:text-ink-700"
+                                class="font-mono text-xs text-ink-500 hover:text-ink-700"
                                 @click="activeCellId = cell.cellId"
                             >
                                 {{ cell.cellId }}
@@ -229,7 +229,7 @@
                                                 ? 'text-ok-600'
                                                 : assertion.status === 'failed'
                                                   ? 'text-err-600'
-                                                  : 'text-ink-300'
+                                                  : 'text-ink-500'
                                         "
                                     >
                                         {{
@@ -253,7 +253,7 @@
                             </ul>
                             <p
                                 v-if="runs[cell.cellId]?.assertionsSkipped"
-                                class="mt-1 text-[11px] text-ink-300"
+                                class="mt-1 text-[11px] text-ink-500"
                             >
                                 前面的单元格没有全部执行成功，断言未求值。
                             </p>
@@ -264,7 +264,7 @@
                 <!-- 右栏：任务目标 + 分级提示 + AI 助手入口 -->
                 <aside class="space-y-4 lg:sticky lg:top-6">
                     <AppCard>
-                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-300">
+                        <h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">
                             当前任务
                         </h2>
                         <template v-if="activeTask">
@@ -278,7 +278,7 @@
                                 <StatusPill :status="activeTask.status" size="sm" />
                             </div>
                         </template>
-                        <p v-else class="text-xs text-ink-300">
+                        <p v-else class="text-xs text-ink-500">
                             点一下任务或单元格，这里会显示任务目标。
                         </p>
 
@@ -299,7 +299,7 @@
                         :has-submission="assistantHasSubmission"
                     />
 
-                    <p class="px-1 text-[11px] leading-5 text-ink-300">
+                    <p class="px-1 text-[11px] leading-5 text-ink-500">
                         快捷键：Ctrl/⌘ + Enter 运行当前格；Shift + Enter 换行。
                     </p>
                 </aside>
@@ -310,7 +310,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { fetchLessonBySlug } from "@/api/learning";
 import type { AgentContext, AgentRecentRun, LessonDetail } from "@/types/api";
 import { AppButton, AppCard, CodeOutput, EmptyState, StatusPill, taskStatusMeta } from "@/components/ui";
@@ -525,8 +525,10 @@ onMounted(async () => {
         });
 });
 
+// Stay on the lesson if its latest draft cannot be saved.
+onBeforeRouteLeave(() => store.flushAll());
+
 onBeforeUnmount(() => {
-    void store.flushAll();
-    store.reset();
+    void store.destroy();
 });
 </script>

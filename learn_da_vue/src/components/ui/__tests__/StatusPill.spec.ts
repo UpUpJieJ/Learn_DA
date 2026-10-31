@@ -5,13 +5,12 @@ import StatusPill from "../StatusPill.vue";
 import { countCompleted, taskStatusMeta } from "../status";
 
 describe("taskStatusMeta", () => {
-    it("六种状态都有文案，且只有通过算完成", () => {
-        const kinds = ["todo", "in_progress", "needs_review", "passed", "failed", "skipped"] as const;
+    it("五种状态都有文案，且只有通过算完成", () => {
+        const kinds = ["todo", "in_progress", "passed", "failed", "skipped"] as const;
 
         expect(kinds.map((kind) => taskStatusMeta(kind).label)).toEqual([
             "未开始",
             "进行中",
-            "需复核",
             "已通过",
             "未通过",
             "已跳过",
@@ -38,13 +37,6 @@ describe("StatusPill", () => {
         const failed = mount(StatusPill, { props: { status: "failed" } });
         expect(failed.text()).toContain("未通过");
         expect(failed.classes().join(" ")).toContain("bg-err-50");
-    });
-
-    it("需复核用警示色（避免学习者以为已经过了）", () => {
-        const wrapper = mount(StatusPill, { props: { status: "needs_review" } });
-
-        expect(wrapper.text()).toContain("需复核");
-        expect(wrapper.classes().join(" ")).toContain("bg-warn-50");
     });
 
     it("支持覆盖文案，用于课程级汇总（如 3/3 已通过）", () => {

@@ -10,6 +10,7 @@ SDK 异常；error_reason 会透出为响应的 fallback_reason。
 """
 
 import asyncio
+from contextlib import suppress
 import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Literal
@@ -27,6 +28,7 @@ LLMErrorReason = Literal[
     "timeout",
     "upstream_error",
     "empty_response",
+    "truncated",
 ]
 
 # 瞬态故障才值得重试；认证错误/空响应重试无意义
@@ -93,6 +95,7 @@ class LLMClient:
         timeout_seconds: float | None = None,
         max_retries: int | None = None,
         backoff_base_seconds: float = 0.5,
+        stream_total_timeout_seconds: float | None = None,
     ) -> None:
         self._client = client
         self.model = model or settings.LLM_MODEL
@@ -105,6 +108,10 @@ class LLMClient:
             max_retries if max_retries is not None else settings.LLM_MAX_RETRIES
         )
         self.backoff_base_seconds = backoff_base_seconds
+        self.stream_total_timeout_seconds = (
+            stream_total_timeout_seconds if stream_total_timeout_seconds is not None
+            else settings.LLM_STREAM_TOTAL_TIMEOUT_SECONDS
+        )
 
     async def complete(
         self,
@@ -173,38 +180,58 @@ class LLMClient:
             yield self._stream_done(started, "no_api_key")
             return
 
+        deadline = started + self.stream_total_timeout_seconds
+
+        def read_budget() -> float:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("stream total deadline exceeded")
+            return min(self.timeout_seconds, remaining)
+
         attempts = 1 + max(self.max_retries, 0)
         reason: LLMErrorReason = "upstream_error"
         for attempt in range(attempts):
             if attempt > 0 and self.backoff_base_seconds > 0:
-                await asyncio.sleep(self.backoff_base_seconds * (2 ** (attempt - 1)))
+                delay = self.backoff_base_seconds * (2 ** (attempt - 1))
+                await asyncio.sleep(min(delay, max(0, deadline - time.monotonic())))
+            if time.monotonic() >= deadline:
+                yield self._stream_done(started, "timeout")
+                return
             emitted = False
             text_parts: list[str] = []
             tool_calls: dict[int, dict[str, str]] = {}
             usage: Any = None
+            finish_reason = None
+            stream = None
             try:
-                async with asyncio.timeout(self.timeout_seconds):
+                async with asyncio.timeout(read_budget()):
                     stream = await self._create_stream(
                         messages,
                         tools=tools,
                         tool_choice=tool_choice,
                         temperature=temperature,
                     )
-                    async for chunk in stream:
-                        if getattr(chunk, "usage", None):
-                            usage = chunk.usage
-                        choices = getattr(chunk, "choices", None) or []
-                        if not choices:
-                            continue
-                        delta = choices[0].delta
-                        piece = getattr(delta, "content", None)
-                        if piece:
-                            text_parts.append(piece)
-                            emitted = True
-                            yield LLMStreamEvent(delta=piece)
-                        self._accumulate_tool_calls(
-                            tool_calls, getattr(delta, "tool_calls", None)
-                        )
+                iterator = stream.__aiter__()
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(anext(iterator), timeout=read_budget())
+                    except StopAsyncIteration:
+                        break
+                    if getattr(chunk, "usage", None):
+                        usage = chunk.usage
+                    choices = getattr(chunk, "choices", None) or []
+                    if not choices:
+                        continue
+                    finish_reason = getattr(choices[0], "finish_reason", None) or finish_reason
+                    delta = choices[0].delta
+                    piece = getattr(delta, "content", None)
+                    if piece:
+                        text_parts.append(piece)
+                        emitted = True
+                        yield LLMStreamEvent(delta=piece)
+                    self._accumulate_tool_calls(
+                        tool_calls, getattr(delta, "tool_calls", None)
+                    )
             except openai.AuthenticationError:
                 yield self._stream_done(started, "auth_error", interrupted=emitted)
                 return
@@ -237,6 +264,20 @@ class LLMClient:
                     )
                     return
                 continue
+
+            finally:
+                if stream is not None:
+                    close = getattr(stream, "close", None) or getattr(stream, "aclose", None)
+                    if close is not None:
+                        with suppress(Exception):
+                            await asyncio.wait_for(close(), timeout=min(1.0, self.timeout_seconds))
+
+            if finish_reason not in ("stop", "tool_calls"):
+                yield self._stream_done(
+                    started, "truncated", usage=usage, interrupted=emitted,
+                    partial="".join(text_parts),
+                )
+                return
 
             content = "".join(text_parts).strip()
             calls = self._tool_calls_tuple(tool_calls)
@@ -296,8 +337,8 @@ class LLMClient:
             if function is None:
                 continue
             name = getattr(function, "name", None)
-            if name:
-                slot["name"] += name
+            if name and not slot["name"]:
+                slot["name"] = name
             arguments = getattr(function, "arguments", None)
             if arguments:
                 slot["arguments"] += arguments

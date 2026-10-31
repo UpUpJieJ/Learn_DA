@@ -17,7 +17,7 @@ class RunnerSettings(BaseSettings):
     RUNNER_LOCAL_PYTHON: str = ""  # empty = the interpreter running the Runner
     RUNNER_ENV: str = ""
     RUNNER_DOCKER_HOST: str | None = None  # None = local Docker socket
-    RUNNER_DOCKER_IMAGE: str = "polars-duckdb-sandbox:latest"
+    RUNNER_DOCKER_IMAGE: str = "polars-duckdb-sandbox:pl1.39.3-duck1.5.1-arrow25.0.1"
     RUNNER_TIMEOUT_SECONDS: int = 5
     RUNNER_MEMORY_LIMIT_MB: int = 256
     RUNNER_CPU_QUOTA: int = 50_000  # Docker nano_cpus = quota * 10_000
@@ -28,6 +28,8 @@ class RunnerSettings(BaseSettings):
     # budget is much larger than a single snippet.
     RUNNER_SESSION_TIMEOUT_SECONDS: int = 20
     RUNNER_SESSION_MAX_DATASET_BYTES: int = 2_000_000  # 2 MB per request
+    # 学员子进程回传（事件流含序列化的断言变量，Arrow IPC）的上限。
+    RUNNER_SESSION_MAX_RESULT_BYTES: int = 2_000_000
 
     model_config = SettingsConfigDict(
         env_file=".env",
