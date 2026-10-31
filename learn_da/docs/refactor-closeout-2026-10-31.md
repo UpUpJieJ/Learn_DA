@@ -2,6 +2,8 @@
 
 范围为 `refactor-review-2026-10-26.md` §8 三批修复及复查发现的直接相关回归。保留工作区开始时已有的未提交重构；没有推送或部署生产。
 
+**后续发布已完成（2026-11-01）**：该段及以下 QA 记录描述重构收口时点；用户随后授权提交、停止 Hermes、清空历史并正式部署。生产验收29/29、全课程Docker76/76、最终空库14张业务表0行，详见 [部署记录](deployment-2026-11-01.md)。Runner 新增容器工作目录回归后为60项测试。
+
 ## 最终链路
 
 `WorkspaceService → RunnerClient → Docker Runner（仅执行/观察）→ RunnerClient（后端可信判定）→ TaskAttempt`。
@@ -43,7 +45,7 @@
 ## 发布与兼容事项
 
 - 启动新版后端前执行 Alembic upgrade，新增迁移 `c7d31a8e9f02`（提示幂等）与 `d8a42b6f9013`（当前任务验证标记）；历史提示/尝试保留。旧活动工作区默认未验证，需要每个任务重新提交一次，之后普通运行不会再把历史通过误恢复。前后端与 Runner 需配套更新，旧 Runner 无 observations 时任务判定 fail closed。
-- 没有发布到生产；上述验收使用独立 QA 数据库和临时 Runner 服务。
+- 收口时未发布；上述测试使用独立 QA 数据库和临时 Runner。后续正式部署及生产复测见上方部署记录。
 - 退役旧 Dashboard 的六个 analytics GET，以及重复的 `/lessons/all`。`/catalog`、`/lessons/categories`、`/recommendations` 是有文档/测试的公开接口，未因“无前端消费者”误删；推荐内部仍需的历史聚合保留。N-16 是审查时已删除的历史组件，无当前实现需修。
 - CI 的 GitHub 账单锁定仍是账户外部条件，本轮按约定执行本地全门禁与 Linux 构建。
-- 服务端目前资源足够，没有暂停 Hermes 或变更其他业务容器。
+- 收口时未暂停 Hermes。正式发布阶段已按用户要求停止 Hermes 用户服务，未停止其他业务容器。

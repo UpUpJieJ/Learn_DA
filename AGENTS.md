@@ -1,6 +1,6 @@
 # AGENTS.md — Learn DA 项目上下文
 
-> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-10-31。
+> 面向 AI 代理/新会话的项目事实速查。最后更新：2026-11-01。
 
 ## 项目是什么
 
@@ -8,14 +8,16 @@
 技术栈：Vue 3 + Vite + TS + Pinia（`learn_da_vue`）、FastAPI + Python 3.12（`learn_da`）、独立 Runner 沙箱服务（`learn_da_runner`）。
 **无账号体系**：签名匿名 session cookie 标识学习者；学习进度唯一权威在服务端 LearnerState。
 
-## 当前状态（截至 2026-10-24）
+## 当前状态（截至 2026-11-01；下方保留有日期的历史记录）
 
 - **2026-10-31 高优先级重构收口**：正式判定在 `app/practice/observations.py`（由 `RunnerClient.execute_session` 调用），出站 `observationMode:true`，剥离 refs/runtime/expect；Runner 只回传有界 JSON 表/值/SQL 行，禁止在后端解析学员提供的 Arrow 二进制。工作区仅用 `frame_equal/schema/sql_rows/value/call`，13 课已无 `expr_true`，内容加载会拒绝新自由表达式；35 个 refs 由生成器维护。旧 Runner 父进程判定路径只供内部兼容脚本。
 - **并发与事件修复**：执行幂等按 session/操作/目标分域；hint 可传 requestId，迁移 `c7d31a8e9f02`；短事务与锁保护旧执行回写。工作区复用 AnalyticsService 的幂等业务入口写学习事件，与 `/analytics/track` 共用规则；TaskAttempt 仍为教学证据。run/submit/hint/default/global 限流生效。
 - **SSE 与切课**：跨轮累积文本，partial/取消不覆盖内容；默认 60 秒 idle + `LLM_STREAM_TOTAL_TIMEOUT_SECONDS=180` 单次流调用总期限。前端 generation 隔离响应、串行保存，离开路由等待草稿。AI 助手 FC 只暴露知识检索/学习进度/任务摘要，推荐与出题入口已移除。详情见 `learn_da/docs/refactor-closeout-2026-10-31.md`。以下旧状态条目按各自日期作为历史。
 - **第三批收口**：报告与地图按当前有效任务统计，`tasksAttempted` 与一次通过率统一；UI lint 基线为 0，组件补无障碍及 HTTP 剪贴板；Lab 表预览/耗时/幂等事件完整。旧 Dashboard GET 与旧练习元数据已移除，`catalog`/`categories`/`recommendations` 公开 API 保留。沙箱默认使用版本 tag 并在 Runner 进程内锁定 image ID。
 - **当前验证与乱序保护**：`session_cells.task_verified`（迁移 `d8a42b6f9013`）仅在当前前缀下任务提交通过时置真；编辑或失效清除，普通运行不恢复。snapshot/报告/Agent 同口径；晚到的旧执行不覆盖新状态。新 TaskAttempt/RunEvent 记录执行开始时间，历史不重写。旧活动工作区升级后需逐任务重提一次；进入工作区时通过既有事件入口对齐旧完成投影。
-- **2026-10-31 最终门禁**：后端 604、Runner 59、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。真实 Docker 全课程 76/76、QA 部署验收（含真实 LLM）29/29、原越权 PoC 5/5 符合安全预期、Linux Node 容器生产构建成功。未部署生产，CI 账单外部限制不变。
+- **2026-11-01 正式部署完成**：应用源码版本 `9efd651`，已推送 GitHub，并在用户确认的 SSH 别名 `lavm` 上全新部署到 `/app/Learn_DA`，compose 项目名 `learn_da`。真实生产验收（含 LLM 与 Nginx SSE）29/29、全部 13 课 Docker 契约76/76；验收后再次重建空库，迁移 head `d8a42b6f9013`，14 张业务表均为 0 行。Hermes 用户服务按用户要求停止，其他项目容器保持运行。记录见 `learn_da/docs/deployment-2026-11-01.md`。
+- **最终门禁**：后端 604、Runner 60、前端 172 项全过，UI lint 规则另 4 项、基线为 0；内容/数据集/refs/type-check 通过。生产镜像实际构建成功；后端80个依赖匹配 uv.lock、Runner32个依赖匹配哈希锁。原越权 PoC 5/5 符合安全预期（收口阶段验证），CI 账单外部限制不变。
+- **容器化 Runner 工作目录**：`RUNNER_WORK_ROOT=/var/lib/learn_da/runner-work` 在宿主机与 Runner 内必须同绝对路径 bind；更新脚本用 `install -d -m 700 -o 65532 -g 0` 初始化。禁止用 Runner 私有 `/tmp` 作为宿主 Docker 的 bind source；沙箱仅只读挂载单次请求子目录，执行后清理。后端镜像冻结导出 uv.lock，Runner 镜像用 `requirements.lock`；Nginx 透传 SSE 的 `X-Accel-Buffering`。
 
 - 2026-07-14 路线图的**阶段 0-4 全部完成**（安全执行门禁 / 统一学习事实 / 可验证练习闭环 / 证据驱动 Agent / 内容与界面规模化），内部 Alpha，已部署生产环境。
 - **旧练习体系已下线**（2026-10-24）：13 门课 frontmatter 的 `exercise:` 块全部删除，`app/practice/` 的 validator / repository / service / router / schemas 与 `POST /playground/exercises/*`（resume/attempts/stats）、`POST /playground/format`、`GET /analytics/practice-stats`、`GET /analytics/recommended-lessons` 一并移除；`exercise_attempts` 表**冻结只读**（`app/practice/models.py` 仍登记给 Alembic，历史数据留存，不要再写入）。任务判定与教学证据全部走 `task_attempts`。`app/practice/` 现在只剩断言 DSL v2（`assertion_runtime.py` + `assertions.py`）。
